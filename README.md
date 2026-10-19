@@ -20,6 +20,12 @@ and the build tools (Rokit installed them into `%USERPROFILE%\.rokit`).
 5. Double-click **`Sync to Studio.bat`** in this folder and leave its window open.
    In Studio, click **Plugins > Rojo > Connect**.
 
+**Shortcuts in this folder**
+- `tools\open_in_studio.bat` builds the place from this folder and opens it straight in Studio.
+- `tools\open_key_window.bat` opens the pop-up for saving keys. A Roblox key goes to
+  `%USERPROFILE%\.voltage-county\roblox_api_key`. A Claude key (starts `sk-ant-`, for the AI Car Designer)
+  goes to `anthropic_api_key` in the same folder. Neither is ever in the repo.
+
 ## Trying it
 
 - Press **Play**. The Output window should show `[Server] booted 0 services` and

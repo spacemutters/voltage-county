@@ -1,16 +1,18 @@
 --!strict
 -- The one network module (CLAUDE.md hard rule 2). Every RemoteEvent and RemoteFunction is declared in REMOTES
--- below with a payload validator and a per-player rate limit. No system creates remotes of its own.
--- Clients send intents ("buy X"), never outcomes ("add $500"); the server validates and decides.
+-- below with a direction, a payload validator and a per-player rate limit. No system creates remotes of its
+-- own. Clients send intents ("buy X"), never outcomes ("add $500"); the server validates and decides.
 --
 -- Declaring a remote:
 --   RequestSpawn = {
---   	kind = "event", -- "event" (RemoteEvent) or "function" (RemoteFunction, client -> server only)
+--   	kind = "event", -- "event" (RemoteEvent) or "function" (RemoteFunction, always client -> server)
+--   	direction = "toServer", -- "toServer" (client sends, server validates) or "toClient" (server sends)
 --   	validate = Check.shape({ vehicleUid = Check.string(64) }), -- checks every client -> server payload
 --   	burst = 3, -- requests allowed at once
 --   	perSecond = 0.5, -- requests regained per second
 --   },
--- Each remote carries one payload value (or nothing). Server -> client payloads are trusted and not validated.
+-- Each remote carries one payload value (or nothing). Server -> client payloads are trusted and not validated;
+-- a client firing a "toClient" remote is rejected and reported.
 --
 -- Server: Net.setupServer(), Net.onServerEvent, Net.onServerInvoke, Net.fireClient, Net.fireAllClients,
 --         Net.onReject (AntiExploitService listens here to log offenders).
@@ -23,17 +25,39 @@ local RunService = game:GetService("RunService")
 local Check = require(script.Parent.Util.Check)
 local RateLimiter = require(script.Parent.Util.RateLimiter)
 
+export type Direction = "toServer" | "toClient"
+
 export type Spec = {
 	kind: "event" | "function",
+	direction: Direction,
 	validate: Check.Validator,
 	burst: number,
 	perSecond: number,
 }
 
-export type RejectReason = "rate" | "payload" | "arity"
+export type RejectReason = "rate" | "payload" | "arity" | "direction"
 export type RejectListener = (player: Player, remote: string, reason: RejectReason) -> ()
 
-local REMOTES: { [string]: Spec } = {}
+local ID_LENGTH = 40
+
+local REMOTES: { [string]: Spec } = {
+	-- Studio only: spawn a car next to the player for testing (VehicleService refuses it outside Studio).
+	DevSpawnVehicle = {
+		kind = "event",
+		direction = "toServer",
+		validate = Check.shape({ vehicleId = Check.string(ID_LENGTH), trim = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Server tells the driver their car was moved back (anti-exploit reset or unstuck); payload { reason }.
+	VehicleReset = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+}
 
 local FOLDER_NAME = "Remotes"
 
@@ -44,10 +68,11 @@ local remotes: { [string]: Instance } = {}
 local limiters: { [string]: RateLimiter.RateLimiter } = {}
 local rejectListeners: { RejectListener } = {}
 
-local function specFor(name: string, kind: "event" | "function"): Spec
+local function specFor(name: string, kind: "event" | "function", direction: Direction): Spec
 	local spec = REMOTES[name]
 	assert(spec ~= nil, `Net: no remote named "{name}" is declared in Net.luau`)
 	assert(spec.kind == kind, `Net: remote "{name}" is a {spec.kind}, not a {kind}`)
+	assert(spec.direction == direction, `Net: remote "{name}" goes {spec.direction}, not {direction}`)
 	return spec
 end
 
@@ -95,6 +120,12 @@ function Net.setupServer()
 		remote.Parent = folder
 		remotes[name] = remote
 		limiters[name] = RateLimiter.new(spec.burst, spec.perSecond)
+		-- A client firing a server -> client remote is never legitimate.
+		if spec.direction == "toClient" and remote:IsA("RemoteEvent") then
+			remote.OnServerEvent:Connect(function(player: Player)
+				reject(player, name, "direction")
+			end)
+		end
 	end
 	folder.Parent = ReplicatedStorage
 	Players.PlayerRemoving:Connect(function(player)
@@ -109,7 +140,7 @@ function Net.onReject(listener: RejectListener)
 end
 
 function Net.onServerEvent(name: string, handler: (player: Player, payload: any) -> ()): RBXScriptConnection
-	local spec = specFor(name, "event")
+	local spec = specFor(name, "event", "toServer")
 	local remote = remoteFor(name) :: RemoteEvent
 	return remote.OnServerEvent:Connect(function(player: Player, ...: any)
 		local ok, payload = admit(player, name, spec, ...)
@@ -121,7 +152,7 @@ end
 
 -- A rejected call returns nil to the client.
 function Net.onServerInvoke(name: string, handler: (player: Player, payload: any) -> any)
-	local spec = specFor(name, "function")
+	local spec = specFor(name, "function", "toServer")
 	local remote = remoteFor(name) :: RemoteFunction
 	remote.OnServerInvoke = function(player: Player, ...: any): any
 		local ok, payload = admit(player, name, spec, ...)
@@ -133,13 +164,13 @@ function Net.onServerInvoke(name: string, handler: (player: Player, payload: any
 end
 
 function Net.fireClient(name: string, player: Player, payload: any?)
-	specFor(name, "event")
+	specFor(name, "event", "toClient")
 	local remote = remoteFor(name) :: RemoteEvent
 	remote:FireClient(player, payload)
 end
 
 function Net.fireAllClients(name: string, payload: any?)
-	specFor(name, "event")
+	specFor(name, "event", "toClient")
 	local remote = remoteFor(name) :: RemoteEvent
 	remote:FireAllClients(payload)
 end
@@ -155,19 +186,19 @@ function Net.setupClient()
 end
 
 function Net.fireServer(name: string, payload: any?)
-	specFor(name, "event")
+	specFor(name, "event", "toServer")
 	local remote = remoteFor(name) :: RemoteEvent
 	remote:FireServer(payload)
 end
 
 function Net.invokeServer(name: string, payload: any?): any
-	specFor(name, "function")
+	specFor(name, "function", "toServer")
 	local remote = remoteFor(name) :: RemoteFunction
 	return remote:InvokeServer(payload)
 end
 
 function Net.onClientEvent(name: string, handler: (payload: any) -> ()): RBXScriptConnection
-	specFor(name, "event")
+	specFor(name, "event", "toClient")
 	local remote = remoteFor(name) :: RemoteEvent
 	return remote.OnClientEvent:Connect(handler)
 end

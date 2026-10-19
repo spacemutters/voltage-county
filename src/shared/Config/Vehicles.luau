@@ -1,16 +1,50 @@
 --!strict
--- The vehicle catalog (PLAN.md §3). Each entry names its brand, class, energy type and trims; every trim's
--- stats sit inside its class band. Filled in Phase 1 with the Ohm Motors lineup.
+-- The vehicle catalog (PLAN.md §3). Each vehicle names its brand, class, energy type, body geometry and trims.
+-- Every trim's stats must sit inside its class band (Config/Classes); Vehicle/Catalog.validate() checks this
+-- and a spec runs it. Stats are the car's best in Standard drive mode; drive modes only soften them.
+--
+-- Geometry is in studs. The model contract (PLAN.md §6) is built from it by Dev/VehicleBuilder:
+--   length, width, height    visual body size (the Spark is about 14 x 6 x 4.6 so an avatar fits the seat)
+--   wheelbase, track         front-to-rear and left-to-right distance between wheel centers
+--   wheelRadius, wheelWidth  wheel size
+--   rideHeight               ground to the bottom of the invisible chassis box at rest
+--   chassisHeight            height of the chassis box (the only physics body)
+--
+-- Trims not given in PLAN.md §3.2 are filled between their neighbors. Long Range trims trade a little speed
+-- for the most range, since range is what the name sells.
+
+export type Geometry = {
+	length: number,
+	width: number,
+	height: number,
+	wheelbase: number,
+	track: number,
+	wheelRadius: number,
+	wheelWidth: number,
+	rideHeight: number,
+	chassisHeight: number,
+}
+
+export type Acquisition = "dealership" | "starter" | "fleet" | "limited" | "usedLot"
 
 export type Trim = {
 	id: string,
 	displayName: string,
-	price: number?, -- in-game $; nil when not sold new (free starter, fleet-only, limited drop)
+	acquisition: Acquisition,
+	-- In-game $. For an upgrade trim this is the upgrade cost on top of `upgradeFrom`. For used-lot trims it is
+	-- the base price, which rises as supply sells (Phase 4). nil when not sold for cash (starter, limited drop).
+	price: number?,
+	upgradeFrom: string?,
 	topSpeedMph: number,
 	zeroToSixtySec: number,
-	energyMinutes: number?, -- nil for NPC-only vehicles
+	energyMinutes: number?, -- nil only for vehicles players never drive
 	seats: number,
+	handling: number, -- 0..1
+	drive: "FWD" | "RWD" | "AWD",
+	geometry: Geometry?, -- replaces the vehicle's geometry for this trim (long-body trims)
 }
+
+export type Feature = "towHitch" | "kingpin" | "truckCharger" | "rideHeightAdjust" | "thrusters" | "gullwing"
 
 export type Vehicle = {
 	id: string,
@@ -19,9 +53,423 @@ export type Vehicle = {
 	class: string,
 	energy: "battery" | "fuel",
 	playerDrivable: boolean,
-	trims: { Trim },
+	geometry: Geometry,
+	features: { Feature },
+	trims: { Trim }, -- display order; the first is the default
 }
 
-local Vehicles: { [string]: Vehicle } = {}
+local Vehicles: { [string]: Vehicle } = {
+	ohm_spark = {
+		id = "ohm_spark",
+		brandId = "ohm",
+		displayName = "Ohm Spark",
+		class = "sedan",
+		energy = "battery",
+		playerDrivable = true,
+		geometry = {
+			length = 14,
+			width = 6,
+			height = 4.6,
+			wheelbase = 9,
+			track = 5,
+			wheelRadius = 1.2,
+			wheelWidth = 0.8,
+			rideHeight = 0.7,
+			chassisHeight = 2.4,
+		},
+		features = {},
+		trims = {
+			{
+				id = "used",
+				displayName = "Spark (used)",
+				acquisition = "starter",
+				price = nil,
+				topSpeedMph = 105,
+				zeroToSixtySec = 6,
+				energyMinutes = 25,
+				seats = 5,
+				handling = 0.5,
+				drive = "RWD",
+			},
+			{
+				id = "standard",
+				displayName = "Spark",
+				acquisition = "dealership",
+				price = 35000,
+				topSpeedMph = 120,
+				zeroToSixtySec = 5,
+				energyMinutes = 35,
+				seats = 5,
+				handling = 0.55,
+				drive = "RWD",
+			},
+			{
+				id = "long_range",
+				displayName = "Spark Long Range",
+				acquisition = "dealership",
+				price = 45000,
+				topSpeedMph = 130,
+				zeroToSixtySec = 4.4,
+				energyMinutes = 42,
+				seats = 5,
+				handling = 0.58,
+				drive = "AWD",
+			},
+			{
+				id = "performance",
+				displayName = "Spark Performance",
+				acquisition = "dealership",
+				price = 60000,
+				topSpeedMph = 155,
+				zeroToSixtySec = 3,
+				energyMinutes = 30,
+				seats = 5,
+				handling = 0.68,
+				drive = "AWD",
+			},
+		},
+	},
+
+	ohm_current = {
+		id = "ohm_current",
+		brandId = "ohm",
+		displayName = "Ohm Current",
+		class = "suv",
+		energy = "battery",
+		playerDrivable = true,
+		geometry = {
+			length = 15,
+			width = 6.4,
+			height = 5.4,
+			wheelbase = 9.4,
+			track = 5.3,
+			wheelRadius = 1.35,
+			wheelWidth = 0.9,
+			rideHeight = 0.9,
+			chassisHeight = 2.8,
+		},
+		features = {},
+		trims = {
+			{
+				id = "standard",
+				displayName = "Current",
+				acquisition = "dealership",
+				price = 48000,
+				topSpeedMph = 120,
+				zeroToSixtySec = 5.2,
+				energyMinutes = 33,
+				seats = 5,
+				handling = 0.5,
+				drive = "RWD",
+			},
+			{
+				id = "long_range",
+				displayName = "Current Long Range",
+				acquisition = "dealership",
+				price = 55000,
+				topSpeedMph = 125,
+				zeroToSixtySec = 4.8,
+				energyMinutes = 40,
+				seats = 5,
+				handling = 0.52,
+				drive = "AWD",
+			},
+			{
+				id = "performance",
+				displayName = "Current Performance",
+				acquisition = "dealership",
+				price = 66000,
+				topSpeedMph = 150,
+				zeroToSixtySec = 3.6,
+				energyMinutes = 29,
+				seats = 5,
+				handling = 0.6,
+				drive = "AWD",
+			},
+			{
+				id = "long_body",
+				displayName = "Current Long Body",
+				acquisition = "dealership",
+				price = 62000,
+				topSpeedMph = 115,
+				zeroToSixtySec = 5.6,
+				energyMinutes = 33,
+				seats = 6,
+				handling = 0.45,
+				drive = "AWD",
+				geometry = {
+					length = 17,
+					width = 6.4,
+					height = 5.4,
+					wheelbase = 10.8,
+					track = 5.3,
+					wheelRadius = 1.35,
+					wheelWidth = 0.9,
+					rideHeight = 0.9,
+					chassisHeight = 2.8,
+				},
+			},
+		},
+	},
+
+	ohm_mesa = {
+		id = "ohm_mesa",
+		brandId = "ohm",
+		displayName = "Ohm Mesa",
+		class = "pickup",
+		energy = "battery",
+		playerDrivable = true,
+		geometry = {
+			length = 18,
+			width = 7,
+			height = 6.2,
+			wheelbase = 11.5,
+			track = 6,
+			wheelRadius = 1.6,
+			wheelWidth = 1.1,
+			rideHeight = 1.3,
+			chassisHeight = 3,
+		},
+		features = { "towHitch", "rideHeightAdjust" },
+		trims = {
+			{
+				id = "standard",
+				displayName = "Mesa",
+				acquisition = "dealership",
+				price = 90000,
+				topSpeedMph = 112,
+				zeroToSixtySec = 4,
+				energyMinutes = 30,
+				seats = 5,
+				handling = 0.42,
+				drive = "AWD",
+			},
+			{
+				id = "performance",
+				displayName = "Mesa Performance",
+				acquisition = "dealership",
+				price = 130000,
+				topSpeedMph = 130,
+				zeroToSixtySec = 2.8,
+				energyMinutes = 26,
+				seats = 5,
+				handling = 0.5,
+				drive = "AWD",
+			},
+		},
+	},
+
+	ohm_hauler = {
+		id = "ohm_hauler",
+		brandId = "ohm",
+		displayName = "Ohm Hauler",
+		class = "heavy",
+		energy = "battery",
+		playerDrivable = true,
+		geometry = {
+			length = 24,
+			width = 8.5,
+			height = 12.5,
+			wheelbase = 14,
+			track = 7,
+			wheelRadius = 2,
+			wheelWidth = 1.2,
+			rideHeight = 1.6,
+			chassisHeight = 5.5,
+		},
+		features = { "kingpin", "truckCharger" },
+		trims = {
+			{
+				id = "standard",
+				displayName = "Hauler",
+				acquisition = "dealership",
+				price = 240000,
+				topSpeedMph = 70,
+				zeroToSixtySec = 12,
+				energyMinutes = 40,
+				seats = 2,
+				handling = 0.25,
+				drive = "RWD",
+			},
+			{
+				id = "long_range",
+				displayName = "Hauler Long Range",
+				acquisition = "dealership",
+				price = 280000,
+				topSpeedMph = 70,
+				zeroToSixtySec = 12.5,
+				energyMinutes = 55,
+				seats = 2,
+				handling = 0.25,
+				drive = "RWD",
+			},
+		},
+	},
+
+	ohm_pod = {
+		id = "ohm_pod",
+		brandId = "ohm",
+		displayName = "Ohm Pod",
+		class = "service",
+		energy = "battery",
+		playerDrivable = false, -- no wheel or pedals: it only runs as an autonomous fleet car (Phase 9)
+		geometry = {
+			length = 10,
+			width = 6,
+			height = 5.2,
+			wheelbase = 6.8,
+			track = 5,
+			wheelRadius = 1.1,
+			wheelWidth = 0.8,
+			rideHeight = 0.7,
+			chassisHeight = 2.6,
+		},
+		features = {},
+		trims = {
+			{
+				id = "standard",
+				displayName = "Pod",
+				acquisition = "fleet",
+				price = 40000,
+				topSpeedMph = 45,
+				zeroToSixtySec = 8, -- never reaches 60; sets how briskly it pulls away
+				energyMinutes = nil,
+				seats = 2,
+				handling = 0.35,
+				drive = "FWD",
+			},
+		},
+	},
+
+	ohm_arc = {
+		id = "ohm_arc",
+		brandId = "ohm",
+		displayName = "Ohm Arc",
+		class = "hypercar",
+		energy = "battery",
+		playerDrivable = true,
+		geometry = {
+			length = 14.5,
+			width = 6.6,
+			height = 3.8,
+			wheelbase = 8.8,
+			track = 5.6,
+			wheelRadius = 1.25,
+			wheelWidth = 1,
+			rideHeight = 0.45,
+			chassisHeight = 1.9,
+		},
+		features = { "thrusters" },
+		trims = {
+			{
+				id = "performance",
+				displayName = "Arc",
+				acquisition = "dealership",
+				price = 1500000,
+				topSpeedMph = 220,
+				zeroToSixtySec = 1.9,
+				energyMinutes = 25,
+				seats = 2,
+				handling = 0.92,
+				drive = "AWD",
+			},
+			{
+				id = "boost",
+				displayName = "Arc Boost",
+				acquisition = "dealership",
+				price = 2500000,
+				upgradeFrom = "performance",
+				topSpeedMph = 230,
+				zeroToSixtySec = 1.4,
+				energyMinutes = 22,
+				seats = 2,
+				handling = 0.95,
+				drive = "AWD",
+			},
+			{
+				id = "flight",
+				displayName = "Arc Flight",
+				acquisition = "limited",
+				price = nil,
+				topSpeedMph = 230,
+				zeroToSixtySec = 1.2,
+				energyMinutes = 18,
+				seats = 1,
+				handling = 0.97,
+				drive = "AWD",
+			},
+		},
+	},
+
+	ohm_grand = {
+		id = "ohm_grand",
+		brandId = "ohm",
+		displayName = "Ohm Grand",
+		class = "luxury",
+		energy = "battery",
+		playerDrivable = true,
+		geometry = {
+			length = 16,
+			width = 6.4,
+			height = 4.6,
+			wheelbase = 10.2,
+			track = 5.4,
+			wheelRadius = 1.3,
+			wheelWidth = 0.9,
+			rideHeight = 0.7,
+			chassisHeight = 2.4,
+		},
+		features = {},
+		trims = {
+			{
+				id = "standard",
+				displayName = "Grand",
+				acquisition = "usedLot",
+				price = 150000,
+				topSpeedMph = 160,
+				zeroToSixtySec = 2.4,
+				energyMinutes = 32,
+				seats = 5,
+				handling = 0.66,
+				drive = "AWD",
+			},
+		},
+	},
+
+	ohm_summit = {
+		id = "ohm_summit",
+		brandId = "ohm",
+		displayName = "Ohm Summit",
+		class = "luxury",
+		energy = "battery",
+		playerDrivable = true,
+		geometry = {
+			length = 16.5,
+			width = 6.8,
+			height = 5.6,
+			wheelbase = 10.2,
+			track = 5.6,
+			wheelRadius = 1.4,
+			wheelWidth = 1,
+			rideHeight = 0.9,
+			chassisHeight = 2.9,
+		},
+		features = { "gullwing" },
+		trims = {
+			{
+				id = "standard",
+				displayName = "Summit",
+				acquisition = "usedLot",
+				price = 175000,
+				topSpeedMph = 150,
+				zeroToSixtySec = 2.8,
+				energyMinutes = 30,
+				seats = 6,
+				handling = 0.58,
+				drive = "AWD",
+			},
+		},
+	},
+}
 
 return Vehicles

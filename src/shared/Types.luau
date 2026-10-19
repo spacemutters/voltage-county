@@ -52,6 +52,32 @@ export type PlayerData = {
 	firstJoinAt: number,
 }
 
+-- Driving -------------------------------------------------------------------------------------------------
+
+export type DriveMode = "comfort" | "standard" | "sport"
+export type RegenLevel = "low" | "standard" | "high"
+
+-- What the driver is asking for this frame, from InputController (keyboard, gamepad, touch or AutoDriver).
+export type Controls = {
+	throttle: number, -- 0..1
+	brake: number, -- 0..1; held at a standstill it engages reverse (Vehicle/Powertrain)
+	steer: number, -- -1 (left) .. 1 (right)
+	handbrake: boolean,
+}
+
+-- What the owning client's chassis reports each frame, for the HUD, camera and AutoDriver.
+export type Telemetry = {
+	speed: number, -- studs/s, forward-signed (negative when reversing)
+	mph: number, -- absolute
+	gear: string, -- "P" | "R" | "N" | "D" or "1".."6" for fuel cars
+	mode: DriveMode,
+	regen: RegenLevel,
+	throttle: number, -- 0..1 after drive-mode shaping
+	wheelsGrounded: number, -- 0..4
+	tractionActive: boolean,
+	reversing: boolean,
+}
+
 -- A server service or client controller booted by Util/Loader.
 export type Service = {
 	Init: ((self: any) -> ())?,

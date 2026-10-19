@@ -1,21 +1,199 @@
 --!strict
--- Vehicle classes, tiers and stat bands (PLAN.md §3.3). Every vehicle's stats must sit inside its class band,
--- player designs and AI mods included. Filled in Phase 1.
+-- Vehicle classes, tiers and stat bands (PLAN.md §3.3). Every vehicle trim must sit inside its class band,
+-- player designs and AI mods included, so no car can break the economy. The Ohm lineup (§3.2) anchors the
+-- bands. Job eligibility comes from class (Phase 6).
+--
+-- price is the in-game $ a trim costs in total (an upgrade trim counts its base trim plus the upgrade).
+-- handling is 0..1: how sharply a car turns and how much grip it has (Vehicle/Tuning maps it to physics).
 
 export type Range = { min: number, max: number }
 
 export type Class = {
 	id: string,
+	displayName: string,
 	tier: number, -- 1..5
 	price: Range,
 	topSpeedMph: Range,
 	zeroToSixtySec: Range,
 	energyMinutes: Range, -- minutes of driving on a full charge or tank
-	handling: Range, -- 0..1
+	handling: Range,
 	seats: Range,
-	designable: boolean, -- can the AI Car Designer make this class (Phase 11)
+	designable: boolean, -- the AI Car Designer may make this class (Phase 11; exotic also needs an owned exotic)
 }
 
-local Classes: { [string]: Class } = {}
+local function range(min: number, max: number): Range
+	return { min = min, max = max }
+end
+
+local Classes: { [string]: Class } = {
+	economy = {
+		id = "economy",
+		displayName = "Economy",
+		tier = 1,
+		price = range(0, 40000),
+		topSpeedMph = range(85, 125),
+		zeroToSixtySec = range(5, 11),
+		energyMinutes = range(20, 45),
+		handling = range(0.3, 0.6),
+		seats = range(2, 5),
+		designable = true,
+	},
+	sedan = {
+		id = "sedan",
+		displayName = "Sedan",
+		tier = 1,
+		price = range(0, 75000),
+		topSpeedMph = range(95, 160),
+		zeroToSixtySec = range(2.8, 8),
+		energyMinutes = range(20, 45),
+		handling = range(0.4, 0.75),
+		seats = range(4, 5),
+		designable = true,
+	},
+	minivan = {
+		id = "minivan",
+		displayName = "Minivan",
+		tier = 1,
+		price = range(25000, 70000),
+		topSpeedMph = range(95, 125),
+		zeroToSixtySec = range(5, 9),
+		energyMinutes = range(25, 45),
+		handling = range(0.3, 0.55),
+		seats = range(6, 8),
+		designable = true,
+	},
+	van = {
+		id = "van",
+		displayName = "Van",
+		tier = 1,
+		price = range(25000, 80000),
+		topSpeedMph = range(80, 110),
+		zeroToSixtySec = range(6, 12),
+		energyMinutes = range(25, 50),
+		handling = range(0.25, 0.5),
+		seats = range(2, 3),
+		designable = true,
+	},
+	suv = {
+		id = "suv",
+		displayName = "SUV",
+		tier = 2,
+		price = range(40000, 110000),
+		topSpeedMph = range(100, 155),
+		zeroToSixtySec = range(3.2, 8),
+		energyMinutes = range(25, 45),
+		handling = range(0.4, 0.65),
+		seats = range(5, 7),
+		designable = true,
+	},
+	pickup = {
+		id = "pickup",
+		displayName = "Pickup",
+		tier = 2,
+		price = range(45000, 150000),
+		topSpeedMph = range(95, 135),
+		zeroToSixtySec = range(2.6, 8),
+		energyMinutes = range(22, 40),
+		handling = range(0.35, 0.6),
+		seats = range(2, 5),
+		designable = true,
+	},
+	offroad = {
+		id = "offroad",
+		displayName = "Off-road",
+		tier = 2,
+		price = range(40000, 140000),
+		topSpeedMph = range(85, 125),
+		zeroToSixtySec = range(3.5, 9),
+		energyMinutes = range(20, 40),
+		handling = range(0.3, 0.55),
+		seats = range(2, 5),
+		designable = true,
+	},
+	service = {
+		id = "service",
+		displayName = "Service",
+		tier = 2,
+		price = range(30000, 160000),
+		topSpeedMph = range(40, 110),
+		zeroToSixtySec = range(5, 14),
+		energyMinutes = range(20, 60),
+		handling = range(0.25, 0.5),
+		seats = range(1, 5),
+		designable = false,
+	},
+	sports = {
+		id = "sports",
+		displayName = "Sports",
+		tier = 3,
+		price = range(60000, 250000),
+		topSpeedMph = range(140, 190),
+		zeroToSixtySec = range(2.6, 5),
+		energyMinutes = range(18, 35),
+		handling = range(0.65, 0.9),
+		seats = range(2, 4),
+		designable = true,
+	},
+	muscle = {
+		id = "muscle",
+		displayName = "Muscle",
+		tier = 3,
+		price = range(50000, 220000),
+		topSpeedMph = range(135, 185),
+		zeroToSixtySec = range(2.8, 5.5),
+		energyMinutes = range(15, 35),
+		handling = range(0.45, 0.7),
+		seats = range(2, 5),
+		designable = true,
+	},
+	luxury = {
+		id = "luxury",
+		displayName = "Luxury",
+		tier = 3,
+		price = range(120000, 400000),
+		topSpeedMph = range(135, 175),
+		zeroToSixtySec = range(2.2, 6),
+		energyMinutes = range(25, 45),
+		handling = range(0.5, 0.75),
+		seats = range(4, 7),
+		designable = true,
+	},
+	heavy = {
+		id = "heavy",
+		displayName = "Heavy",
+		tier = 3,
+		price = range(180000, 400000),
+		topSpeedMph = range(60, 80),
+		zeroToSixtySec = range(10, 16),
+		energyMinutes = range(35, 60),
+		handling = range(0.15, 0.35),
+		seats = range(1, 2),
+		designable = false,
+	},
+	exotic = {
+		id = "exotic",
+		displayName = "Exotic",
+		tier = 4,
+		price = range(300000, 1200000),
+		topSpeedMph = range(180, 215),
+		zeroToSixtySec = range(2, 3.2),
+		energyMinutes = range(18, 30),
+		handling = range(0.75, 0.95),
+		seats = range(1, 2),
+		designable = true,
+	},
+	hypercar = {
+		id = "hypercar",
+		displayName = "Hypercar",
+		tier = 5,
+		price = range(1200000, 6000000),
+		topSpeedMph = range(210, 240),
+		zeroToSixtySec = range(1, 2.2),
+		energyMinutes = range(15, 30),
+		handling = range(0.9, 1),
+		seats = range(1, 2),
+		designable = false,
+	},
+}
 
 return Classes

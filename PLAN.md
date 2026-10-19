@@ -412,42 +412,42 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 
 **Acceptance**
 - [x] `scripts/check.ps1` passes.
-- [ ] A playtest prints `[Server] booted N services` and `[Client] booted N controllers` with no errors in `get_console_output`.
-- [ ] The harness runs via `execute_luau` and prints `TESTS: passed=1 failed=0` for a sample spec.
+- [x] A playtest prints `[Server] booted N services` and `[Client] booted N controllers` with no errors in `get_console_output`.
+- [x] The harness runs via `execute_luau` and prints `TESTS: passed=1 failed=0` for a sample spec.
 
 **Stop.**
 
 ### Phase 1 — Chassis, classes, generation spike
 
 **Tasks**
-- [ ] Config:
+- [x] Config:
   - `Config/Brands.luau`
   - `Config/Classes.luau` (tiers and stat bands)
   - `Config/Vehicles.luau`, typed for every Ohm vehicle and trim in §3.2
   - a `validate()` (every vehicle sits inside its class band), covered by a spec
-- [ ] `Vehicle/Chassis.luau`: raycast suspension on one invisible chassis body.
+- [x] `Vehicle/Chassis.luau`: raycast suspension on one invisible chassis body.
   - Each step on the owning client (`RunService.PreSimulation`), cast one ray per wheel and compute spring/damper, lateral grip, and drive/brake forces.
   - Wheels are visual and repositioned each frame.
   - Must stay stable across client frame rates from 30 to 144 fps.
-- [ ] `Vehicle/Powertrain.luau`: electric (single-speed) or fuel (simple automatic) per vehicle.
+- [x] `Vehicle/Powertrain.luau`: electric (single-speed) or fuel (simple automatic) per vehicle.
   - Instant torque and adjustable regen for EVs.
   - Drive modes Comfort / Standard / Sport.
   - Traction control.
-- [ ] `VehicleService` (server):
+- [x] `VehicleService` (server):
   - Spawn from `ServerStorage.VehicleModels`, seat the driver, and `SetNetworkOwner(driver)`.
   - On exit, park the car and return ownership to the server.
   - Max one spawned car per player; despawn after 10 minutes unattended.
-- [ ] Controls: keyboard, gamepad, and touch (on-screen pedals + steering). Use ContextActionService unless Roblox docs (check with `http_get`) recommend the newer input system.
-- [ ] Camera: chase cam with speed-scaled FOV, orbit cam, hood cam.
-- [ ] `Dev/VehicleBuilder.luau`: greybox models for every Ohm vehicle that follow the model contract (original, generic shapes).
-- [ ] `docs/ART_BRIEF.md`: §9 plus each vehicle's greybox dimensions and the model contract, ready to hand to an artist.
-- [ ] HUD stub: speed and drive mode.
-- [ ] `AntiExploitService`:
+- [x] Controls: keyboard, gamepad, and touch (on-screen pedals + steering). Use ContextActionService unless Roblox docs (check with `http_get`) recommend the newer input system.
+- [x] Camera: chase cam with speed-scaled FOV, orbit cam, hood cam.
+- [x] `Dev/VehicleBuilder.luau`: greybox models for every Ohm vehicle that follow the model contract (original, generic shapes).
+- [x] `docs/ART_BRIEF.md`: §9 plus each vehicle's greybox dimensions and the model contract, ready to hand to an artist.
+- [x] HUD stub: speed and drive mode.
+- [x] `AntiExploitService`:
   - Speed cap at top speed × 1.15, plus teleport detection, both on server-observed positions.
   - First offense resets the car; repeated offenses are logged, then kicked.
-- [ ] `client/Dev/AutoDriver.luau` (Studio-only): follows a list of points with simulated throttle and steering. Later tests reuse it.
-- [ ] `Workspace.DevTrack` (straight, skidpad, bumps), built by script in Edit mode.
-- [ ] **Generation spike** (timeboxed, no production code):
+- [x] `client/Dev/AutoDriver.luau` (Studio-only): follows a list of points with simulated throttle and steering. Later tests reuse it.
+- [x] `Workspace.DevTrack` (straight, skidpad, bumps), built by script in Edit mode.
+- [x] **Generation spike** (timeboxed, no production code):
   - In a playtest, generate 3 original test cars with GenerationService's `Car5` schema, and 2 accessories with `Body1`.
   - Record in `docs/PROGRESS.md`:
     - latency, look and triangle counts
@@ -457,12 +457,12 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
   - If 4D generation has to be enabled for the experience, ask Davis.
 
 **Acceptance**
-- [ ] AutoDriver measures 0–60 within ±15% of config for `ohm_spark/standard` and `ohm_arc/performance`.
-- [ ] Cars settle on their suspension without bouncing and cross the bumps at 40 mph without flipping.
+- [x] AutoDriver measures 0–60 within ±15% of config for `ohm_spark/standard` and `ohm_arc/performance`.
+- [x] Cars settle on their suspension without bouncing and cross the bumps at 40 mph without flipping.
 - [ ] Touch controls are usable at phone size (device simulation + `screen_capture`).
-- [ ] Exiting parks the car and returns network ownership to the server.
-- [ ] A forged teleport (car moved 500 studs in one step) is caught by AntiExploit.
-- [ ] Spike findings are in `docs/PROGRESS.md` with a go/no-go recommendation for generated bodies.
+- [x] Exiting parks the car and returns network ownership to the server.
+- [x] A forged teleport (car moved 500 studs in one step) is caught by AntiExploit.
+- [x] Spike findings are in `docs/PROGRESS.md` with a go/no-go recommendation for generated bodies.
 
 **Stop.**
 
