@@ -1,0 +1,11 @@
+Packages/
+DevPackages/
+build/
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+sourcemap.json
+node_modules/
+.env*
+.vercel/
