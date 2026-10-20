@@ -142,6 +142,13 @@ function Freight.paidApproach(def: JobDef, studs: number): number
 	return math.clamp(studs, 0, def.approachMaxStuds or math.huge)
 end
 
+-- The approach the pay counts: the road route from `from` to `to`, but at most Jobs.approachDetourFactor x the
+-- straight-line distance (the route loops round the block when the truck already stands by the trailer).
+function Freight.approachStuds(routeStuds: number, from: Vector3, to: Vector3): number
+	local dx, dz = to.X - from.X, to.Z - from.Z
+	return math.min(routeStuds, math.sqrt(dx * dx + dz * dz) * Jobs.approachDetourFactor)
+end
+
 -- The pay for a haul of `haulStuds` (a long haul or a short run) after an approach of `approachStuds` (see the
 -- header), in whole dollars, components rounded down so they add up to the total exactly.
 function Freight.payFor(
@@ -445,8 +452,10 @@ local function originsFor(context: Context, depots: { Location }, spots: { [stri
 		local depotSpots: { Location } = spots[depot.id] or {}
 		for _, spot in depotSpots do
 			if usable(spot) then
-				local approach = context.routeLength(pose.Position, stopPoint(spot), pose.LookVector)
-				if approach ~= nil then
+				local point = stopPoint(spot)
+				local route = context.routeLength(pose.Position, point, pose.LookVector)
+				if route ~= nil then
+					local approach = Freight.approachStuds(route, pose.Position, point)
 					table.insert(origins, { depot = depot, spot = spot, approach = approach })
 				end
 				break
@@ -621,12 +630,15 @@ function Freight.start(player: Player, offer: Offer, context: Context): Job?
 		table.insert(stops, context.makeStop(waypointLocation(context, node), "waypoint"))
 	end
 	table.insert(stops, context.makeStop(destination, "decouple"))
-	local approach = context.routeLength(pose.Position, stopPoint(spot), pose.LookVector) or data.approach
+	local point = stopPoint(spot)
+	local route = context.routeLength(pose.Position, point, pose.LookVector)
+	local approach = if route then route else data.approach
 	local target = Freight.props.take(spot, player)
 	if target == nil then
 		return nil
 	end
-	local paidApproach = Freight.paidApproach(def, approach)
+	local paidApproach =
+		Freight.paidApproach(def, if route then Freight.approachStuds(route, pose.Position, point) else data.approach)
 	local jobData: Data = {
 		spawnId = spot.id,
 		originId = data.originId,

@@ -122,6 +122,13 @@ function Towing.paidApproach(def: JobDef, studs: number): number
 	return math.clamp(studs, 0, def.approachMaxStuds or math.huge)
 end
 
+-- The approach the pay counts: the road route from `from` to `to`, but at most Jobs.approachDetourFactor x the
+-- straight-line distance (the route loops round the block when the truck already stands by the car).
+function Towing.approachStuds(routeStuds: number, from: Vector3, to: Vector3): number
+	local dx, dz = to.X - from.X, to.Z - from.Z
+	return math.min(routeStuds, math.sqrt(dx * dx + dz * dz) * Jobs.approachDetourFactor)
+end
+
 -- The pay for a tow of `towStuds` after an approach of `approachStuds` (see the header), in whole dollars,
 -- components rounded down so they add up to the total exactly.
 function Towing.payFor(def: JobDef, approachStuds: number, towStuds: number, levelMultiplier: number): PayBreakdown
@@ -370,11 +377,13 @@ function Towing.offers(_player: Player, car: Model?, context: Context): { Offer 
 	local candidates =
 		Towing.nearestFree(context.locations(BREAKDOWN_TAG), pose.Position, def.breakdownCandidates or math.huge, taken)
 	for _, breakdown in Towing.pick(candidates, context.offerCount, context.random) do
-		local approach = context.routeLength(pose.Position, stopPoint(breakdown), pose.LookVector)
+		local point = stopPoint(breakdown)
+		local route = context.routeLength(pose.Position, point, pose.LookVector)
 		local drop, tow = nearestDrop(context, breakdown)
-		if approach == nil or drop == nil or tow == nil then
+		if route == nil or drop == nil or tow == nil then
 			continue
 		end
+		local approach = Towing.approachStuds(route, pose.Position, point)
 		local broken = cars[context.random:NextInteger(1, #cars)]
 		local data: Data = {
 			breakdownId = breakdown.id,
@@ -431,12 +440,15 @@ function Towing.start(player: Player, offer: Offer, context: Context): Job?
 	if breakdown == nil or drop == nil or not Towing.isFree(breakdown.id) then
 		return nil
 	end
-	local approach = context.routeLength(pose.Position, stopPoint(breakdown), pose.LookVector) or data.approach
+	local point = stopPoint(breakdown)
+	local route = context.routeLength(pose.Position, point, pose.LookVector)
+	local approach = if route then route else data.approach
 	local target, vehicleId, trimId = spawnBrokenCar(context, data, Towing.poseAt(breakdown, context.graph), player)
 	if target == nil then
 		return nil
 	end
-	local paidApproach = Towing.paidApproach(def, approach)
+	local paidApproach =
+		Towing.paidApproach(def, if route then Towing.approachStuds(route, pose.Position, point) else data.approach)
 	local stops: { Stop } = {
 		context.makeStop(breakdown, "couple"),
 		context.makeStop(drop, "decouple"),

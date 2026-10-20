@@ -318,6 +318,19 @@ return function(t: Harness.Api)
 				end
 			end)
 
+			t.it("counts a road route that loops round the block as at most a fair detour", function()
+				local factor = Jobs.approachDetourFactor
+				t.expect(factor >= 1.41 and factor < 3).toBe(true)
+				local from, to = Vector3.new(0, 0, 0), Vector3.new(30, 5, 40) -- 50 studs apart on the flat
+				for _, approachStuds in { Towing.approachStuds, Freight.approachStuds } do
+					-- A truck parked by its load whose route goes round the block: paid for the detour only.
+					t.expect(approachStuds(1600, from, to)).toBeNear(50 * factor, SAME)
+					-- A normal approach (route shorter than the cap) is paid as driven.
+					t.expect(approachStuds(60, from, to)).toBeNear(60, SAME)
+					t.expect(approachStuds(0, from, from)).toBe(0)
+				end
+			end)
+
 			t.it("pays a long haul by longHaulPayPerStud and a short run by payPerStud", function()
 				local short = Freight.payFor(FREIGHT, 0, 10000, false, 1)
 				local long = Freight.payFor(FREIGHT, 0, 10000, true, 1)

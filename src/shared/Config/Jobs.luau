@@ -411,6 +411,12 @@ local Jobs = {
 	-- XP per job: def.xp x (paid length / def.xpReferenceStuds), kept within this range of def.xp.
 	xpScale = { min = 0.5, max = 2 },
 
+	-- Towing and freight pay the approach leg by the road route, but a truck already standing by its load (pulled
+	-- in ahead of a broken-down car, facing on) gets a route that loops round the block. The paid approach is at
+	-- most this many times the straight-line distance: a fair road detour on the county's grid (a right-angle
+	-- corner is about 1.41x), never the loop the truck doesn't drive.
+	approachDetourFactor = 1.6,
+
 	-- The cycle the pay formulas are calibrated on (see the header), for tests/Jobs.spec and Dev/JobTests.rate,
 	-- which measure against these rather than against the pay itself.
 	calibration = {
