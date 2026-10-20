@@ -21,9 +21,9 @@ local Designer = {
 	featureFlag = "designer",
 	enabledByDefault = true,
 
-	-- The backend (backend/ on Vercel). "" until Davis deploys it: every request then answers `messages.closed`
-	-- and nothing is charged. Set it to the bare production origin, e.g. "https://<project>.vercel.app".
-	backendUrl = "",
+	-- The backend (backend/ on Vercel), its bare production origin. "" would answer `messages.closed` to every
+	-- request with nothing charged; until its keys are set the backend itself answers 503 and the game refunds.
+	backendUrl = "https://voltage-county-designer.vercel.app",
 	-- Name of the shared secret in the experience's Secrets store (HttpService:GetSecret). Davis enters the value
 	-- in the Creator Dashboard (and under Local Secrets for Studio); it is sent only in the header below.
 	secretName = "designer_key",
