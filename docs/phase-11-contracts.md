@@ -66,8 +66,11 @@ amount, reason)`).
 ### `src/server/Services/DesignerService/init.luau` (+ `Validate.luau` pure)
 The PLAN's 7 steps for new cars and mods. Calls the backend with `HttpService:RequestAsync` (URL from
 `Config/Designer.backendUrl`, secret via `HttpService:GetSecret`), timeout, one retry on a network error. Sends
-only the filtered text, the class (or the target car's class + current spec), a salted UserId hash
-(`HashLib`/`HttpService` SHA-256 of salt .. UserId; the salt is a second secret `designer_salt`) and the kit version.
+only the filtered text, the class (or the target car's class + current spec), a salted UserId hash and the kit
+version. The hash is SHA-256 (a pure-Luau `src/shared/Util/Sha256.luau` with a spec against known vectors) of salt
+.. UserId. Roblox Secrets can't be read as strings in Luau, so the salt is a random GUID the server makes once and
+keeps in a DataStore (`DesignerSalt`/`salt`, created with `UpdateAsync` when missing): never in the repo, never
+sent to clients.
 `Validate.design(spec, kit)` / `Validate.mod(spec, kit, kind)` re-validate and clamp everything (the backend isn't
 trusted). Filters name/tagline/summary with TextService. New cars: save to `designs` (≤ 2 KB JSON) and add an
 `OwnedVehicle { vehicleId = "custom", designUid }`; mods: save to that car's `mods`. Re-roll: once free per paid
@@ -80,10 +83,22 @@ templates). Any error or > `Config/Designer.generationTimeoutSeconds` → `SpecB
 session-only (attribute `GeneratedLook = true`); the saved car is always the kit build. Check the API on the Roblox
 docs (`http_get`-able) before relying on names.
 
-### Vehicle spawning
-`VehicleService` spawns `vehicleId = "custom"` cars by building from the design spec (cached per design uid per
-server) instead of cloning from `ServerStorage.VehicleModels`; mods applied with `ModBuilder` on spawn; chassis
-tuning from `SpecBuilder.stats`.
+### Designs in the catalog (owner: kit helper) and spawning (owner: designer-server helper)
+About 110 call sites look cars up with `Catalog.getVehicle` / `getTrim` by the model's `VehicleId` and `Trim`. A
+designed car joins them without touching those call sites:
+- `SpecBuilder.vehicleFor(spec, kit, designUid): Vehicles.Vehicle` — a synthetic catalog entry: id
+  `"custom:" .. designUid`, the spec's class, its template's bodyStyle, energy, the built geometry, no features, and
+  one trim `"design"` whose stats come from `SpecBuilder.stats` (same fields as any `Config/Vehicles` trim, so
+  tuning, energy and job eligibility work unchanged).
+- `Catalog.publishDesign(designUid, vehicle)` (server) writes it as JSON into a `StringValue` named designUid under
+  `ReplicatedStorage.DesignCatalog`; `Catalog.getVehicle("custom:<uid>")` / `getTrim(..., "design")` resolve through
+  that folder on server and clients (decoded once, cached, invalidated when the value changes);
+  `Catalog.isDesign(vehicleId)`, `Catalog.designUidOf(vehicleId)`. `Catalog.vehicleIds()` and `validate()` stay
+  catalog-only.
+- Saved data keeps PLAN.md's shape (`OwnedVehicle.vehicleId = "custom"`, `designUid`). `VehicleService` spawns such a
+  car by building it with `SpecBuilder.build` (cached per design per server), publishing it, and giving the model the
+  attributes `VehicleId = "custom:<uid>"`, `Trim = "design"`, `DesignUid`; mods applied with `ModBuilder` on spawn;
+  a hidden design spawns the plain template look.
 
 ### `src/shared/Config/Designer.luau`
 backendUrl, timeouts, prices (new car 2 credits, mod 1, one free re-roll, first car free — read PLAN §4), slot
