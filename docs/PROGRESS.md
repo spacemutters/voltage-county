@@ -2,6 +2,63 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-19 — Phase 2: greybox county, road graph, GPS
+
+![Voltage County from above](images/county-topdown-2026-10-19.jpg)
+
+**Shipped**
+- **County layout** (`Config/MapLayout`): six zones, 85 tagged locations covering every PLAN §5 tag with its
+  attributes, and 18 GPS destinations.
+  - Cedar Bend downtown is a 7×7 grid with the used lot (player spawn), dealership, charging plaza and fuel
+    station.
+  - Riverside has curving streets, four cul-de-sacs and 26 house plots.
+  - The Plant has 4-lane concrete roads, the factory, Design Studio, freight depot and truck chargers.
+  - The Mesa Test Site has dirt trails over three hills, a quarter-mile drag strip with gates 1–4, a flight
+    field with jump ramps and a no-fly zone.
+  - Lakefront has Cedar Lake, a bridge deck 22 studs above the water and the meet-spot overlook.
+  - The County Loop is a 4-lane, 70 mph ring with an interchange at each avenue and a service stop.
+- **Road graph** (`Config/RoadGraph`): 344 nodes and 415 edges, connected and planar except one bridge.
+  Grades stay within limits.
+- **Road modules:**
+  - `Road/Graph`: grid-indexed nearest edge, on-road check, zone lookup.
+  - `Road/Pathfind`: fastest-route A* that joins and leaves roads mid-edge.
+- **Map builder** (`Dev/MapBuilder`): rebuilds `Workspace.Map.Generated`, about 6,600 instances:
+  - ground, roads, intersections, lane lines, sidewalks, bridges
+  - zone-colored buildings grouped per block
+  - streetlights, tagged locations with props, player spawns
+  - roads and ground are Persistent so fast cars never outrun streaming
+- **GPS:** a destinations panel, a route line drawn on the road, re-routing when you go off route, and an
+  arrival notice. Plus toast notices, and the used-lot "Claim your free car" prompt. The prompt hands out a
+  temporary test-drive Spark until Phase 4's garage.
+- **Streaming** is on. The dev test track moved west of the County Loop.
+- **Fallback sync:** `tools/studio_sync.py` with `tools/StudioSync.luau` pulls the repo's code into Studio
+  through the connector when nobody is there to click Rojo's Connect. It touches only the four code folders.
+- Built by 4 helpers, then 2 reviewers. They found 6 issues (3 serious, 3 minor), and all were fixed.
+  Afterwards I fixed two specs whose tolerances were too tight for Roblox's 32-bit positions, and one spec
+  whose "off route" point was actually near the route.
+
+**Checked in Studio** (published place, connector):
+- Tests: `TESTS: passed=241 failed=0`.
+- MapCheck: two builds both give 6,590 instances, 0 overlapping road parts, every node and location
+  reachable. Routes from the spawn to all 18 GPS destinations take at most 0.09 ms (the limit is 5 ms).
+- Route test: **13 of 13 drives completed, 0 stuck events.**
+  - One route into each zone and back, at about 30 mph.
+  - The full County Loop: 26,074 studs in 300 s at up to 55 mph.
+- A player spawns at the used lot in Cedar Bend, and the claim prompt is there.
+
+**Davis did:** published the place (now "Voltage County", private, universe 10772006656) and turned on Studio
+access to API services. Claude turned on Allow HTTP Requests, which Phase 11's AI Car Designer needs anyway
+and the fallback sync uses.
+
+**Open issues**
+- Pressing the claim prompt can't be automated from a test script. Davis tries it: walk up and press E.
+- Rojo can only set `StreamingEnabled`; Roblox doesn't let plugins write the streaming radii. They need
+  setting once in Studio's Properties panel (Workspace): `StreamingMinRadius` 256, `StreamingTargetRadius`
+  2048, `StreamOutBehavior` Opportunistic.
+- The drag strip has about 990 studs of run-off after the finish, which may be short for the Arc Boost.
+  Revisit in Phase 10.
+- House-plot pads sit behind the sidewalk kerb with no driveway gap yet (Phase 13).
+
 ## 2026-10-19 — Phase 1: chassis, classes, generation spike
 
 **Shipped**

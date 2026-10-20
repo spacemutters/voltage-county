@@ -469,22 +469,22 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 2 — Greybox county, road graph, GPS
 
 **Tasks**
-- [ ] `Config/RoadGraph.luau` covering every zone in §5.
-- [ ] `Road/Graph.luau` (nearest edge, on-road check) and `Road/Pathfind.luau` (A*).
-- [ ] `Dev/MapBuilder.luau` (Edit mode) rebuilds `Workspace.Map.Generated` idempotently. It covers:
+- [x] `Config/RoadGraph.luau` covering every zone in §5.
+- [x] `Road/Graph.luau` (nearest edge, on-road check) and `Road/Pathfind.luau` (A*).
+- [x] `Dev/MapBuilder.luau` (Edit mode) rebuilds `Workspace.Map.Generated` idempotently. It covers:
   - roads, intersections, ramps and sidewalks
   - lots and block buildings colored by zone
   - streetlights and spawn pads
   - every tagged location from §5
-- [ ] StreamingEnabled and model streaming settings.
-- [ ] GPS: a route line from the player to any tagged destination (Beams or thin parts) that recalculates when the player goes off-route.
-- [ ] Spawn flow: new players spawn at the used lot with a prompt to claim their free car. Stub the prompt here; the claim itself lands in Phase 4.
+- [x] StreamingEnabled and model streaming settings.
+- [x] GPS: a route line from the player to any tagged destination (Beams or thin parts) that recalculates when the player goes off-route.
+- [x] Spawn flow: new players spawn at the used lot with a prompt to claim their free car. Stub the prompt here; the claim itself lands in Phase 4.
 
 **Acceptance**
-- [ ] Running MapBuilder twice gives the same instance count and no overlapping road parts at intersections (script check).
-- [ ] AutoDriver completes the full County Loop and one route into each zone with zero "stuck > 3 s" events.
-- [ ] Pathfinding from spawn to every tagged location returns in under 5 ms.
-- [ ] A top-down `screen_capture` of the whole county is attached to the report.
+- [x] Running MapBuilder twice gives the same instance count and no overlapping road parts at intersections (script check).
+- [x] AutoDriver completes the full County Loop and one route into each zone with zero "stuck > 3 s" events.
+- [x] Pathfinding from spawn to every tagged location returns in under 5 ms.
+- [x] A top-down `screen_capture` of the whole county is attached to the report.
 
 **Stop.**
 
