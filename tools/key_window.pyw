@@ -46,6 +46,7 @@ def main():
         "      Places: write\n"
         "      Game Passes: read and write\n"
         "      Developer Products: read and write\n"
+        "   and Assets: read and write (for uploading the game's music and images).\n"
         "3. Leave IP addresses empty, set no expiry, then Save and Generate Key.\n"
         "4. Copy the key, click in the box below, paste it (Ctrl+V), and click Save."
     )

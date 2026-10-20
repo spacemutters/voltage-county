@@ -3,23 +3,29 @@
 -- server/Dev/DevTrackBuilder builds it in Edit mode from these numbers. Dev/AutoDriver and the specs drive to
 -- the waypoints at the bottom, which are derived from the layout, so moving a section moves its waypoints too.
 --
--- All lengths are in studs. The SpawnLocation sits at the origin and the baseplate top is y = 0. Every section
--- starts about 60 studs from the spawn and runs north (north is -Z, the way a car faces with no rotation).
--- Parts may run past the edge of the 2048-stud baseplate, but everything stays within World.mapHalfExtent of
--- the origin.
+-- Where it sits (Phase 2): out in the open country west of the County Loop, so the county map never touches
+-- it. Every position is an offset from ORIGIN, the track's reference point on the ground just south of the
+-- straight (where the Phase 1 spawn stood); move ORIGIN to move the whole track. tests/DevTrack.spec checks the
+-- track stays inside World.mapHalfExtent, at least 300 studs clear of the County Loop road and outside every
+-- MapLayout zone.
 --
--- Seen from above with north up, the three sections sit side by side just north of the spawn: the bumps lane
--- on the west (x = -60), the long straight in the middle (x = 0) and the skidpad on the east, centered at
--- (200, -300).
+-- All lengths are in studs; north is -Z (the way a car faces with no rotation) and the county ground top is
+-- y = 0. Seen from above with north up, the three sections sit side by side and run north from about 60 studs
+-- past ORIGIN: the bumps lane on the west (ORIGIN.X - 60), the long straight in the middle (ORIGIN.X) and the
+-- skidpad on the east, centered 200 studs east and 300 north of ORIGIN. The whole track spans roughly
+-- x = -4,480..-4,060 and z = +1,440..-1,570, with the loop road about 3,400 studs out from the county centre.
 
 local World = require(script.Parent.World)
 
--- Top of every driving surface: just above the baseplate top, so the two never z-fight.
-local SURFACE_Y = 0.1
+-- The track's reference point (see the header). Y is the ground top under it.
+local ORIGIN = Vector3.new(-4400, 0, 1500)
+
+-- Top of every driving surface: just above the county ground, so the two never z-fight.
+local SURFACE_Y = ORIGIN.Y + 0.1
 
 local straight = {
-	centerX = 0,
-	nearZ = -60, -- the end nearest the spawn; the straight runs toward -Z from here
+	centerX = ORIGIN.X,
+	nearZ = ORIGIN.Z - 60, -- the end nearest ORIGIN; the straight runs toward -Z from here
 	length = 3000, -- at least 2,400 (Phase 1): long enough for the Arc to pass 60 mph and settle
 	lanes = 3,
 	laneWidth = World.laneWidth,
@@ -39,8 +45,8 @@ local straight = {
 }
 
 local skidpad = {
-	centerX = 200, -- east of the straight, clear of it by more than 40 studs
-	centerZ = -300,
+	centerX = ORIGIN.X + 200, -- east of the straight, clear of it by more than 40 studs
+	centerZ = ORIGIN.Z - 300,
 	lineRadius = 120, -- the painted circle cars follow (skidpadRadius below)
 	innerRadius = 100, -- the asphalt ring runs from innerRadius to outerRadius
 	outerRadius = 140,
@@ -52,9 +58,9 @@ local skidpad = {
 }
 
 local bumps = {
-	centerX = -60, -- west of the straight
-	nearZ = -60,
-	length = 940, -- stays on the baseplate (its edge is at z = -1024)
+	centerX = ORIGIN.X - 60, -- west of the straight
+	nearZ = ORIGIN.Z - 60,
+	length = 940, -- the Phase 1 length (it had to fit on the old 2,048-stud baseplate)
 	width = 2 * World.laneWidth,
 	segmentLength = 470,
 	waypointInset = 40, -- bumpsStart and bumpsEnd sit this far inside each end of the lane
@@ -117,8 +123,14 @@ end
 local startZ = straight.nearZ - straight.startFromNear
 
 local DevTrack = {
+	origin = ORIGIN,
+	-- Where to put a character to test on the track: above ORIGIN, facing north up the straight. A character's
+	-- pivot (its root part) sits about 3 studs above its feet, so this is 4 up and the character drops onto the
+	-- ground. In a playtest: character:PivotTo(DevTrack.arrival), then spawn a car from the dev menu.
+	arrival = CFrame.new(ORIGIN + Vector3.new(0, 4, 0)),
+
 	surfaceY = SURFACE_Y,
-	surfaceThickness = 1, -- driving surfaces are slabs this thick, sunk into the baseplate below their top
+	surfaceThickness = 1, -- driving surfaces are slabs this thick, sunk into the ground below their top
 	paintRaise = 0.03, -- each paint layer sits this far above the one below it (avoids z-fighting)
 	paintThickness = 0.05,
 	partsPerChunk = 25, -- the builder yields (task.wait) after this many parts so Studio stays responsive

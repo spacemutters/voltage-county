@@ -16,6 +16,17 @@
       "StarterPlayerScripts": {
         "Client": { "$path": "src/client" }
       }
+    },
+    "Workspace": {
+      "$className": "Workspace",
+      "$ignoreUnknownInstances": true,
+      "$properties": {
+        "StreamingEnabled": true,
+        "StreamingMinRadius": 256,
+        "StreamingTargetRadius": 2048,
+        "StreamOutBehavior": "Opportunistic",
+        "StreamingIntegrityMode": "Disabled"
+      }
     }
   }
 }
