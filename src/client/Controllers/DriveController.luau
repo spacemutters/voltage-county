@@ -28,10 +28,12 @@ local LIGHTS_FOLDER = "Lights"
 local LIGHT_INSTANCE = "Light"
 
 -- A car's lamps, switched on this client only. set() writes properties only when a lamp actually changes,
--- so it is cheap to call every frame; clear() turns every lamp it lit back off.
+-- so it is cheap to call every frame; clear() turns every lamp it lit back off; refresh() writes its state again
+-- (after something else, like a light show, drew on the same lamps).
 export type Lamps = {
 	set: (name: string, on: boolean) -> (),
 	clear: () -> (),
+	refresh: () -> (),
 }
 
 type Session = {
@@ -69,18 +71,41 @@ end
 
 -- Lamps -----------------------------------------------------------------------------------------------------
 
+-- Every lamp part's unlit material, recorded the first time anything lights it (weak keys: parts come and go).
+-- Shared by every Lamps set and by LightShowController, so whoever turns a lamp off restores the real material.
+local offMaterials: { [BasePart]: Enum.Material } = setmetatable({}, { __mode = "k" }) :: any
+-- Live Lamps sets per car, so a light show that borrowed a car's lamps can hand them back (refreshLamps).
+local liveLamps: { [Model]: { [Lamps]: boolean } } = setmetatable({}, { __mode = "k" }) :: any
+
+-- Records a lamp part's unlit material if nothing has yet (call before lighting it).
+function DriveController.rememberLampMaterial(part: BasePart)
+	if offMaterials[part] == nil and part.Material ~= Controls.lamps.onMaterial then
+		offMaterials[part] = part.Material
+	end
+end
+
+-- The lamp part's unlit material, or nil if nothing has lit it.
+function DriveController.lampOffMaterial(part: BasePart): Enum.Material?
+	return offMaterials[part]
+end
+
+-- Re-applies the live lamp state of every Lamps set on `car` (after a light show put its lamps back).
+function DriveController.refreshLamps(car: Model)
+	local sets = liveLamps[car]
+	if sets ~= nil then
+		for lamps in sets do
+			lamps.refresh()
+		end
+	end
+end
+
 -- Lamp switching for any car that follows the model contract: Lights/<name> is a part holding a Light named
 -- "Light". A lit lamp turns that Light on and makes the part glow; turning it off restores the part's own
 -- material. Also used by VehicleVisualsController for other players' brake lamps.
 function DriveController.newLamps(car: Model): Lamps
 	local lit: { [string]: boolean } = {}
-	local originalMaterial: { [BasePart]: Enum.Material } = {}
 
-	local function set(name: string, on: boolean)
-		if (lit[name] == true) == on then
-			return
-		end
-		lit[name] = on
+	local function write(name: string, on: boolean)
 		local lights = car:FindFirstChild(LIGHTS_FOLDER)
 		local part = if lights then lights:FindFirstChild(name) else nil
 		if part == nil or not part:IsA("BasePart") then
@@ -91,23 +116,51 @@ function DriveController.newLamps(car: Model): Lamps
 			light.Enabled = on
 		end
 		if on then
-			originalMaterial[part] = originalMaterial[part] or part.Material
+			DriveController.rememberLampMaterial(part)
 			part.Material = Controls.lamps.onMaterial
-		elseif originalMaterial[part] then
-			part.Material = originalMaterial[part]
-			originalMaterial[part] = nil
+		else
+			local off = offMaterials[part]
+			if off ~= nil then
+				part.Material = off
+			end
 		end
 	end
 
+	local function set(name: string, on: boolean)
+		if (lit[name] == true) == on then
+			return
+		end
+		lit[name] = on
+		write(name, on)
+	end
+
+	local function refresh()
+		for name, on in lit do
+			write(name, on)
+		end
+	end
+
+	local lamps: Lamps
 	local function clear()
 		for name, on in lit do
 			if on then
 				set(name, false)
 			end
 		end
+		local sets = liveLamps[car]
+		if sets ~= nil then
+			sets[lamps] = nil
+		end
 	end
 
-	return { set = set, clear = clear }
+	lamps = { set = set, clear = clear, refresh = refresh }
+	local sets = liveLamps[car]
+	if sets == nil then
+		sets = {}
+		liveLamps[car] = sets
+	end
+	(sets :: { [Lamps]: boolean })[lamps] = true
+	return lamps
 end
 
 local function updateLamps(chassis: Chassis.Chassis, lamps: Lamps, controls: Types.Controls)

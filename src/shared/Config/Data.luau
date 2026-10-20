@@ -6,6 +6,8 @@
 -- Changing the shape of PlayerData is a schema change (CLAUDE.md hard rule 7): bump `schemaVersion`, add the
 -- step to DataService/Migrations and cover it in tests/Migrations.spec.luau.
 
+local Customization = require(script.Parent.Customization)
+
 local Data = {
 	-- DataStore names. Studio always uses its own store, so Studio playtests (API access is on for this place)
 	-- never read or write live player data.
@@ -20,7 +22,8 @@ local Data = {
 	--   2  timed earnings boosts (Phase 3)
 	--   3  owned cars remember `favorite` and `paid` (Phase 4 garage)
 	--   4  owned cars remember their `energy` level (Phase 5 charging and fuel)
-	schemaVersion = 4,
+	--   5  owned cars gain `caliper`, `extras` and `plateFormat` (Phase 7 Wrap & Tint shop)
+	schemaVersion = 5,
 	-- A save with no version field predates versioning and is treated as this version.
 	unversionedVersion = 1,
 
@@ -48,6 +51,15 @@ local Data = {
 		-- A new car, and every car a pre-version-4 save already owned, starts with a full charge or tank (energy
 		-- is a fraction: 1 = full, 0 = empty).
 		vehicleEnergy = 1,
+		-- Schema 5: the stock caliper color and plate format of a new car, and of every car a pre-version-5 save
+		-- already owned: Config/Customization's own defaults, so the shop, the migration and the template agree.
+		vehicleLook = {
+			caliper = Customization.defaults.caliper,
+			plateFormat = Customization.defaults.plateFormat,
+			-- Every pre-version-5 car's paint was this default ("as built"); the 4 -> 5 step moves it to `paint`.
+			oldDefaultPaint = "white",
+			paint = Customization.defaults.paint,
+		},
 		settings = {
 			units = "mph" :: "mph" | "kph",
 			camera = "chase",

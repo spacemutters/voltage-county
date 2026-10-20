@@ -582,20 +582,20 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 7 — Customization and light shows
 
 **Tasks**
-- [ ] Wrap & Tint shop: paint palette plus a constrained custom color, finish (gloss / matte / metallic), original wrap designs, 6–8 wheel styles, ride height, window tint, caliper color, kit extras on mount points, plates.
-- [ ] Client preview; server-validated purchase; saved per vehicle.
-- [ ] Plates:
+- [x] Wrap & Tint shop: paint palette plus a constrained custom color, finish (gloss / matte / metallic), original wrap designs, 6–8 wheel styles, ride height, window tint, caliper color, kit extras on mount points, plates.
+- [x] Client preview; server-validated purchase; saved per vehicle.
+- [x] Plates:
   - Standard formats are free; custom text needs the Custom Plates pass (Phase 12). Until then it's unlocked in Studio only.
   - Text is filtered with TextService (broadcast context) when set and again when loaded. It's never shown unfiltered to others.
-- [ ] Light shows:
+- [x] Light shows:
   - Choreographed headlight, taillight and door routines synced to a track.
   - Players at a `MeetSpot` can join a shared show: the server sends a start time and clients schedule it locally.
   - Audio IDs come from `Config/Audio.luau` (licensed tracks only).
 
 **Acceptance**
-- [ ] Every option renders on every vehicle model (`screen_capture` grid of 6 combos on the Ohm Spark and the Ohm Mesa).
+- [x] Every option renders on every vehicle model (`screen_capture` grid of 6 combos on the Ohm Spark and the Ohm Mesa).
 - [ ] Plate filtering checked in a live private server. Studio filtering can differ, so list this as a check for Davis.
-- [ ] Three cars run the same show within 100 ms of each other.
+- [x] Three cars run the same show within 100 ms of each other.
 
 **Stop.**
 

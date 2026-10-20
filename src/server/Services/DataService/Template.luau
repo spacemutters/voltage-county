@@ -51,10 +51,11 @@ function Template.new(now: number?): Types.PlayerData
 	}
 end
 
--- A newly bought or claimed car (Types.OwnedVehicle) with the default look from Config/Garage and a full charge
--- or tank (Config/Data.defaults.vehicleEnergy). `uid` comes from HttpService:GenerateGUID(false) (GarageService
--- makes it, keeping this module pure), `paid` is whole dollars (0 for the free starter) and `now` is os.time()
--- seconds.
+-- A newly bought or claimed car (Types.OwnedVehicle) with the default look from Config/Garage (and, since schema
+-- 5, the stock caliper and plate format from Config/Data.defaults.vehicleLook and no kit extras) and a full
+-- charge or tank (Config/Data.defaults.vehicleEnergy). `uid` comes from HttpService:GenerateGUID(false)
+-- (GarageService makes it, keeping this module pure), `paid` is whole dollars (0 for the free starter) and
+-- `now` is os.time() seconds.
 function Template.ownedVehicle(
 	uid: string,
 	vehicleId: string,
@@ -63,6 +64,7 @@ function Template.ownedVehicle(
 	now: number
 ): Types.OwnedVehicle
 	local look = Garage.defaults
+	local stock = Data.defaults.vehicleLook
 	return {
 		uid = uid,
 		vehicleId = vehicleId,
@@ -72,6 +74,9 @@ function Template.ownedVehicle(
 		wheels = look.wheels,
 		rideHeight = look.rideHeight,
 		tint = look.tint,
+		caliper = stock.caliper,
+		extras = {},
+		plateFormat = stock.plateFormat,
 		acquiredAt = now,
 		favorite = false,
 		paid = paid,

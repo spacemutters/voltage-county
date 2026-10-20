@@ -7,13 +7,20 @@ export type OwnedVehicle = {
 	vehicleId: string, -- a Config/Vehicles id, or "custom" for a player design
 	designUid: string?, -- set when vehicleId == "custom"
 	trim: string,
-	paint: string, -- palette id
+	paint: string, -- palette id (Config/Customization.paints), or a constrained custom color (Phase 7)
 	finish: string, -- "gloss" | "matte" | "metallic"
-	wrap: string?,
+	wrap: string?, -- Config/Customization.wraps id; nil or "none" = no wrap
 	wheels: string,
 	rideHeight: number, -- -1..1
 	tint: number, -- 0..1
-	plateText: string?, -- raw; filter before showing to anyone else
+	-- v5 (Phase 7, the Wrap & Tint shop; ids from Config/Customization):
+	caliper: string, -- brake caliper color
+	extras: { string }, -- kit extras on the car's Mount_* attachments (spoiler, roof rack...), each id once
+	plateFormat: string, -- plate style; standard formats are free
+	-- Custom plate text exactly as the player typed it (Custom Plates pass). Raw: Services/CustomizationService
+	-- filters it with TextService when it is set and again whenever the car spawns, and only the filtered text
+	-- is ever put on a plate or sent to anyone. nil = the plate format's own text.
+	plateText: string?,
 	mods: { [string]: any }?, -- validated AI mod spec (Phase 11)
 	serial: number?, -- limited serial number
 	acquiredAt: number, -- os.time()
@@ -40,7 +47,7 @@ export type Boost = { id: string, factor: number, endsAt: number } -- endsAt = o
 -- Player settings, set from the phone's Settings app (Net UpdateSettings, validated by GarageService).
 export type Settings = { units: "mph" | "kph", camera: string, musicVolume: number }
 
--- Schema version 4 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
+-- Schema version 5 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
 export type PlayerData = {
 	version: number,
 	cash: number,

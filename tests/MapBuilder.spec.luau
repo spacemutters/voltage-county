@@ -630,6 +630,7 @@ local TAGS = {
 	"FlightZone",
 	"NoFlyZone",
 	"DragStripGate",
+	"CustomShop",
 }
 
 -- One zone that builds (sidewalks only come with Cedar Bend or Riverside, so the fixture's own zone has none

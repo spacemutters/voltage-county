@@ -2,6 +2,54 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-20 — Phase 7: customization and light shows
+
+![Six looks each on the Ohm Spark (back) and Ohm Mesa (front)](images/looks-grid-2026-10-20.jpg)
+
+**Shipped**
+- **Wrap & Tint shop** at two new `CustomShop` locations (Cedar Bend, The Plant):
+  - 22 paints plus a limited custom color; gloss, matte or metallic finish
+  - 8 original wrap designs built from parts (no uploaded images)
+  - 8 wheel styles, ride height, 5 window tints, 8 caliper colors
+  - 8 kit extras on the mount points (spoilers, wing, roof rack, roof box, light bar, bull bar, splitter,
+    diffuser), limited by class
+  - 4 free plate formats
+  - prices scale by class tier and only charge for what changed
+  - live preview on your own car, reverted on cancel
+- **Vehicle/Appearance** applies a look to any catalog model, idempotently. It never touches physics; ride
+  height moves only the visual body.
+- **Data v5:** caliper, extras and plate format per owned car. Custom colors are stored in `paint` as
+  `custom:h,s,v`.
+- **Plates:** custom text is filtered with TextService (PublicChat context) when set and again on every
+  spawn. Only filtered text ever appears on a plate, and a failed filter shows a blank plate. Custom text
+  needs the Custom Plates pass (Phase 12); until then Studio only.
+- **Light shows** at meet spots: 3 placeholder tracks (no audio yet, `assetId = 0`) and beat-aligned routines
+  (lamps, doors, gull-wings, light-bar underglow). Players parked at a spot join; every client schedules the
+  cues from the server's start time.
+- Built by 4 helpers, then 2 reviewers. They found 18 issues (9 serious, 9 minor), and all were fixed. Afterwards
+  I fixed the light-show test, which spawned its car before the server had seen the character move.
+
+**Checked in Studio:**
+- Map rebuilt with the shops: MapCheck clean.
+- Tests: `TESTS: passed=887 failed=0`.
+- **Six looks each on the Spark and the Mesa** render (picture above; close-up in
+  `docs/images/looks-closeup-2026-10-20.jpg`): different paints, finishes, stripes, wheels, ride heights,
+  tints, calipers, a roof rack, a roof box and a light bar. Separately, a scripted sweep applied 72 looks to
+  every trim of every catalog car with no errors.
+- **Three cars in one light show:** cues fired within **0.5 ms** of each other on this client (allowed 100 ms).
+
+**For Davis to check:** plate filtering only behaves for real in a live (published) server. Set a custom plate
+in a private server and confirm it shows filtered to another player. Custom plates are Studio-only until the
+pass exists.
+
+**Open issues**
+- Light-show music is placeholder silence. Davis approved Roblox's licensed library or original tracks from his
+  ElevenLabs account; uploading audio needs the Roblox key's Assets permission (granted) and Roblox's audio
+  quota.
+- Busy looks push a car past the 60-part greybox budget (wheel spokes, wrap parts). Phase 14 performance may
+  trim them.
+- The phone can open over the Wrap & Tint panel; the shop closes the phone when it opens.
+
 ## 2026-10-20 — Phase 6: jobs, rideshare, delivery (end of Milestone B)
 
 **Shipped**

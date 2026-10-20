@@ -22,6 +22,9 @@
 -- (OwnedVehicle.energy) for EnergyService, and putting cars away (or replacing them) first has EnergyService write
 -- their current level back to the save, so the car comes out again exactly as it went in.
 --
+-- Looks (Phase 7, docs/phase-7-contracts.md "CustomizationService"): a car brought out wears its saved look;
+-- CustomizationService.applySaved puts it on (and filters custom plate text again) right after OwnedUid is set.
+--
 -- Server-authoritative (CLAUDE.md hard rule 1): a client only ever names a uid, and the server looks it up in that
 -- player's own data and nowhere else. A sale removes the car and pays for it inside one DataService.update, which
 -- re-checks that the car is still there, so a double click (or a forged burst) can never sell a car twice. No
@@ -51,6 +54,7 @@ local Template = require(script.Parent.DataService.Template)
 type DataServiceModule = typeof(require(script.Parent.DataService))
 type VehicleServiceModule = typeof(require(script.Parent.VehicleService))
 type EnergyServiceModule = typeof(require(script.Parent.EnergyService))
+type CustomizationServiceModule = typeof(require(script.Parent.CustomizationService))
 
 -- What the function remotes answer.
 export type Reply = { ok: boolean, message: string }
@@ -65,6 +69,7 @@ local GarageService = {}
 local DataService: DataServiceModule? = nil
 local VehicleService: VehicleServiceModule? = nil
 local EnergyService: EnergyServiceModule? = nil
+local CustomizationService: CustomizationServiceModule? = nil
 
 -- Pure helpers ----------------------------------------------------------------------------------------------
 
@@ -346,6 +351,11 @@ function GarageService.spawnOwned(player: Player, uid: string): Reply
 	if energyService ~= nil then
 		energyService.attach(model, vehicle.energy) -- `vehicle` is the live entry, so this is the level just saved
 	end
+	-- Phase 7: the car comes out wearing its saved look (paint, wrap, wheels, extras, filtered plate...).
+	local customizationService = CustomizationService
+	if customizationService ~= nil then
+		customizationService.applySaved(player, model, vehicle)
+	end
 	if Garage.seatDriver then
 		vehicleService.seatDriver(player)
 	end
@@ -472,6 +482,7 @@ function GarageService:Init()
 	DataService = require(script.Parent.DataService)
 	VehicleService = require(script.Parent.VehicleService)
 	EnergyService = require(script.Parent.EnergyService)
+	CustomizationService = require(script.Parent.CustomizationService)
 end
 
 function GarageService:Start()

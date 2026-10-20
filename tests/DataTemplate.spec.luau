@@ -1,5 +1,6 @@
 --!strict
--- A fresh PlayerData profile (PLAN.md §4 and §6; docs/phase-3-contracts.md "Player data").
+-- A fresh PlayerData profile (PLAN.md §4 and §6; docs/phase-3-contracts.md "Player data"; schema 5 owned-car
+-- look fields, docs/phase-7-contracts.md "Schema v5").
 -- Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -39,7 +40,7 @@ local SHAPE: { [string]: any } = {
 	boosts = "table",
 }
 
--- Every field a new owned car (Types.OwnedVehicle, schema version 4) starts with. The optional fields (designUid,
+-- Every field a new owned car (Types.OwnedVehicle, schema version 5) starts with. The optional fields (designUid,
 -- wrap, plateText, mods, serial) start unset.
 local OWNED_VEHICLE_SHAPE: { [string]: any } = {
 	uid = "string",
@@ -54,6 +55,9 @@ local OWNED_VEHICLE_SHAPE: { [string]: any } = {
 	favorite = "boolean",
 	paid = "number",
 	energy = "number",
+	caliper = "string", -- v5
+	extras = "table", -- v5
+	plateFormat = "string", -- v5
 }
 
 -- Checks `value` against `shape`, adding one line per mismatch (with its path) to `problems`.
@@ -166,6 +170,18 @@ return function(t: Harness.Api)
 			local car = Template.ownedVehicle("car-3", "ohm_spark", "standard", 35000, JOIN_TIME)
 			t.expect(car.energy).toBe(1)
 			t.expect(car.energy).toBe(Data.defaults.vehicleEnergy)
+		end)
+
+		t.it("makes a new owned car with the stock caliper and plate format, no extras and no plate text", function()
+			local car = Template.ownedVehicle("car-4", "ohm_spark", "standard", 35000, JOIN_TIME)
+			t.expect(car.caliper).toBe(Data.defaults.vehicleLook.caliper)
+			t.expect(car.plateFormat).toBe(Data.defaults.vehicleLook.plateFormat)
+			t.expect(car.extras).toEqual({})
+			t.expect(car.plateText).toBe(nil)
+			t.expect(car.wrap).toBe(nil)
+			-- Two cars never share an extras list.
+			local other = Template.ownedVehicle("car-5", "ohm_spark", "standard", 35000, JOIN_TIME)
+			t.expect(car.extras == other.extras).toBe(false)
 		end)
 
 		t.it("records a free car as paid 0", function()

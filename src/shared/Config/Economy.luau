@@ -121,6 +121,8 @@ local Economy = {
 			upgrade = "Shop", -- an upgrade trim
 			sell = "Shop", -- selling a car back (a source)
 			refund = "Shop", -- a failed purchase's charge given back, so it nets out against the shop sink
+			-- Phase 7 Wrap & Tint shop (Config/Customization.shop.economyReason).
+			customize = "Shop",
 		} :: { [string]: string },
 	},
 

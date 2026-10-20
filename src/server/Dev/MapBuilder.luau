@@ -24,7 +24,8 @@
 --   Landmarks                    the big buildings MapLayout.landmarks names (Models, Atomic)
 --   Streetlights                 posts along streets and arterials; only some of them emit light
 --   Locations                    one part per MapLayout location (tag, attributes, DisplayName, Zone), with
---                                small props parented to it (charger posts, pumps, signs, gate gantries...)
+--                                small props parented to it (charger posts, pumps, signs, gate gantries, the
+--                                Wrap & Tint shops' garage doors...)
 --   Dealership/<brandId>         Phase 4: a low platform per MapLayout.dealership pad (tag DealershipPad,
 --                                attributes BrandId and Index) and the section's brand sign behind its pads
 --   UsedLot                      Phase 4: a numbered platform per MapLayout.usedLot pad (tag UsedLotPad,
@@ -340,6 +341,7 @@ local TUNING = {
 		FlightZone = Color3.fromRGB(120, 200, 240),
 		NoFlyZone = Color3.fromRGB(240, 90, 90),
 		DragStripGate = Color3.fromRGB(240, 240, 240),
+		CustomShop = Color3.fromRGB(150, 110, 230),
 	} :: { [string]: Color3 },
 	defaultTagColor = Color3.fromRGB(200, 200, 200),
 	markingInset = 0.6, -- painted outline inset inside a pad's footprint
@@ -361,6 +363,12 @@ local TUNING = {
 	gateBeamHeight = 1.6,
 	gatePostGap = 2, -- posts stand at least this far outside the road
 	gatePostSearch = 40, -- ...and slide out up to this far looking for clear ground
+	-- A Wrap & Tint shop (CustomShop, Phase 7): a closed roll-up garage door behind its bay, between two posts,
+	-- under a header in the shop's tag colour.
+	garageDoor = Vector3.new(16, 10, 0.6),
+	garageDoorPost = Vector3.new(1.6, 12, 1.6),
+	garageDoorHeader = 2.5, -- the header's height; it spans the door and both posts
+	garageDoorColor = Color3.fromRGB(196, 198, 200),
 	propColor = Color3.fromRGB(70, 74, 80),
 	railPropColor = Color3.fromRGB(190, 186, 176),
 
@@ -2344,6 +2352,10 @@ local function addProps(ctx: Ctx, location: LocationData, frame: CFrame)
 	local back = size.Z / 2 + TUNING.propGap
 	local look = flat(frame.LookVector).Unit
 	local count = 0
+	local function propFootprint(offset: Vector3, propSize: Vector3): Rect
+		local cframe = frame * CFrame.new(offset)
+		return { c = flat(cframe.Position), u = look, ha = propSize.Z / 2, hc = propSize.X / 2 }
+	end
 	local function prop(
 		offset: Vector3,
 		propSize: Vector3,
@@ -2353,7 +2365,7 @@ local function addProps(ctx: Ctx, location: LocationData, frame: CFrame)
 		check: boolean
 	): PartSpec?
 		local cframe = frame * CFrame.new(offset)
-		local footprint: Rect = { c = flat(cframe.Position), u = look, ha = propSize.Z / 2, hc = propSize.X / 2 }
+		local footprint = propFootprint(offset, propSize)
 		if check and gridHits(ctx.grid, footprint, ROAD_KINDS, 0) then
 			note(ctx, `location {location.id}: a prop would stand on a road, left out`)
 			return nil
@@ -2387,6 +2399,34 @@ local function addProps(ctx: Ctx, location: LocationData, frame: CFrame)
 			true
 		)
 	end
+	-- A closed garage door behind the pad, facing the bay: two posts (checked against roads; no door unless both
+	-- stand clear), the door panel between them and a header across their tops.
+	local function garageDoor()
+		local door, post = TUNING.garageDoor, TUNING.garageDoorPost
+		local spread = door.X / 2 + post.X / 2
+		local z = back + post.Z / 2
+		-- Check both posts before building either, so a blocked side never leaves a lone post behind.
+		for _, side in { -1, 1 } do
+			local footprint = propFootprint(Vector3.new(side * spread, floor + post.Y / 2, z), post)
+			if gridHits(ctx.grid, footprint, ROAD_KINDS, 0) then
+				note(ctx, `location {location.id}: a garage door would stand on a road, left out`)
+				return
+			end
+		end
+		for _, side in { -1, 1 } do
+			standing(post, side * spread, true)
+		end
+		prop(Vector3.new(0, floor + door.Y / 2, z), door, TUNING.garageDoorColor, Enum.Material.Metal, true, false)
+		local header = Vector3.new(door.X + 2 * post.X, TUNING.garageDoorHeader, post.Z)
+		prop(
+			Vector3.new(0, floor + post.Y + header.Y / 2, z),
+			header,
+			TUNING.tagColors[location.tag] or TUNING.defaultTagColor,
+			Enum.Material.SmoothPlastic,
+			true,
+			false
+		)
+	end
 	local function sign()
 		local post, board = TUNING.signPost, TUNING.signBoard
 		local x = size.X / 2 - board.X / 2
@@ -2412,6 +2452,9 @@ local function addProps(ctx: Ctx, location: LocationData, frame: CFrame)
 	elseif tag == "Dealership" or tag == "UsedLot" or tag == "DesignStudio" or tag == "JobDepot" then
 		marking()
 		sign()
+	elseif tag == "CustomShop" then
+		marking()
+		garageDoor()
 	elseif tag == "RideshareHotspot" then
 		marking()
 		standing(TUNING.hotspotPost, size.X / 2 - TUNING.hotspotPost.X, false)

@@ -1,7 +1,7 @@
 --!strict
 -- PlayerData migrations (CLAUDE.md hard rule 7; PLAN.md Phase 3 acceptance: migration specs pass; Phase 4 adds
 -- schema version 3, docs/phase-4-contracts.md "Data changes"; Phase 5 adds version 4, docs/phase-5-contracts.md
--- "Schema v4"). Pure logic: runs in Edit mode.
+-- "Schema v4"; Phase 7 adds version 5, docs/phase-7-contracts.md "Schema v5"). Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -74,6 +74,22 @@ local function v3Save(): { [string]: any }
 	return data
 end
 
+-- A version 4 save as the Phase 5 template wrote it: every car has `energy`, none has `caliper`, `extras` or
+-- `plateFormat`. One car already wears a wrap and custom plate text from before the shop opened.
+local function v4Save(): { [string]: any }
+	local data = v3Save()
+	data.version = 4
+	for _, car in data.vehicles do
+		car.energy = 1
+	end
+	data.vehicles[1].energy = 0.35
+	data.vehicles[2].wrap = "old_wrap"
+	return data
+end
+
+-- The v5 look fields, for the "only these were added" checks.
+local V5_FIELDS = { caliper = true, extras = true, plateFormat = true }
+
 local function keysOf(t: { [any]: any }): { [string]: boolean }
 	local keys = {}
 	for key in t do
@@ -105,8 +121,8 @@ end
 
 return function(t: Harness.Api)
 	t.describe("Migrations", function()
-		t.it("is at schema version 4", function()
-			t.expect(Data.schemaVersion).toBe(4)
+		t.it("is at schema version 5", function()
+			t.expect(Data.schemaVersion).toBe(5)
 		end)
 
 		t.it("has a step from every older version up to the schema version", function()
@@ -197,7 +213,7 @@ return function(t: Harness.Api)
 		t.it("3 -> 4: every owned car gains a full energy level", function()
 			local migrated, fromVersion = Migrations.run(v3Save())
 			t.expect(fromVersion).toBe(3)
-			t.expect(migrated.version).toBe(4)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(#migrated.vehicles).toBe(6)
 			for _, car in migrated.vehicles do
 				t.expect(car.energy).toBe(1)
@@ -208,10 +224,10 @@ return function(t: Harness.Api)
 			t.expect(carIn(migrated, "car-spark").paid).toBe(35000)
 		end)
 
-		t.it("3 -> 4: older saves reach version 4 with full cars too", function()
+		t.it("3 -> 4: older saves reach the latest version with full cars too", function()
 			for _, makeSave in { v1Save, v2Save } do
 				local migrated = Migrations.run(makeSave())
-				t.expect(migrated.version).toBe(4)
+				t.expect(migrated.version).toBe(Data.schemaVersion)
 				for _, car in migrated.vehicles do
 					t.expect(car.energy).toBe(1)
 				end
@@ -246,7 +262,7 @@ return function(t: Harness.Api)
 			local missing = v3Save()
 			missing.vehicles = nil
 			local migrated = Migrations.run(missing)
-			t.expect(migrated.version).toBe(4)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(migrated.vehicles).toBe(nil) -- left for Reconcile to fill from the template
 
 			local damaged = v3Save()
@@ -265,8 +281,108 @@ return function(t: Harness.Api)
 			t.expect(save).toEqual(once)
 		end)
 
-		t.it("never drops a field and keeps every player-owned value", function()
+		t.it("4 -> 5: every owned car gains the stock caliper, plate format and no extras", function()
+			local migrated, fromVersion = Migrations.run(v4Save())
+			t.expect(fromVersion).toBe(4)
+			t.expect(migrated.version).toBe(5)
+			t.expect(#migrated.vehicles).toBe(6)
+			for _, car in migrated.vehicles do
+				t.expect(car.caliper).toBe(Data.defaults.vehicleLook.caliper)
+				t.expect(car.plateFormat).toBe(Data.defaults.vehicleLook.plateFormat)
+				t.expect(car.extras).toEqual({})
+			end
+			-- Every car gets its own extras list, never a shared one.
+			t.expect(migrated.vehicles[1].extras == migrated.vehicles[2].extras).toBe(false)
+		end)
+
+		t.it("4 -> 5: moves the old white default to the factory paint and keeps any other paint", function()
+			local save = v4Save()
+			save.vehicles[3].paint = "cobalt"
+			local migrated = Migrations.run(save)
+			t.expect(carIn(migrated, "car-spark").paint).toBe(Data.defaults.vehicleLook.paint)
+			t.expect(carIn(migrated, "car-spark").paint).toBe("factory")
+			t.expect(carIn(migrated, "car-arc").paint).toBe("cobalt")
+		end)
+
+		t.it("4 -> 5: leaves the rest of the existing look, energy and plate text alone", function()
+			local migrated = Migrations.run(v4Save())
+			local spark = carIn(migrated, "car-spark")
+			t.expect(spark.finish).toBe("gloss")
+			t.expect(spark.wheels).toBe("stock")
+			t.expect(spark.wrap).toBe("old_wrap")
+			t.expect(spark.tint).toBe(0.2)
+			t.expect(spark.plateText).toBe("VOLT 1") -- raw, as typed: filtered whenever it is shown
+			t.expect(spark.favorite).toBe(true)
+			t.expect(spark.paid).toBe(35000)
+			t.expect(carIn(migrated, "car-starter").energy).toBe(0.35)
+		end)
+
+		t.it("4 -> 5: older saves reach version 5 with the new fields too", function()
 			for _, makeSave in { v1Save, v2Save, v3Save } do
+				local migrated = Migrations.run(makeSave())
+				t.expect(migrated.version).toBe(5)
+				for _, car in migrated.vehicles do
+					t.expect(car.caliper).toBe(Data.defaults.vehicleLook.caliper)
+					t.expect(car.plateFormat).toBe(Data.defaults.vehicleLook.plateFormat)
+					t.expect(car.extras).toEqual({})
+					t.expect(car.energy).toBe(1)
+				end
+			end
+		end)
+
+		t.it("4 -> 5: keeps values a car already has and replaces ones of the wrong type", function()
+			local save = v4Save()
+			save.vehicles[1].caliper = "red"
+			save.vehicles[1].extras = { "spoiler" }
+			save.vehicles[1].plateFormat = "classic"
+			save.vehicles[2].caliper = 7 :: any
+			save.vehicles[2].extras = "spoiler" :: any
+			save.vehicles[2].plateFormat = false :: any
+			local migrated = Migrations.run(save)
+			local starter = carIn(migrated, "car-starter")
+			t.expect(starter.caliper).toBe("red")
+			t.expect(starter.extras).toEqual({ "spoiler" })
+			t.expect(starter.plateFormat).toBe("classic")
+			local spark = carIn(migrated, "car-spark")
+			t.expect(spark.caliper).toBe(Data.defaults.vehicleLook.caliper)
+			t.expect(spark.extras).toEqual({})
+			t.expect(spark.plateFormat).toBe(Data.defaults.vehicleLook.plateFormat)
+		end)
+
+		t.it("4 -> 5: survives damaged vehicle lists and entries", function()
+			local missing = v4Save()
+			missing.vehicles = nil
+			local migrated = Migrations.run(missing)
+			t.expect(migrated.version).toBe(5)
+			t.expect(migrated.vehicles).toBe(nil) -- left for Reconcile to fill from the template
+
+			local damaged = v4Save()
+			damaged.vehicles = { "wreck", { uid = "car-bare" } } :: { any }
+			local fixed = Migrations.run(damaged)
+			t.expect(fixed.vehicles[1]).toBe("wreck")
+			t.expect(carIn(fixed, "car-bare").caliper).toBe(Data.defaults.vehicleLook.caliper)
+			t.expect(carIn(fixed, "car-bare").extras).toEqual({})
+		end)
+
+		t.it("running the 4 -> 5 step twice changes nothing the second time", function()
+			local save = v4Save()
+			save.vehicles[3].extras = { "roof_rack" }
+			Migrations.steps[4](save)
+			local once = deepCopy(save)
+			Migrations.steps[4](save)
+			t.expect(save).toEqual(once)
+		end)
+
+		t.it("the stock look the 4 -> 5 step gives is the one a new car gets", function()
+			local car = Template.ownedVehicle("car-new", "ohm_spark", "standard", 30000, JOIN_TIME)
+			local migrated = Migrations.run(v4Save())
+			t.expect(migrated.vehicles[1].caliper).toBe(car.caliper)
+			t.expect(migrated.vehicles[1].plateFormat).toBe(car.plateFormat)
+			t.expect(migrated.vehicles[1].extras).toEqual(car.extras)
+		end)
+
+		t.it("never drops a field and keeps every player-owned value", function()
+			for _, makeSave in { v1Save, v2Save, v3Save, v4Save } do
 				local before = makeSave()
 				local snapshot = deepCopy(before)
 				local migrated = Migrations.run(before)
@@ -284,10 +400,18 @@ return function(t: Harness.Api)
 				for index, oldCarValue in snapshot.vehicles do
 					local newCar = migrated.vehicles[index]
 					for field, value in oldCarValue do
-						t.expect(newCar[field]).toEqual(value)
+						if field == "paint" and value == Data.defaults.vehicleLook.oldDefaultPaint then
+							-- The one value 4 -> 5 rewrites: the pre-shop "as built" default.
+							t.expect(newCar[field]).toBe(Data.defaults.vehicleLook.paint)
+						else
+							t.expect(newCar[field]).toEqual(value)
+						end
 					end
 					for field in newCar do
-						local isNew = field == "favorite" or field == "paid" or field == "energy"
+						local isNew = field == "favorite"
+							or field == "paid"
+							or field == "energy"
+							or V5_FIELDS[field] == true
 						t.expect(oldCarValue[field] ~= nil or isNew).toBe(true)
 					end
 				end

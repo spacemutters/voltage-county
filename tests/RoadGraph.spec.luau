@@ -44,6 +44,7 @@ local TAG_ATTRIBUTES: { [string]: { string } } = {
 	FlightZone = {},
 	NoFlyZone = {},
 	DragStripGate = { "index" },
+	CustomShop = {},
 }
 -- Volumes and timing gates may span roads; every other location is a pad beside one.
 local SPANS_ROADS: { [string]: boolean } = { FlightZone = true, NoFlyZone = true, DragStripGate = true }

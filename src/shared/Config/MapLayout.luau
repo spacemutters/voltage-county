@@ -19,7 +19,9 @@
 --
 -- Tags and attributes (PLAN.md §5): ChargerStall { kW, plaza }, TruckCharger { kW }, FuelPump { rate: percent
 -- of the tank per second }, JobDepot { jobType: "delivery" | "freight" | "towing" }, DragStripGate { index:
--- 1 = start line, 2 = 330 ft, 3 = 1/8 mile, 4 = 1/4 mile (finish) }. A HousePlot's display name is its address
+-- 1 = start line, 2 = 330 ft, 3 = 1/8 mile, 4 = 1/4 mile (finish) }, CustomShop (Phase 7, the Wrap & Tint shop:
+-- its footprint is the bay a car must stand in to customize; MapBuilder puts a garage door behind it and
+-- Services/CustomizationService adds the "Customize" prompt). A HousePlot's display name is its address
 -- (delivery drops use it too). A location with gps = true is listed as a GPS destination. One location per
 -- group of pads (a plaza's first stall, a station's first pump) carries the group's GPS entry.
 --
@@ -181,6 +183,7 @@ local PUMP = v3(14, 1, 24) -- one fuel pump's lane
 local TRUCK_STALL = v3(24, 1, 40) -- one truck charging bay
 local HOTSPOT = v3(30, 1, 16) -- a kerbside pickup spot
 local HOUSE = v3(50, 1, 40) -- a house plot
+local CUSTOM_SHOP = v3(24, 1, 32) -- a Wrap & Tint shop's bay: one car with room to walk round it
 
 -- Attributes shared by a group of locations (frozen: one table serves them all).
 local CEDAR_PLAZA_250KW = table.freeze({ kW = 250, plaza = "cedar_bend_plaza" })
@@ -328,6 +331,8 @@ local locations: { Location } = {
 	cedarBend("cb_hotspot_theater", "RideshareHotspot", "Theater Row", v3(450, 0, -567), 0, HOTSPOT),
 	cedarBend("cb_hotspot_market", "RideshareHotspot", "Market Street", v3(-567, 0, -450), 90, HOTSPOT),
 	cedarBend("cb_hotspot_courthouse", "RideshareHotspot", "Courthouse", v3(-48, 0, 450), -90, HOTSPOT),
+	-- Phase 7: the Wrap & Tint shop, a short drive west of the used lot along the same street, facing it.
+	cedarBend("cb_custom_shop", "CustomShop", "Cedar Bend Wrap & Tint", v3(150, 0, 342), 0, CUSTOM_SHOP, nil, true),
 	-- Riverside: the fuel station, a rideshare hotspot, and house plots round the cul-de-sacs and along
 	-- Sycamore Lane and Elm Street (delivery drops and, later, claimable homes).
 	riverside("rv_fuel_1", "FuelPump", "Riverside Fuel", v3(-2430, 0, 52), 0, PUMP, FUEL_PUMP, true),
@@ -421,6 +426,8 @@ local locations: { Location } = {
 		true
 	),
 	thePlant("pl_hotspot_gate", "RideshareHotspot", "Plant Gate", v3(1750, 0, -48), 180, HOTSPOT),
+	-- Phase 7: the Plant's Wrap & Tint shop, on the works road east of the Design Studio, facing it.
+	thePlant("pl_custom_shop", "CustomShop", "Plant Wrap & Tint", v3(2500, 0, 56), 0, CUSTOM_SHOP, nil, true),
 	-- Mesa Test Site: drag-strip gates, the flight field, the no-fly zone round Mesa Control and
 	-- its chargers, and the Mesa Summit meet spot on top of Big Mesa.
 	mesaTestSite(

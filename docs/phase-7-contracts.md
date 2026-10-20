@@ -50,10 +50,14 @@ defaults). Bump `Config/Data.schemaVersion`; update Types, Migrations, Template 
 ### Client: `Controllers/CustomizationController.luau`, `UI/Customize/*.luau`
 A Wrap & Tint shop at a new `CustomShop` location (MapLayout: add one in Cedar Bend and one at The Plant; tag
 `CustomShop`; MapBuilder builds a garage-door prop; the commerce/map owner of Phase 4 already did pads — follow
-the same pattern). Opening the shop (ProximityPrompt) while in an owned car shows: category tabs (Paint, Finish,
+the same pattern). Opening the shop while in an owned car shows: category tabs (Paint, Finish,
 Wrap, Wheels, Stance, Tint, Calipers, Extras, Plate), options as swatches/cards with prices, a **live preview on
 the player's own car on the client only** (Appearance.apply on the local model, reverted on cancel), a running
 total, and Buy. Mobile-first; Theme only.
+- Opening (amended after review): Phase 3's DriveController hides every ProximityPrompt while the player is seated,
+  so a seated driver opens the shop with the client's "Customize" button (and E / gamepad A) that shows while their
+  own car stands in a `CustomShop` bay. The bay's server "Customize" prompt stays for players on foot and tells
+  them to drive one of their cars in; it never opens the panel by itself.
 
 ## Light shows (owner: light-show helper)
 

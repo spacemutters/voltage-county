@@ -27,7 +27,7 @@ local Garage = {
 
 	-- How a newly bought or claimed car looks until the player customizes it (Phase 7).
 	defaults = {
-		paint = "white", -- palette id
+		paint = "factory", -- palette id (Config/Customization): the brand's own color
 		finish = "gloss", -- "gloss" | "matte" | "metallic"
 		wheels = "stock",
 		rideHeight = 0, -- -1..1

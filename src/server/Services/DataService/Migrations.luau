@@ -78,6 +78,37 @@ Migrations.steps = {
 			end
 		end
 	end,
+
+	-- 4 -> 5 (Phase 7, the Wrap & Tint shop): every owned car gains `caliper` and `plateFormat` (the stock look,
+	-- Config/Data.defaults.vehicleLook) and `extras`, an empty list of kit extras. A car that already has a value
+	-- of the right type keeps it; one of the wrong type is replaced by the default. Paint "white" becomes
+	-- "factory" (Config/Customization): before the shop nobody could choose a paint, so "white" only ever meant
+	-- "as built", and keeping it would repaint every brand-colored car white. Every other look field (finish,
+	-- wrap, wheels, rideHeight, tint, plateText) is left exactly as it was. A save with no vehicles list is left
+	-- for Reconcile to fill in.
+	[4] = function(data: { [string]: any })
+		local vehicles = data.vehicles
+		if type(vehicles) ~= "table" then
+			return
+		end
+		local look = Data.defaults.vehicleLook
+		for _, vehicle in vehicles do
+			if type(vehicle) == "table" then
+				if type(vehicle.caliper) ~= "string" then
+					vehicle.caliper = look.caliper
+				end
+				if type(vehicle.extras) ~= "table" then
+					vehicle.extras = {}
+				end
+				if type(vehicle.plateFormat) ~= "string" then
+					vehicle.plateFormat = look.plateFormat
+				end
+				if vehicle.paint == look.oldDefaultPaint then
+					vehicle.paint = look.paint
+				end
+			end
+		end
+	end,
 } :: { [number]: Step }
 
 -- The version a save claims (a missing field counts as unversionedVersion); nil if the field is unusable.
