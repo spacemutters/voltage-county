@@ -342,6 +342,40 @@ local REMOTES: { [string]: Spec } = {
 		burst = 0,
 		perSecond = 0,
 	},
+	-- Phase 10: thrusters (docs/phase-10-contracts.md). The server checks ownership, trim, cooldown and zone; the
+	-- owner's client applies the push. Returns { ok, message, startsAt?, endsAt?, readyAt? }.
+	UseAbility = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ ability = Check.oneOf({ "boostHop", "flight" }) }),
+		burst = 3,
+		perSecond = 1,
+	},
+	-- Server tells a driver about their drag-strip run: { state, time?, best?, rank?, message? }.
+	DragStripUpdate = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- This week's drag-strip board: { week, entries = { { name, time } }, best?, rank? }.
+	GetDragLeaderboard = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Studio only: clear the caller's car's ability cooldowns (AbilityService refuses it outside Studio), for the
+	-- 50-run hop and flight tests.
+	DevAbility = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ action = Check.oneOf({ "resetCooldowns" }) }),
+		burst = 5,
+		perSecond = 2,
+	},
 	-- Studio only: pretend the caller was away for `hours` (FleetService refuses it outside Studio), for the
 	-- offline-earnings check in the fleet tests.
 	DevFleet = {
