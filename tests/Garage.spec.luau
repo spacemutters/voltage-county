@@ -218,6 +218,7 @@ return function(t: Harness.Api)
 				"cash",
 				"credits",
 				"customSlots",
+				"designs",
 				"fleet",
 				"garageSlots",
 				"settings",
@@ -227,7 +228,8 @@ return function(t: Harness.Api)
 			t.expect(snapshot.fleet).toEqual(ProfileSyncService.snapshotFleet(data.fleet, false))
 			t.expect(snapshot.cash).toBe(1234)
 			t.expect(snapshot.starterClaimed).toBe(true)
-			t.expect(snapshot.credits).toEqual({ balance = 7 })
+			t.expect(snapshot.credits).toEqual({ balance = 7, freeDesignUsed = false })
+			t.expect(snapshot.designs).toEqual({})
 			t.expect(snapshot.settings).toEqual(Data.defaults.settings)
 			t.expect(snapshot.vehicles).toEqual({
 				{

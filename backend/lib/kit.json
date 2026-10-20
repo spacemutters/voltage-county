@@ -1,0 +1,146 @@
+{
+  "kitVersion": 1,
+  "note": "Single source of truth for the AI Car Designer, read by the game (Rojo serves it as a ModuleScript) and the backend (backend/lib/kit.json, copied by npm run sync-kit). docs/phase-11-contracts.md explains every field. Every id here is original; no real carmaker or model names.",
+
+  "limits": {
+    "promptChars": 200,
+    "modPromptChars": 200,
+    "name": 24,
+    "tagline": 60,
+    "summary": 60,
+    "meshPrompt": 300,
+    "accessoryPrompt": 120,
+    "refusal": 160,
+    "maxExtras": 4,
+    "specBytes": 2048,
+    "minFilteredChars": 8
+  },
+
+  "ranges": {
+    "body": { "min": 0, "max": 1 },
+    "rideHeight": { "min": -1, "max": 1 },
+    "wheelSize": { "min": 0, "max": 1 }
+  },
+
+  "proportions": {
+    "length": { "min": 0.92, "max": 1.08, "note": "scales length and wheelbase" },
+    "height": { "min": 0.92, "max": 1.08, "note": "scales height and chassis height" },
+    "roofline": { "min": 0.85, "max": 1.12, "note": "greenhouse (cabin) height; low = sleek, high = upright" },
+    "noseSlope": { "min": 0, "max": 1, "note": "0 = blunt upright nose, 1 = long sloped hood" },
+    "flare": { "min": 1, "max": 1.06, "note": "scales width and track (wide arches)" },
+    "rideHeight": { "min": -0.1, "max": 0.35, "note": "studs added to the template ride height at stance.rideHeight -1..1 (the lowest stance stays above the dev track's 0.3-stud humps)" },
+    "wheelSize": { "min": 0.92, "max": 1.12, "note": "scales wheel radius at stance.wheelSize 0..1" }
+  },
+
+  "classes": {
+    "economy": { "templates": ["hatch", "sedan", "wagon"], "energy": ["battery", "fuel"] },
+    "sedan": { "templates": ["sedan", "hatch", "wagon", "coupe"], "energy": ["battery", "fuel"] },
+    "minivan": { "templates": ["minivan"], "energy": ["battery", "fuel"] },
+    "van": { "templates": ["van"], "energy": ["battery", "fuel"] },
+    "suv": { "templates": ["suv", "offroad"], "energy": ["battery", "fuel"] },
+    "pickup": { "templates": ["pickup"], "energy": ["battery", "fuel"] },
+    "offroad": { "templates": ["offroad", "suv", "pickup"], "energy": ["battery", "fuel"] },
+    "sports": { "templates": ["coupe", "hatch"], "energy": ["battery", "fuel"] },
+    "muscle": { "templates": ["fastback", "coupe"], "energy": ["battery", "fuel"] },
+    "luxury": { "templates": ["sedan", "coupe", "suv"], "energy": ["battery", "fuel"] },
+    "exotic": { "templates": ["wedge"], "energy": ["battery", "fuel"], "requiresOwnedClass": "exotic" }
+  },
+
+  "surpriseClasses": ["economy", "sedan", "suv", "pickup", "sports", "muscle", "luxury", "offroad"],
+
+  "templates": {
+    "hatch": {
+      "style": "hatch",
+      "seats": 4,
+      "geometry": { "length": 12.8, "width": 5.9, "height": 4.6, "wheelbase": 8.3, "track": 5, "wheelRadius": 1.1, "wheelWidth": 0.8, "rideHeight": 0.65, "chassisHeight": 2.3 }
+    },
+    "sedan": {
+      "style": "sedan",
+      "seats": 5,
+      "geometry": { "length": 14.5, "width": 6, "height": 4.7, "wheelbase": 9.2, "track": 5, "wheelRadius": 1.2, "wheelWidth": 0.8, "rideHeight": 0.7, "chassisHeight": 2.4 }
+    },
+    "wagon": {
+      "style": "wagon",
+      "seats": 5,
+      "geometry": { "length": 15.5, "width": 6, "height": 4.9, "wheelbase": 9.8, "track": 5, "wheelRadius": 1.15, "wheelWidth": 0.8, "rideHeight": 0.7, "chassisHeight": 2.4 }
+    },
+    "coupe": {
+      "style": "coupe",
+      "seats": 2,
+      "geometry": { "length": 14, "width": 6.2, "height": 4.1, "wheelbase": 8.8, "track": 5.3, "wheelRadius": 1.2, "wheelWidth": 0.95, "rideHeight": 0.5, "chassisHeight": 2 }
+    },
+    "fastback": {
+      "style": "muscle",
+      "seats": 4,
+      "geometry": { "length": 16, "width": 6.6, "height": 4.4, "wheelbase": 10.2, "track": 5.6, "wheelRadius": 1.3, "wheelWidth": 1, "rideHeight": 0.6, "chassisHeight": 2.2 }
+    },
+    "suv": {
+      "style": "suv",
+      "seats": 5,
+      "geometry": { "length": 15.5, "width": 6.5, "height": 5.5, "wheelbase": 9.6, "track": 5.4, "wheelRadius": 1.35, "wheelWidth": 0.9, "rideHeight": 0.9, "chassisHeight": 2.8 }
+    },
+    "minivan": {
+      "style": "minivan",
+      "seats": 7,
+      "geometry": { "length": 16, "width": 6.6, "height": 6, "wheelbase": 10.4, "track": 5.5, "wheelRadius": 1.25, "wheelWidth": 0.85, "rideHeight": 0.8, "chassisHeight": 2.8 }
+    },
+    "van": {
+      "style": "van",
+      "seats": 2,
+      "geometry": { "length": 17, "width": 7, "height": 8, "wheelbase": 11, "track": 6, "wheelRadius": 1.3, "wheelWidth": 0.9, "rideHeight": 0.9, "chassisHeight": 3 }
+    },
+    "pickup": {
+      "style": "pickup",
+      "seats": 5,
+      "geometry": { "length": 18, "width": 7, "height": 6.2, "wheelbase": 11.5, "track": 6, "wheelRadius": 1.6, "wheelWidth": 1.1, "rideHeight": 1.3, "chassisHeight": 3 }
+    },
+    "offroad": {
+      "style": "offroad",
+      "seats": 4,
+      "geometry": { "length": 15, "width": 6.8, "height": 6.4, "wheelbase": 9.6, "track": 5.8, "wheelRadius": 1.6, "wheelWidth": 1.1, "rideHeight": 1.5, "chassisHeight": 2.8 }
+    },
+    "wedge": {
+      "style": "exotic",
+      "seats": 2,
+      "geometry": { "length": 14.8, "width": 6.8, "height": 3.7, "wheelbase": 9, "track": 5.8, "wheelRadius": 1.25, "wheelWidth": 1.05, "rideHeight": 0.45, "chassisHeight": 1.8 }
+    }
+  },
+
+  "parts": {
+    "frontBumper": ["clean", "sport", "rugged", "aero"],
+    "rearBumper": ["clean", "sport", "rugged", "diffuser"],
+    "spoiler": ["none", "lip", "ducktail", "wing"],
+    "lights": ["slim", "round", "bar", "split"],
+    "wheels": ["stock", "five_star", "mesh", "turbine", "deep_dish", "steel", "aero", "trail"]
+  },
+
+  "extras": {
+    "lip_spoiler": { "mount": "Mount_Spoiler" },
+    "wing_spoiler": { "mount": "Mount_Spoiler" },
+    "roof_rack": { "mount": "Mount_Roof" },
+    "roof_box": { "mount": "Mount_Roof" },
+    "light_bar": { "mount": "Mount_Roof" },
+    "bull_bar": { "mount": "Mount_FrontBumper" },
+    "front_splitter": { "mount": "Mount_FrontBumper" },
+    "rear_diffuser": { "mount": "Mount_RearBumper" }
+  },
+
+  "finishes": ["gloss", "matte", "metallic"],
+  "stripes": ["none", "center", "side"],
+  "energy": ["battery", "fuel"],
+
+  "personalities": {
+    "efficient": { "acceleration": 0.2, "topSpeed": 0.3, "handling": 0.4, "range": 0.95 },
+    "balanced": { "acceleration": 0.5, "topSpeed": 0.5, "handling": 0.5, "range": 0.6 },
+    "torquey": { "acceleration": 0.85, "topSpeed": 0.4, "handling": 0.35, "range": 0.4 },
+    "track": { "acceleration": 0.75, "topSpeed": 0.8, "handling": 0.9, "range": 0.3 }
+  },
+  "statNote": "Each personality value is a position inside the class band (0 = the slow end, 1 = the quick end), multiplied by bandCeiling so a design never matches the band's best catalog trims. Text can never move stats: they come only from class + personality.",
+  "bandCeiling": 0.85,
+
+  "mod": {
+    "keep": "keep",
+    "catalogAllowed": ["paint", "stance", "parts.wheels", "extras"],
+    "kitAllowed": ["body", "parts", "paint", "stance", "extras"]
+  }
+}

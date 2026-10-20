@@ -15,6 +15,20 @@
 -- Server-authoritative (CLAUDE.md hard rule 1): the driver's client simulates its car, but the server never
 -- takes a position from it. AntiExploitService watches where the car really goes and calls resetCar when a
 -- move is impossible. No polling: everything here runs on prompts, seat changes and one task.delay per car.
+--
+-- Player designs and AI mods (Phase 11, docs/phase-11-contracts.md "Designs in the catalog ... and spawning"):
+--   designs  spawn(player, "custom", ..., at, { design = { uid, spec, hidden } }) builds the car from its saved
+--            spec with Vehicle/SpecBuilder (once per design per server, kept in ServerStorage under
+--            Config/Designer.modelsFolder), publishes its synthetic catalog entry (Catalog.publishDesign: id
+--            "custom:<designUid>", trim "design", stats from SpecBuilder.stats) so every Catalog lookup works
+--            unchanged, and marks the model VehicleId = "custom:<designUid>", Trim = "design", DesignUid. A design
+--            a moderator hid builds from its plain look (DesignerService/Validate.plain: same class, template and
+--            stats). In the session a design was made, setGeneratedLook may hand over its generated body
+--            (Vehicle/GeneratedAdapter), which unmodded, unhidden designs wear instead of the kit build.
+--   mods     spawn(..., { mods = savedMods }) applies the car's saved mod spec with Vehicle/ModBuilder to the fresh
+--            copy (kind "kit" for designs, "catalog" for catalog cars), re-validated first; mods a moderator hid
+--            (mods.hidden) are skipped, so the car shows its stock look. A mod that fails to apply is logged and
+--            the car comes out without it.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,10 +38,15 @@ local Workspace = game:GetService("Workspace")
 
 local AntiExploit = require(ReplicatedStorage.Shared.Config.AntiExploit)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
+local DesignKit = require(ReplicatedStorage.Shared.Config.DesignKit)
+local Designer = require(ReplicatedStorage.Shared.Config.Designer)
+local ModBuilder = require(ReplicatedStorage.Shared.Vehicle.ModBuilder)
 local Net = require(ReplicatedStorage.Shared.Net)
+local SpecBuilder = require(ReplicatedStorage.Shared.Vehicle.SpecBuilder)
 local Spawning = require(ReplicatedStorage.Shared.Config.Spawning)
 local Units = require(ReplicatedStorage.Shared.Util.Units)
 local AntiExploitService = require(script.Parent.AntiExploitService)
+local Validate = require(script.Parent.DesignerService.Validate)
 
 local SECONDS_PER_MINUTE = 60
 local MIN_FLAT = 1e-3 -- a direction shorter than this across the ground has no usable heading
@@ -36,6 +55,17 @@ local DRIVER_SEAT = "Driver" -- seat names from the vehicle model contract
 local PASSENGER_PREFIX = "Passenger"
 local DEFAULT_RESET_REASON = "reset"
 local BUILD_HINT = "In Studio's Edit mode, run require(game.ServerScriptService.Server.Dev.VehicleBuilder).buildAll()"
+local PLAIN_SUFFIX = "_plain" -- cache key of a hidden design's plain build
+local GENERATED_SUFFIX = "_generated" -- name of a design's session-only generated look in the models folder
+
+-- A saved design as VehicleService needs it (Types.CustomDesign's fields).
+export type DesignSource = { uid: string, spec: { [string]: any }, hidden: boolean }
+
+-- What an owned car needs beyond its catalog id and trim (GarageService passes them).
+export type SpawnOptions = {
+	design: DesignSource?, -- set for a player design (vehicleId "custom")
+	mods: { [string]: any }?, -- the car's saved AI mod spec (OwnedVehicle.mods)
+}
 
 type CarRecord = {
 	model: Model,
@@ -477,12 +507,179 @@ local function setupSeat(record: CarRecord, seat: Seat, objectText: string)
 	end
 end
 
+-- Player designs ---------------------------------------------------------------------------------------------
+
+local designTemplates: { [string]: Model } = {} -- kit builds, by design uid (plus PLAIN_SUFFIX when hidden)
+local generatedLooks: { [string]: Model } = {} -- session-only generated looks, by design uid
+local designSources: { [string]: DesignSource } = {} -- the designs published on this server (Studio's dev spawn)
+
+local function designModelsFolder(): Folder
+	local existing = ServerStorage:FindFirstChild(Designer.modelsFolder)
+	if existing ~= nil and existing:IsA("Folder") then
+		return existing
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = Designer.modelsFolder
+	folder.Parent = ServerStorage
+	return folder
+end
+
+-- The catalog id of a design ("custom:<designUid>").
+function VehicleService.designVehicleId(designUid: string): string
+	return Catalog.designId(designUid)
+end
+
+-- The validated spec a design builds from: its saved spec checked again against the kit (the plain look when a
+-- moderator hid it). nil, with a warning, when the saved spec no longer validates.
+function VehicleService.designSpec(design: DesignSource): Validate.Spec?
+	local spec, reasons = Validate.design(design.spec, DesignKit)
+	if spec == nil then
+		warn(`[VehicleService] Design {design.uid} has a spec the kit no longer accepts: {table.concat(reasons, "; ")}`)
+		return nil
+	end
+	return if design.hidden then Validate.plain(spec, DesignKit) else spec
+end
+
+-- Publishes (or re-publishes) the design's synthetic catalog entry, so Catalog.getVehicle("custom:<uid>") and
+-- getTrim(..., "design") work on the server and every client. Returns false when the spec doesn't validate or the
+-- kit builders refuse it.
+function VehicleService.publishDesign(design: DesignSource): boolean
+	local spec = VehicleService.designSpec(design)
+	if spec == nil then
+		return false
+	end
+	local ok, err = pcall(function()
+		Catalog.publishDesign(design.uid, SpecBuilder.vehicleFor(spec, DesignKit, design.uid))
+	end)
+	if not ok then
+		warn(`[VehicleService] Couldn't publish design {design.uid}: {err}`)
+	else
+		designSources[design.uid] = design
+	end
+	return ok
+end
+
+-- The kit build of a design (built once per server and look, then cloned for every spawn), or nil.
+local function designTemplate(design: DesignSource): Model?
+	local key = design.uid .. (if design.hidden then PLAIN_SUFFIX else "")
+	local cached = designTemplates[key]
+	if cached ~= nil and cached.Parent ~= nil then
+		return cached
+	end
+	local spec = VehicleService.designSpec(design)
+	if spec == nil then
+		return nil
+	end
+	local ok, built = pcall(SpecBuilder.build, spec, DesignKit)
+	if not ok or typeof(built) ~= "Instance" or not built:IsA("Model") or built.PrimaryPart == nil then
+		warn(`[VehicleService] SpecBuilder couldn't build design {design.uid}: {if ok then "no model" else built}`)
+		return nil
+	end
+	local model = built :: Model
+	model.Name = key
+	model.Parent = designModelsFolder()
+	designTemplates[key] = model
+	return model
+end
+
+-- The kit build of a design for a spec that has just been validated (DesignerService, for the generated look to
+-- fit onto). Builds and caches it like a spawn would; nil when it can't be built.
+function VehicleService.designBuild(design: DesignSource): Model?
+	return designTemplate(design)
+end
+
+-- True when saved mods would change the car (present, not hidden by a moderator).
+local function activeMods(mods: any): boolean
+	return type(mods) == "table" and mods.hidden ~= true
+end
+
+-- What a design spawns as: its generated look while this session has one (unhidden, unmodded designs only),
+-- else its kit build.
+local function designModel(design: DesignSource, mods: any): Model?
+	local generated = generatedLooks[design.uid]
+	if generated ~= nil and generated.Parent ~= nil and not design.hidden and not activeMods(mods) then
+		return generated
+	end
+	return designTemplate(design)
+end
+
+-- Hands over a design's session-only generated look (Vehicle/GeneratedAdapter); nil forgets it. The model is
+-- kept in ServerStorage and cloned for every spawn of that design until the server closes or forgetDesign.
+function VehicleService.setGeneratedLook(designUid: string, look: Model?)
+	local old = generatedLooks[designUid]
+	generatedLooks[designUid] = nil
+	if old ~= nil and old ~= look then
+		old:Destroy()
+	end
+	if look ~= nil then
+		look.Name = designUid .. GENERATED_SUFFIX
+		look.Parent = designModelsFolder()
+		generatedLooks[designUid] = look
+	end
+end
+
+-- True while this session has a generated look for the design.
+function VehicleService.hasGeneratedLook(designUid: string): boolean
+	local look = generatedLooks[designUid]
+	return look ~= nil and look.Parent ~= nil
+end
+
+-- Drops everything this server built for a design (its kit builds and generated look) and takes its catalog
+-- entry down, e.g. when it is scrapped, never built, or its owner leaves. Cars already out keep their own copies.
+function VehicleService.forgetDesign(designUid: string)
+	for _, key in { designUid, designUid .. PLAIN_SUFFIX } do
+		local cached = designTemplates[key]
+		designTemplates[key] = nil
+		if cached ~= nil then
+			cached:Destroy()
+		end
+	end
+	VehicleService.setGeneratedLook(designUid, nil)
+	designSources[designUid] = nil
+	local ok, err = pcall(Catalog.unpublishDesign, designUid)
+	if not ok then
+		warn(`[VehicleService] Couldn't take design {designUid} out of the catalog: {err}`)
+	end
+end
+
+-- Applies a car's saved mods to a fresh copy. Never lets a mod problem stop the spawn.
+local function applyMods(model: Model, mods: any, kind: Validate.Kind)
+	if not activeMods(mods) then
+		return
+	end
+	local checked, reasons = Validate.mod(mods, DesignKit, kind)
+	if checked == nil then
+		warn(`[VehicleService] Skipped saved mods on {model.Name}: {table.concat(reasons, "; ")}`)
+		return
+	end
+	local ok, err = pcall(ModBuilder.apply, model, checked, DesignKit, kind)
+	if not ok then
+		warn(`[VehicleService] Couldn't apply mods to {model.Name}: {err}`)
+	end
+end
+
 -- Public API: spawning -------------------------------------------------------------------------------------
 
 -- Spawns a parked car for `player` at `at` (on the ground below it), or just in front of their character.
--- Despawns their previous car first (Config/Spawning.maxCarsPerPlayer). Returns nil, with a warning, when the
--- vehicle, its model or a place to put it is missing.
-function VehicleService.spawn(player: Player, vehicleId: string, trimId: string, at: CFrame?): Model?
+-- Despawns their previous car first (Config/Spawning.maxCarsPerPlayer). `options` carries a player design (then
+-- `vehicleId` and `trimId` are ignored: the design's own catalog id and trim are used) and the car's saved mods.
+-- Returns nil, with a warning, when the vehicle, its model or a place to put it is missing.
+function VehicleService.spawn(
+	player: Player,
+	vehicleId: string,
+	trimId: string,
+	at: CFrame?,
+	options: SpawnOptions?
+): Model?
+	local design = if options ~= nil then options.design else nil
+	local mods = if options ~= nil then options.mods else nil
+	if design ~= nil then
+		if not VehicleService.publishDesign(design) then
+			return nil
+		end
+		vehicleId = VehicleService.designVehicleId(design.uid)
+		trimId = Designer.designTrim
+	end
 	local trim = Catalog.getTrim(vehicleId, trimId)
 	local geometry = Catalog.geometry(vehicleId, trimId)
 	if trim == nil or geometry == nil then
@@ -492,7 +689,7 @@ function VehicleService.spawn(player: Player, vehicleId: string, trimId: string,
 	if player.Parent == nil then
 		return nil -- left the game
 	end
-	local template = findTemplate(vehicleId, trimId)
+	local template = if design ~= nil then designModel(design, mods) else findTemplate(vehicleId, trimId)
 	if template == nil then
 		return nil
 	end
@@ -509,7 +706,16 @@ function VehicleService.spawn(player: Player, vehicleId: string, trimId: string,
 	end
 
 	local model = template:Clone()
-	local chassis = model.PrimaryPart :: BasePart -- findTemplate checked it
+	local chassis = model.PrimaryPart :: BasePart -- findTemplate (or designTemplate) checked it
+	if design ~= nil then
+		model.Name = Catalog.modelName(vehicleId, trimId)
+		model:SetAttribute("VehicleId", vehicleId)
+		model:SetAttribute("Trim", trimId)
+		model:SetAttribute("DesignUid", design.uid)
+	end
+	-- Mods go on before anything else touches the copy, so the Wrap & Tint look (CustomizationService) layers on
+	-- top of the modded car.
+	applyMods(model, mods, if design ~= nil then "kit" else "catalog")
 	-- Only the chassis is ever anchored: every other part is welded to it, so it holds the whole car.
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
@@ -606,6 +812,20 @@ local function onDevSpawn(player: Player, payload: any)
 	end
 	local vehicleId: string = payload.vehicleId
 	local trimId: string = payload.trim
+	-- A player design ("custom:<designUid>") spawns from the design this server published for it (its owner is
+	-- here), built like any spawn of it; there is no stored model to clone. Dev spawns skip the car's saved mods.
+	if Catalog.isDesign(vehicleId) then
+		local designUid = Catalog.designUidOf(vehicleId)
+		local source = if designUid ~= nil then designSources[designUid] else nil
+		if source == nil then
+			warn(`[VehicleService] Dev spawn refused: design "{vehicleId}" isn't published on this server`)
+			return
+		end
+		if VehicleService.spawn(player, vehicleId, trimId, nil, { design = source }) ~= nil then
+			VehicleService.seatDriver(player)
+		end
+		return
+	end
 	local vehicle = Catalog.getVehicle(vehicleId)
 	if vehicle == nil or not vehicle.playerDrivable or Catalog.getTrim(vehicleId, trimId) == nil then
 		warn(`[VehicleService] Dev spawn refused: "{vehicleId}" / "{trimId}" is not a drivable vehicle and trim`)

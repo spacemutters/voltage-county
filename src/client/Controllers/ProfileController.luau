@@ -17,8 +17,21 @@
 -- It is nil until the server sends one. The fleet is never patched: Buy, Assign, Collect and Sell wait for the
 -- server's answer and the snapshot that follows it.
 --
--- The pure parts (normalize: checking a payload; normalizeFleet; merge: applying patches) are exposed for
--- tests/Phone.spec.
+-- The AI Car Designer (Phase 11, docs/phase-11-contracts.md "Client"): the credits balance, whether the free first
+-- car is used, the player's designs (each with its validated spec, so the phone can name it and the designer can
+-- preview it) and which owned cars are custom designs or carry an AI mod. normalizeDesigner reads them from the
+-- same payload into a Designer kept beside the snapshot (read with designer(); onChanged fires with each new one,
+-- as it comes with every snapshot); like the fleet it is never patched. Services/ProfileSyncService sends these
+-- shapes (any may be missing; missing means none):
+--   credits = { balance, freeDesignUsed }           (a top-level `freeDesignUsed` works too)
+--   designs = { { uid, name?, tagline?, hidden?, createdAt?, spec? } } (or a map designUid -> the same without uid);
+--             `name` is the server's (filtered, or the plain name of a hidden design), else the spec's; `spec` is
+--             what the phone previews (the plain look for a hidden design)
+--   vehicles[i].designUid, vehicles[i].mods (the car's mod spec) or vehicles[i].modded = true (a hidden mod)
+--   mods = { [vehicleUid] = modSpec }                (instead of vehicles[i].mods)
+--
+-- The pure parts (normalize: checking a payload; normalizeFleet; normalizeDesigner; merge: applying patches) are
+-- exposed for tests/Phone.spec and tests/DesignerUi.spec.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -45,6 +58,27 @@ export type FleetPod = Types.FleetPod -- zone: a MapLayout zone id
 export type FleetZone = Types.SnapshotFleetZone
 export type Fleet = Types.SnapshotFleet
 
+-- One of the player's designs (Phase 11). `name` is the name the server sent (filtered when the design was made, or
+-- a plain "Custom <class>" for a design a moderator hid), else the spec's, or nil when there is none to show.
+export type DesignInfo = {
+	uid: string,
+	spec: { [string]: any }?, -- nil when the server had none it could send
+	hidden: boolean,
+	createdAt: number,
+	name: string?,
+	tagline: string?,
+}
+
+-- The designer's part of the snapshot.
+export type Designer = {
+	balance: number, -- Design Credits
+	freeDesignUsed: boolean,
+	designs: { [string]: DesignInfo }, -- by design uid
+	designCount: number,
+	vehicleDesigns: { [string]: string }, -- owned car uid -> its design uid (custom cars)
+	mods: { [string]: { [string]: any } }, -- owned car uid -> its AI mod spec (empty when only known as modded)
+}
+
 local ProfileController = {}
 
 -- Fires (snapshot: Types.ProfileSnapshot, previous: Types.ProfileSnapshot?) whenever get() would return
@@ -54,6 +88,7 @@ ProfileController.onChanged = InputController.newSignal()
 local snapshot: Types.ProfileSnapshot? = nil -- the server's latest, checked
 local merged: Types.ProfileSnapshot? = nil -- the same with the waiting patches applied (what get() returns)
 local patches: Patches = { settings = {}, favorites = {} }
+local designerPart: Designer? = nil -- the designer's part of the server's latest snapshot (never patched)
 
 -- Pure helpers -------------------------------------------------------------------------------------------------
 
@@ -168,6 +203,83 @@ end
 -- The fleet a (normalized) snapshot carries, or nil.
 function ProfileController.fleetOf(profile: Types.ProfileSnapshot?): Fleet?
 	return if profile ~= nil then profile.fleet else nil
+end
+
+-- One design from the payload's `designs` (`uid` from the entry or, for a map, its key), or nil when it isn't one.
+local function normalizeDesign(value: any, key: any): DesignInfo?
+	if type(value) ~= "table" then
+		return nil
+	end
+	local uid = if type(value.uid) == "string" then value.uid elseif type(key) == "string" then key else nil
+	if uid == nil then
+		return nil
+	end
+	local hidden = value.hidden == true
+	local spec = if type(value.spec) == "table" then value.spec else nil
+	local function text(field: any): string?
+		return if type(field) == "string" and field ~= "" then field else nil
+	end
+	-- The server's name first (it already stands in a plain name for a hidden design); the spec's only when shown.
+	local name = text(value.name) or (if spec ~= nil and not hidden then text(spec.name) else nil)
+	local tagline = if hidden then nil else text(value.tagline) or (if spec ~= nil then text(spec.tagline) else nil)
+	return {
+		uid = uid,
+		spec = spec,
+		hidden = hidden,
+		createdAt = numberOr(value.createdAt, 0),
+		name = name,
+		tagline = tagline,
+	}
+end
+
+-- A checked copy of the designer's part of a ProfileSnapshot payload (see the header for the shapes it reads).
+-- Never nil: a payload without designer fields means a balance of 0, the free car unused, no designs, no mods.
+function ProfileController.normalizeDesigner(payload: any): Designer
+	local raw = if type(payload) == "table" then payload else {}
+	local credits = if type(raw.credits) == "table" then raw.credits else {}
+	local designs: { [string]: DesignInfo } = {}
+	local count = 0
+	if type(raw.designs) == "table" then
+		for key, value in raw.designs do
+			local design = normalizeDesign(value, key)
+			if design ~= nil and designs[design.uid] == nil then
+				designs[design.uid] = design
+				count += 1
+			end
+		end
+	end
+	local vehicleDesigns: { [string]: string } = {}
+	local mods: { [string]: { [string]: any } } = {}
+	if type(raw.vehicles) == "table" then
+		for _, vehicle in raw.vehicles do
+			if type(vehicle) == "table" and type(vehicle.uid) == "string" then
+				if type(vehicle.designUid) == "string" then
+					vehicleDesigns[vehicle.uid] = vehicle.designUid
+				end
+				if type(vehicle.mods) == "table" then
+					mods[vehicle.uid] = vehicle.mods
+				elseif vehicle.modded == true then
+					mods[vehicle.uid] = {}
+				end
+			end
+		end
+	end
+	if type(raw.mods) == "table" then
+		for uid, spec in raw.mods do
+			if type(uid) == "string" and type(spec) == "table" and mods[uid] == nil then
+				mods[uid] = spec
+			end
+		end
+	end
+	local freeUsed = if type(credits.freeDesignUsed) == "boolean" then credits.freeDesignUsed else raw.freeDesignUsed
+	return {
+		balance = wholeAtLeastZero(credits.balance),
+		freeDesignUsed = freeUsed == true,
+		designs = designs,
+		designCount = count,
+		vehicleDesigns = vehicleDesigns,
+		mods = mods,
+	}
 end
 
 -- A checked copy of a ProfileSnapshot payload, or nil when it isn't one. The payload comes from our own server,
@@ -285,6 +397,12 @@ function ProfileController.fleet(): Fleet?
 	return ProfileController.fleetOf(merged)
 end
 
+-- The designer's part of the latest snapshot (credits, the free car, designs, mods), or nil until the first
+-- snapshot arrives. Read-only. onChanged fires whenever it changes (it comes with every snapshot).
+function ProfileController.designer(): Designer?
+	return designerPart
+end
+
 -- The player's settings, or the defaults until their profile arrives.
 function ProfileController.settings(): Types.Settings
 	local current = merged
@@ -316,6 +434,7 @@ function ProfileController:Start()
 			return
 		end
 		snapshot = checked
+		designerPart = ProfileController.normalizeDesigner(payload)
 		refresh()
 	end)
 end

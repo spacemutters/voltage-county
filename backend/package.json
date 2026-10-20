@@ -1,0 +1,25 @@
+{
+  "name": "voltage-county-designer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Voltage County AI Car Designer backend: POST /api/design and /api/mod on Vercel.",
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "test": "node --test \"tests/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "sync-kit": "node scripts/sync-kit.ts",
+    "suite": "node tests/suite/run.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@supabase/supabase-js": "^2.118.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "~5.9.3"
+  }
+}

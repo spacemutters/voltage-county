@@ -25,6 +25,17 @@
 -- Looks (Phase 7, docs/phase-7-contracts.md "CustomizationService"): a car brought out wears its saved look;
 -- CustomizationService.applySaved puts it on (and filters custom plate text again) right after OwnedUid is set.
 --
+-- Custom cars and AI mods (Phase 11, docs/phase-11-contracts.md "Designs in the catalog ... and spawning"):
+--   spawning  a player design (vehicleId Config/Garage.customVehicleId) comes out built from its saved design
+--             (data.designs, by the car's designUid) through VehicleService's design path; any car with saved
+--             mods comes out with them (VehicleService applies them with ModBuilder before the look goes on).
+--   selling   a design can't be sold for cash; SellVehicle on one scraps it instead: the car and its design are
+--             removed (pays nothing) and its custom slot is free again (Config/Designer.messages.scrapped).
+--   listing   designs take customSlots, not garage slots (slotsUsed / customSlotsUsed / customRoomIn), and the
+--             phone lists them from the ProfileSnapshot (ProfileSyncService adds the designs and each car's mod).
+--   refresh   refreshOwned(player, uid) puts a car that is out back exactly where it stands with its new look
+--             (after an AI mod, a moderator hiding it, or its generated look arriving), re-seating the driver.
+--
 -- Server-authoritative (CLAUDE.md hard rule 1): a client only ever names a uid, and the server looks it up in that
 -- player's own data and nowhere else. A sale removes the car and pays for it inside one DataService.update, which
 -- re-checks that the car is still there, so a double click (or a forged burst) can never sell a car twice. No
@@ -39,7 +50,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
+local Classes = require(ReplicatedStorage.Shared.Config.Classes)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
+local Designer = require(ReplicatedStorage.Shared.Config.Designer)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Net = require(ReplicatedStorage.Shared.Net)
@@ -58,6 +71,12 @@ type CustomizationServiceModule = typeof(require(script.Parent.CustomizationServ
 
 -- What the function remotes answer.
 export type Reply = { ok: boolean, message: string }
+
+-- VehicleService.SpawnOptions (spelled out here: VehicleService is only required in Init).
+type SpawnOptions = {
+	design: { uid: string, spec: { [string]: any }, hidden: boolean }?,
+	mods: { [string]: any }?,
+}
 
 local LOG = "[GarageService]"
 local OWNER_ATTRIBUTE = "OwnerUserId" -- set on every spawned car by VehicleService
@@ -143,6 +162,54 @@ function GarageService.roomIn(data: Types.PlayerData): boolean
 		slots = Economy.garageSlots
 	end
 	return GarageService.slotsUsed(data) < slots
+end
+
+-- The player design with `designUid` in a player's data, and its index, or nil.
+function GarageService.findDesign(data: Types.PlayerData, designUid: any): (Types.CustomDesign?, number?)
+	local designs = data.designs
+	if type(designUid) ~= "string" or type(designs) ~= "table" then
+		return nil, nil
+	end
+	for index, design in designs do
+		if type(design) == "table" and design.uid == designUid then
+			return design, index
+		end
+	end
+	return nil, nil
+end
+
+-- How many custom slots the player's designs take (one per custom car).
+function GarageService.customSlotsUsed(data: Types.PlayerData): number
+	local used = 0
+	if type(data.vehicles) == "table" then
+		for _, vehicle in data.vehicles do
+			if type(vehicle) == "table" and isCustom(vehicle) then
+				used += 1
+			end
+		end
+	end
+	return used
+end
+
+-- True while the player has a free custom slot (a damaged slot count falls back to Config/Economy.customSlots).
+function GarageService.customRoomIn(data: Types.PlayerData): boolean
+	local slots = data.customSlots
+	if type(slots) ~= "number" or not isFinite(slots) or slots < 0 then
+		slots = Economy.customSlots
+	end
+	return GarageService.customSlotsUsed(data) < slots
+end
+
+-- The name a design shows: its own (already filtered when it was made), or "Custom <class>" once a moderator hid
+-- it or when its spec is damaged.
+function GarageService.designName(design: Types.CustomDesign?): string
+	local spec = if design ~= nil and type(design.spec) == "table" then design.spec else {}
+	if design ~= nil and design.hidden ~= true and type(spec.name) == "string" and spec.name ~= "" then
+		return spec.name
+	end
+	local class = if type(spec.class) == "string" then Classes[spec.class] else nil
+	local className = if class ~= nil then class.displayName else Designer.messages.genericClass
+	return string.format(Designer.messages.hiddenName, className)
 end
 
 local function validChoice(value: any, options: { string }): boolean
@@ -306,6 +373,73 @@ end
 
 -- Remotes ---------------------------------------------------------------------------------------------------
 
+-- What VehicleService needs to bring an owned car out (a design's saved spec, the car's saved mods), or nil and
+-- what to tell the player when it can't come out: a catalog car that isn't drivable or no longer in the catalog,
+-- or a design whose saved design is missing.
+local function spawnPlan(data: Types.PlayerData, vehicle: Types.OwnedVehicle): (SpawnOptions?, string?)
+	if isCustom(vehicle) then
+		local design = GarageService.findDesign(data, vehicle.designUid)
+		if design == nil or type(design.spec) ~= "table" then
+			return nil, messages.cantSpawn
+		end
+		return {
+			design = { uid = design.uid, spec = design.spec, hidden = design.hidden == true },
+			mods = vehicle.mods,
+		},
+			nil
+	end
+	local catalogVehicle = Catalog.getVehicle(vehicle.vehicleId)
+	if
+		catalogVehicle == nil
+		or not catalogVehicle.playerDrivable
+		or Catalog.getTrim(vehicle.vehicleId, vehicle.trim) == nil
+	then
+		return nil, messages.cantSpawn
+	end
+	return { mods = vehicle.mods }, nil
+end
+
+-- The name a car shows in replies: its catalog name, or a design's own name.
+local function ownedName(data: Types.PlayerData, vehicle: Types.OwnedVehicle): string
+	if isCustom(vehicle) then
+		return GarageService.designName((GarageService.findDesign(data, vehicle.designUid)))
+	end
+	return vehicleName(vehicle.vehicleId)
+end
+
+-- Brings an owned car out at `at` (nil: just in front of the player), marks it as that garage car, gives it its
+-- saved energy and look, and seats the player in the Driver seat when `seat` is true. nil when it can't spawn.
+local function bringOut(
+	player: Player,
+	vehicle: Types.OwnedVehicle,
+	options: SpawnOptions,
+	at: CFrame?,
+	seat: boolean
+): Model?
+	local vehicleService = VehicleService
+	if vehicleService == nil then
+		return nil
+	end
+	local model = vehicleService.spawn(player, vehicle.vehicleId, vehicle.trim, at, options)
+	if model == nil then
+		return nil
+	end
+	model:SetAttribute(Garage.ownedUidAttribute, vehicle.uid)
+	local energyService = EnergyService
+	if energyService ~= nil then
+		energyService.attach(model, vehicle.energy) -- `vehicle` is the live entry, so this is the level just saved
+	end
+	-- Phase 7: the car comes out wearing its saved look (paint, wrap, wheels, extras, filtered plate...).
+	local customizationService = CustomizationService
+	if customizationService ~= nil then
+		customizationService.applySaved(player, model, vehicle)
+	end
+	if seat then
+		vehicleService.seatDriver(player)
+	end
+	return model
+end
+
 -- Brings an owned car out at the SpawnPad nearest the player and seats them. Replaces any car they had out,
 -- except a dealership test drive, which has to finish first.
 function GarageService.spawnOwned(player: Player, uid: string): Reply
@@ -319,13 +453,9 @@ function GarageService.spawnOwned(player: Player, uid: string): Reply
 		warn(`{LOG} {player.Name} asked to spawn a car they don't own ({uid})`)
 		return reply(false, messages.notFound)
 	end
-	local catalogVehicle = Catalog.getVehicle(vehicle.vehicleId)
-	if
-		catalogVehicle == nil
-		or not catalogVehicle.playerDrivable
-		or Catalog.getTrim(vehicle.vehicleId, vehicle.trim) == nil
-	then
-		return reply(false, messages.cantSpawn)
+	local options, refusal = spawnPlan(data, vehicle)
+	if options == nil then
+		return reply(false, refusal or messages.cantSpawn)
 	end
 	local current = carOut(player)
 	if onTestDrive(current) then
@@ -342,24 +472,46 @@ function GarageService.spawnOwned(player: Player, uid: string): Reply
 	vehicleService.despawn(player)
 	local pad = nearestPad(player, position)
 	-- No pads on the map: VehicleService puts the car just in front of the player instead.
-	local model = vehicleService.spawn(player, vehicle.vehicleId, vehicle.trim, if pad then pad.CFrame else nil)
+	local model = bringOut(player, vehicle, options, if pad then pad.CFrame else nil, Garage.seatDriver)
 	if model == nil then
 		return reply(false, messages.spawnFailed)
 	end
-	model:SetAttribute(Garage.ownedUidAttribute, vehicle.uid)
-	local energyService = EnergyService
-	if energyService ~= nil then
-		energyService.attach(model, vehicle.energy) -- `vehicle` is the live entry, so this is the level just saved
+	return reply(true, string.format(messages.spawned, ownedName(data, vehicle)))
+end
+
+-- Puts a car that is out back in the same spot with its current saved look (an AI mod, a moderator hiding it, or
+-- its generated look arriving), re-seating the player if they were driving it. Returns true when the car was out
+-- and came back. A test drive is never touched.
+function GarageService.refreshOwned(player: Player, uid: string): boolean
+	local dataService, vehicleService = DataService, VehicleService
+	local data = if dataService ~= nil then dataService.get(player) else nil
+	if data == nil or vehicleService == nil then
+		return false
 	end
-	-- Phase 7: the car comes out wearing its saved look (paint, wrap, wheels, extras, filtered plate...).
-	local customizationService = CustomizationService
-	if customizationService ~= nil then
-		customizationService.applySaved(player, model, vehicle)
+	local car, outUid = carOut(player)
+	if car == nil or outUid ~= uid or onTestDrive(car) then
+		return false
 	end
-	if Garage.seatDriver then
-		vehicleService.seatDriver(player)
+	local vehicle = GarageService.findVehicle(data, uid)
+	if vehicle == nil then
+		return false
 	end
-	return reply(true, string.format(messages.spawned, vehicleName(vehicle.vehicleId)))
+	local options = spawnPlan(data, vehicle)
+	if options == nil then
+		return false
+	end
+	local seats = car:FindFirstChild("Seats")
+	local driverSeat = if seats ~= nil then seats:FindFirstChild("Driver") else nil
+	local character = player.Character
+	local driving = driverSeat ~= nil
+		and driverSeat:IsA("Seat")
+		and driverSeat.Occupant ~= nil
+		and character ~= nil
+		and driverSeat.Occupant.Parent == character
+	local at = car:GetPivot()
+	saveEnergy(player)
+	vehicleService.despawn(player)
+	return bringOut(player, vehicle, options, at, driving) ~= nil
 end
 
 -- Puts away the car the player has out (not a test drive, which the dealership ends).
@@ -416,6 +568,9 @@ function GarageService.sell(player: Player, uid: string): Reply
 		print(`{LOG} {player.Name} asked to sell a car they don't own ({uid})`)
 		return reply(false, messages.notFound)
 	end
+	if isCustom(vehicle) then
+		return GarageService.scrap(player, uid) -- designs have no cash value; selling one scraps it
+	end
 	local sellable, refusal = GarageService.sellCheck(vehicle)
 	if not sellable then
 		return reply(false, refusal or messages.sellFailed)
@@ -459,6 +614,58 @@ function GarageService.sell(player: Player, uid: string): Reply
 	EconomyService.recordChange(player, "source", gained, Garage.sellReason)
 	print(`{LOG} {player.Name} sold {vehicleId} ({uid}) for ${gained}`)
 	return reply(true, string.format(messages.sold, vehicleName(vehicleId), Economy.formatCash(gained)))
+end
+
+-- Scraps a player design: puts it away if it's out, then removes the car (and its saved design, unless another
+-- car still uses it) in one update that re-checks the car is still there, so it can only go once. Pays nothing;
+-- the custom slot is free again.
+function GarageService.scrap(player: Player, uid: string): Reply
+	local dataService, vehicleService = DataService, VehicleService
+	local data = if dataService ~= nil then dataService.get(player) else nil
+	if dataService == nil or vehicleService == nil or data == nil then
+		return reply(false, messages.notLoaded)
+	end
+	local vehicle = GarageService.findVehicle(data, uid)
+	if vehicle == nil or not isCustom(vehicle) then
+		return reply(false, messages.notFound)
+	end
+	local name = ownedName(data, vehicle)
+	local designUid = vehicle.designUid
+	local car, outUid = carOut(player)
+	if car ~= nil and outUid == uid then
+		vehicleService.despawn(player)
+	end
+
+	local removed = false
+	local updated = dataService.update(player, function(fresh: Types.PlayerData)
+		local current, index = GarageService.findVehicle(fresh, uid)
+		if current == nil or index == nil or not isCustom(current) then
+			return -- scrapped a moment ago
+		end
+		table.remove(fresh.vehicles, index)
+		local stillUsed = false
+		for _, other in fresh.vehicles do
+			if type(other) == "table" and other.designUid == designUid then
+				stillUsed = true
+			end
+		end
+		local _, designIndex = GarageService.findDesign(fresh, designUid)
+		if not stillUsed and designIndex ~= nil then
+			table.remove(fresh.designs, designIndex)
+		end
+		removed = true
+	end)
+	if not updated then
+		return reply(false, messages.sellFailed)
+	end
+	if not removed then
+		return reply(false, messages.notFound)
+	end
+	if type(designUid) == "string" then
+		vehicleService.forgetDesign(designUid)
+	end
+	print(`{LOG} {player.Name} scrapped design {tostring(designUid)} ({uid})`)
+	return reply(true, string.format(Designer.messages.scrapped, name))
 end
 
 local function updateSettings(player: Player, request: any)

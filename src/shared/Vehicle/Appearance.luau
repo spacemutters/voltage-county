@@ -39,6 +39,10 @@ export type Look = Customization.Look
 
 local Appearance = {}
 
+-- A model attribute (a number, 1 = as built) that scales every wheel face this module builds inside its tire. Set
+-- by Vehicle/ModBuilder for an AI mod's wheel size, so every later look (a spawn, a shop purchase) keeps it.
+Appearance.wheelScaleAttribute = "ModWheelScale"
+
 -- Model structure names (vehicle model contract).
 local WHEEL_NAMES = { "FL", "FR", "RL", "RR" }
 local PLATE_POINTS = { "PlateFront", "PlateRear" }
@@ -669,10 +673,10 @@ end
 -- Rebuilds a wheel's face for the style: rim lip, caliper-colored brake disc, spokes and center cap, each a
 -- layer prouder of the tire faces than the last. The wheel part and its Motor stay as they are; the new parts
 -- are welded to the wheel, so they spin and steer with it. The disc is round, so its color reads the same at
--- any spin.
-local function buildWheel(wheel: BasePart, style: Customization.Wheel, caliper: Customization.Caliper)
+-- any spin. `scale` sizes the face inside the tire (Appearance.wheelScaleAttribute).
+local function buildWheel(wheel: BasePart, style: Customization.Wheel, caliper: Customization.Caliper, scale: number)
 	local layers = Customization.wheelLayers
-	local diameter = math.min(wheel.Size.Y, wheel.Size.Z)
+	local diameter = math.min(wheel.Size.Y, wheel.Size.Z) * scale
 	local width = wheel.Size.X
 	local cframe = wheel.CFrame
 	local material = style.material
@@ -735,10 +739,12 @@ local function buildWheels(model: Model, r: Resolved)
 	if wheels == nil then
 		return
 	end
+	local stored = model:GetAttribute(Appearance.wheelScaleAttribute)
+	local scale = if type(stored) == "number" and stored > 0 and stored < math.huge then stored else 1
 	for _, name in WHEEL_NAMES do
 		local wheel = wheels:FindFirstChild(name)
 		if wheel and wheel:IsA("BasePart") then
-			buildWheel(wheel, r.wheel, r.caliper)
+			buildWheel(wheel, r.wheel, r.caliper, scale)
 		end
 	end
 end

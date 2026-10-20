@@ -4,7 +4,7 @@
 --
 -- On load and after every change (DataService.onChanged) the player gets a ProfileSnapshot over Net: a fresh
 -- copy of the sanitized fields the phone and HUD need (Types.ProfileSnapshot), never the live table and never
--- anything else in the save (receipts, reservations, plate text, mods). A burst of changes (a purchase changes
+-- anything else in the save (receipts, reservations, plate text, raw mods). A burst of changes (a purchase changes
 -- cash and the garage in quick succession) is coalesced: at most one snapshot per player every
 -- Config/Data.snapshotMinInterval seconds, and always one after the last change.
 --
@@ -14,23 +14,51 @@
 -- every zone with its demand and expected $ an hour, and the offline rule. `push` sends a fresh snapshot for a
 -- change that isn't in the save (FleetService calls it when the pass is bought).
 --
+-- Phase 11 (docs/phase-11-contracts.md): the AI Car Designer's part of the snapshot.
+--   credits   { balance, freeDesignUsed } (true while the one free new car is used or held by a request)
+--   designs   one entry per saved design: { uid, name, tagline, classId, hidden, createdAt, spec }. `spec` is the
+--             design re-validated against the kit without its generation prompt (so the phone can preview it with
+--             Vehicle/SpecBuilder); name and tagline were filtered with TextService when the design was made. A
+--             design a moderator hid sends its plain look (DesignerService/Validate.plain) and plain name
+--             ("Custom <class>"), no tagline.
+--   vehicles  each car also carries `designUid` (player designs, vehicleId "custom") and, when it has an AI mod,
+--             `modded = true` with `mods` (the mod spec re-validated, without its accessory prompt; its summary
+--             was filtered when the mod was made) and `modSummary`. A mod a moderator hid sends `modHidden = true`
+--             and no spec or summary. Fields that don't apply are left out.
+--
 -- Only ever sends a player their own data. No polling: one task.defer or task.delay per burst, per player.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Classes = require(ReplicatedStorage.Shared.Config.Classes)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
+local DesignKit = require(ReplicatedStorage.Shared.Config.DesignKit)
+local Designer = require(ReplicatedStorage.Shared.Config.Designer)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Fleet = require(ReplicatedStorage.Shared.Config.Fleet)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Types = require(ReplicatedStorage.Shared.Types)
+local Validate = require(script.Parent.DesignerService.Validate)
 
 -- DataService is required in Init rather than here: requiring it loads ProfileStore, which talks to DataStores
 -- straight away, and specs may require this module in Edit mode for `snapshot`.
 type DataServiceModule = typeof(require(script.Parent.DataService))
 
 local REMOTE = "ProfileSnapshot"
+
+-- Phase 11 snapshot parts (see the header): Types.ProfileSnapshot's `designs` and `credits.freeDesignUsed`, and
+-- Types.SnapshotVehicle's optional `designUid`, `modded`, `modHidden`, `mods` and `modSummary`.
+export type SnapshotDesign = Types.SnapshotDesign
+
+-- A car's AI mod as the snapshot carries it (merged into the car's entry).
+export type SnapshotMod = {
+	modded: boolean,
+	modHidden: boolean?,
+	mods: { [string]: any }?,
+	modSummary: string?,
+}
 
 local ProfileSyncService = {}
 
@@ -53,10 +81,29 @@ local function text(value: any, fallback: string): string
 	return if type(value) == "string" then value else fallback
 end
 
--- The client's copy of one owned car: only the listed fields, each a plain value of the right type.
+-- The client's copy of a car's AI mod (see the header), or nil for a car without one. Every saved mod has a string
+-- summary; anything else (or a mod the kit no longer accepts) isn't shown as one.
+function ProfileSyncService.snapshotMod(mods: any, kind: "kit" | "catalog"): SnapshotMod?
+	if type(mods) ~= "table" or type(mods.summary) ~= "string" then
+		return nil
+	end
+	if mods.hidden == true then
+		return { modded = true, modHidden = true }
+	end
+	local checked = Validate.mod(mods, DesignKit, kind)
+	if checked == nil then
+		return nil
+	end
+	local spec: { [string]: any } = checked :: any
+	spec.accessoryPrompt = nil -- AI text nobody needs to read
+	return { modded = true, mods = spec, modSummary = checked.summary }
+end
+
+-- The client's copy of one owned car: only the listed fields, each a plain value of the right type (the Phase 11
+-- ones only when they apply).
 local function snapshotVehicle(vehicle: { [string]: any }): Types.SnapshotVehicle
 	local look = Garage.defaults
-	return {
+	local copy: { [string]: any } = {
 		uid = text(vehicle.uid, ""),
 		vehicleId = text(vehicle.vehicleId, ""),
 		trim = text(vehicle.trim, ""),
@@ -66,6 +113,43 @@ local function snapshotVehicle(vehicle: { [string]: any }): Types.SnapshotVehicl
 		finish = text(vehicle.finish, look.finish),
 		wheels = text(vehicle.wheels, look.wheels),
 		acquiredAt = number(vehicle.acquiredAt, 0),
+	}
+	local custom = vehicle.vehicleId == Garage.customVehicleId
+	if custom and type(vehicle.designUid) == "string" then
+		copy.designUid = vehicle.designUid
+	end
+	local mod = ProfileSyncService.snapshotMod(vehicle.mods, if custom then "kit" else "catalog")
+	if mod ~= nil then
+		copy.modded = mod.modded
+		copy.modHidden = mod.modHidden
+		copy.mods = mod.mods
+		copy.modSummary = mod.modSummary
+	end
+	return copy :: any
+end
+
+-- The client's copy of one saved design (see the header), or nil for an entry without a string uid.
+function ProfileSyncService.snapshotDesign(design: any): SnapshotDesign?
+	if type(design) ~= "table" or type(design.uid) ~= "string" then
+		return nil
+	end
+	local saved = if type(design.spec) == "table" then design.spec else {}
+	local classId = text(saved.class, "")
+	local hidden = design.hidden == true
+	local class = Classes[classId]
+	local className = if class ~= nil then class.displayName else Designer.messages.genericClass
+	local plainName = string.format(Designer.messages.hiddenName, className)
+	local name = text(saved.name, "")
+	local valid = Validate.design(saved, DesignKit)
+	local spec = if valid == nil then nil elseif hidden then Validate.plain(valid, DesignKit) else valid
+	return {
+		uid = design.uid,
+		name = if hidden or name == "" then plainName else name,
+		tagline = if hidden then "" else text(saved.tagline, ""),
+		classId = classId,
+		hidden = hidden,
+		createdAt = number(design.createdAt, 0),
+		spec = if spec ~= nil then Validate.clientSpec(spec) else nil,
 	}
 end
 
@@ -116,10 +200,19 @@ function ProfileSyncService.snapshot(data: Types.PlayerData, hasFleetManager: bo
 			end
 		end
 	end
+	local designs: { SnapshotDesign } = {}
+	if type(raw.designs) == "table" then
+		for _, design in raw.designs do
+			local entry = ProfileSyncService.snapshotDesign(design)
+			if entry ~= nil then
+				table.insert(designs, entry)
+			end
+		end
+	end
 	local defaults = Data.defaults.settings
 	local settings = if type(raw.settings) == "table" then raw.settings else {}
 	local credits = if type(raw.credits) == "table" then raw.credits else {}
-	return {
+	local snapshot: { [string]: any } = {
 		cash = number(raw.cash, 0),
 		garageSlots = number(raw.garageSlots, Economy.garageSlots),
 		customSlots = number(raw.customSlots, Economy.customSlots),
@@ -130,9 +223,14 @@ function ProfileSyncService.snapshot(data: Types.PlayerData, hasFleetManager: bo
 			camera = text(settings.camera, defaults.camera),
 			musicVolume = number(settings.musicVolume, defaults.musicVolume),
 		},
-		credits = { balance = number(credits.balance, Data.defaults.credits) },
+		credits = {
+			balance = number(credits.balance, Data.defaults.credits),
+			freeDesignUsed = credits.freeDesignUsed == true,
+		},
 		fleet = ProfileSyncService.snapshotFleet(raw.fleet, hasFleetManager == true),
+		designs = designs,
 	}
+	return snapshot :: any
 end
 
 -- Sending ---------------------------------------------------------------------------------------------------

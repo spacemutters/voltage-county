@@ -1,0 +1,71 @@
+# Real carmaker and model names that must never appear in game code (CLAUDE.md hard rule 4).
+# One regular expression per line, matched case-insensitively as whole words in src/ and tests/.
+# Generic English words (charger, semi, roadster, accord, genesis...) are left out on purpose.
+# When a brand is licensed (Config/Brands.luau, licensed = true), remove its line here in the same commit.
+# The genre reference is here too: nothing in the game may borrow its name.
+Greenville
+Tesla
+Model [3SXY]
+Cyber ?truck
+Cyber ?cab
+Ford
+Mustang
+F-?150
+Chevrolet
+Chevy
+Corvette
+Camaro
+Silverado
+Cadillac
+Escalade
+GMC
+Buick
+Hummer
+Chrysler
+Dodge
+Hellcat
+Jeep
+Pontiac
+Toyota
+Corolla
+Camry
+Prius
+Supra
+Lexus
+Honda
+Acura
+Nissan
+GT-?R
+Infiniti
+Mazda
+Miata
+Subaru
+Mitsubishi
+Hyundai
+Kia
+BMW
+Mercedes
+Benz
+Audi
+Porsche
+Volkswagen
+VW
+Volvo
+Polestar
+Rivian
+Ferrari
+Lamborghini
+Maserati
+Alfa Romeo
+Fiat
+Bugatti
+McLaren
+Koenigsegg
+Pagani
+Bentley
+Rolls[- ]Royce
+Aston Martin
+Peugeot
+Renault
+Citroen
+Skoda

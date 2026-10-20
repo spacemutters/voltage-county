@@ -12,17 +12,27 @@
 --
 -- On a gamepad the first app (or the Back button inside an app) is selected when the phone opens, so the D-pad
 -- moves around it straight away. Draw order: button, dimming, sheet, so an open sheet covers the button.
+--
+-- The Designer app (Phase 11) is registered here rather than in PhoneController: its tile shows only once
+-- UI/Designer/DesignerStore says it is unlocked (after the first Design Studio visit), with an accent dot while a
+-- new design waits to be seen, and its screen (UI/Phone/DesignerApp) reads its own state, so PhoneController
+-- passes no body for it.
 
 local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local React = require(ReplicatedStorage.Packages.React)
 
+local DesignerApp = require(script.Parent.DesignerApp)
 local Glyph = require(script.Parent.Glyphs)
 local Kit = require(script.Parent.Kit)
 local Layout = require(script.Parent.Layout)
 local PhoneConfig = require(script.Parent.PhoneConfig)
 local Theme = require(script.Parent.Parent.Theme)
+local DesignerGlyph = require(script.Parent.Parent.Designer.DesignerGlyph)
+local DesignerStore = require(script.Parent.Parent.Designer.DesignerStore)
+
+local DESIGNER_APP: PhoneConfig.AppId = "designer"
 
 local e = React.createElement
 local colors = Theme.colors
@@ -120,12 +130,18 @@ local function AppTile(props: {
 			BorderSizePixel = 0,
 		}, {
 			Corner = e("UICorner", { CornerRadius = UDim.new(0, Theme.radius.card) }),
-			Glyph = e(Glyph, {
-				name = props.app.id,
-				color = colors.text,
-				background = colors.panelRaised,
-				size = Vector2.new(grid.glyphSize, grid.glyphSize),
-			}),
+			Glyph = if props.app.id == DESIGNER_APP
+				then e(DesignerGlyph, {
+					color = colors.text,
+					background = colors.panelRaised,
+					size = Vector2.new(grid.glyphSize, grid.glyphSize),
+				})
+				else e(Glyph, {
+					name = props.app.id,
+					color = colors.text,
+					background = colors.panelRaised,
+					size = Vector2.new(grid.glyphSize, grid.glyphSize),
+				}),
 			Badge = if props.badge
 				then e("Frame", {
 					AnchorPoint = Vector2.new(0.5, 0.5),
@@ -161,6 +177,7 @@ local function Home(props: {
 })
 	local grid = PhoneConfig.grid
 	local columns = Layout.gridColumns(props.width)
+	local designer = DesignerStore.useState()
 	local tiles: { [string]: any } = {
 		Grid = e("UIGridLayout", {
 			CellSize = UDim2.fromOffset(grid.iconSize, grid.iconSize + Theme.spacing.xs + grid.labelHeight),
@@ -171,10 +188,15 @@ local function Home(props: {
 		}),
 	}
 	for index, app in PhoneConfig.apps do
+		if app.id == DESIGNER_APP and not designer.unlocked then
+			continue -- the Designer app appears after the first Design Studio visit
+		end
 		tiles[`App_{app.id}`] = e(AppTile, {
 			app = app,
 			order = index,
-			badge = (app.id == "gps" and props.routeActive) or (app.id == "fleet" and props.fleetReady),
+			badge = (app.id == "gps" and props.routeActive)
+				or (app.id == "fleet" and props.fleetReady)
+				or (app.id == DESIGNER_APP and designer.status == "ready"),
 			onOpen = props.onOpenApp,
 			tileRef = if index == 1 then props.focusRef else nil,
 		})
@@ -377,8 +399,9 @@ local function Sheet(props: Props)
 				Size = UDim2.new(1, 0, 1, -headerHeight),
 				BackgroundTransparency = 1,
 			}, {
-				Screen = if inApp
-					then props.body
+				Screen = if props.app == DESIGNER_APP
+					then e(DesignerApp, {})
+					elseif inApp then props.body
 					else e(Home, {
 						width = Layout.width(rect),
 						routeActive = props.routeActive,

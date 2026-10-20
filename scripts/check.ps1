@@ -35,6 +35,27 @@ if ($hits) {
 	Fail "brand names (real carmaker or model name in game code)"
 }
 
+# The game checks AI text against its own copy of that list (src/shared/Util/BrandNames.luau, ROT13 so the check
+# above passes; CLAUDE.md hard rule 11). Every line of scripts/banned-names.txt needs a phrase there.
+Write-Host "== brand list in step" -ForegroundColor Cyan
+$brandModule = "src/shared/Util/BrandNames.luau"
+$encoded = Select-String -Path $brandModule -Pattern '^\s*"([a-z0-9 ]+)",\s*$' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+$phrases = $encoded | ForEach-Object {
+	-join ($_.ToCharArray() | ForEach-Object {
+		$code = [int]$_
+		if ($code -ge 97 -and $code -le 122) { [char]((($code - 97 + 13) % 26) + 97) } else { $_ }
+	})
+}
+if (-not $phrases) { Fail "brand list in step (no phrases found in $brandModule)" }
+$missing = $patterns | ForEach-Object { $_.Trim() } | Where-Object {
+	$regex = '^(?:' + $_ + ')$'
+	-not ($phrases | Where-Object { $_ -match $regex })
+}
+if ($missing) {
+	$missing | ForEach-Object { Write-Host "  no phrase in $brandModule for the pattern: $_" }
+	Fail "brand list in step (add the missing names to $brandModule, ROT13-encoded)"
+}
+
 if (-not (Test-Path Packages)) { Run "wally install" { wally install } }
 Run "stylua" { stylua --check src tests }
 Run "selene" { selene src tests }

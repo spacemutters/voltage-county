@@ -189,6 +189,15 @@ function CustomizationService.changedFields(before: Look, after: Look): { string
 	return changed
 end
 
+-- The catalog id an owned car is looked up by: a player design (vehicleId "custom") is published as
+-- "custom:<designUid>" (Vehicle/Catalog, Services/VehicleService), every other car by its own vehicleId.
+function CustomizationService.catalogIdOf(vehicle: Types.OwnedVehicle): string
+	if vehicle.vehicleId == Garage.customVehicleId and type(vehicle.designUid) == "string" then
+		return Catalog.designId(vehicle.designUid)
+	end
+	return vehicle.vehicleId
+end
+
 -- Validates and prices a change set for an owned car of `vehicleClass`. Returns ok, the message to show when
 -- refused, the cost (whole $; only what differs from the saved look is charged) and the look the car ends up
 -- with. Refuses unknown ids, out-of-range numbers and extras the class can't take (Customization.check), and a
@@ -202,7 +211,9 @@ function CustomizationService.validate(
 		return false, Customization.messages.nothingChanged, 0, nil
 	end
 	-- The car's body style too: some extras fit only some bodies (a lip on a trunk, not on an SUV's rear window).
-	local catalogVehicle = if type(vehicle.vehicleId) == "string" then Catalog.getVehicle(vehicle.vehicleId) else nil
+	local catalogVehicle = if type(vehicle.vehicleId) == "string"
+		then Catalog.getVehicle(CustomizationService.catalogIdOf(vehicle))
+		else nil
 	local bodyStyle = if catalogVehicle ~= nil then catalogVehicle.bodyStyle else nil
 	local allowed, problem = Customization.check(changes, vehicleClass, bodyStyle)
 	if not allowed then
@@ -310,7 +321,7 @@ local function findVehicle(data: Types.PlayerData, uid: string): Types.OwnedVehi
 end
 
 local function classOf(vehicle: Types.OwnedVehicle): string?
-	local catalogVehicle = Catalog.getVehicle(vehicle.vehicleId)
+	local catalogVehicle = Catalog.getVehicle(CustomizationService.catalogIdOf(vehicle))
 	return if catalogVehicle ~= nil then catalogVehicle.class else nil
 end
 

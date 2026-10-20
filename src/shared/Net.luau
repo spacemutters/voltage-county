@@ -40,6 +40,7 @@ export type RejectListener = (player: Player, remote: string, reason: RejectReas
 
 local ID_LENGTH = 40
 local UID_LENGTH = 64 -- HttpService:GenerateGUID(false) is 36 characters
+local DESIGN_ID_LENGTH = 48 -- a design's catalog id: "custom:" (Config/Designer.catalogPrefix) and a 36-character uid
 local MAX_LOT_SLOTS = 64
 local MAX_DEV_CASH = 100000000
 local MAX_PRICE = 100000000 -- the dearest car in the catalog is far below this
@@ -51,11 +52,12 @@ local REPORT_REASON_LENGTH = 40 -- a report reason id from Config/Designer
 local MAX_DEV_CREDITS = 10000
 
 local REMOTES: { [string]: Spec } = {
-	-- Studio only: spawn a car next to the player for testing (VehicleService refuses it outside Studio).
+	-- Studio only: spawn a car next to the player for testing (VehicleService refuses it outside Studio). A player
+	-- design spawns by its catalog id ("custom:<designUid>", trim "design").
 	DevSpawnVehicle = {
 		kind = "event",
 		direction = "toServer",
-		validate = Check.shape({ vehicleId = Check.string(ID_LENGTH), trim = Check.string(ID_LENGTH) }),
+		validate = Check.shape({ vehicleId = Check.string(DESIGN_ID_LENGTH), trim = Check.string(ID_LENGTH) }),
 		burst = 3,
 		perSecond = 0.5,
 	},

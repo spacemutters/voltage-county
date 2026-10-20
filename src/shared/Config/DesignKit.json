@@ -28,7 +28,7 @@
     "roofline": { "min": 0.85, "max": 1.12, "note": "greenhouse (cabin) height; low = sleek, high = upright" },
     "noseSlope": { "min": 0, "max": 1, "note": "0 = blunt upright nose, 1 = long sloped hood" },
     "flare": { "min": 1, "max": 1.06, "note": "scales width and track (wide arches)" },
-    "rideHeight": { "min": -0.25, "max": 0.35, "note": "studs added to the template ride height at stance.rideHeight -1..1" },
+    "rideHeight": { "min": -0.1, "max": 0.35, "note": "studs added to the template ride height at stance.rideHeight -1..1 (the lowest stance stays above the dev track's 0.3-stud humps)" },
     "wheelSize": { "min": 0.92, "max": 1.12, "note": "scales wheel radius at stance.wheelSize 0..1" }
   },
 

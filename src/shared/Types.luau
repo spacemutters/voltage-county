@@ -97,6 +97,24 @@ export type SnapshotVehicle = {
 	finish: string,
 	wheels: string,
 	acquiredAt: number,
+	-- Phase 11 (Services/ProfileSyncService), each only when it applies:
+	designUid: string?, -- a player design (vehicleId "custom")
+	modded: boolean?, -- the car has an AI mod
+	modHidden: boolean?, -- a moderator hid it (no mods or summary are sent)
+	mods: { [string]: any }?, -- the mod spec, re-validated, without its accessory prompt
+	modSummary: string?, -- filtered when the mod was made, and again on every join
+}
+
+-- One of the player's designs in the snapshot (Phase 11, Services/ProfileSyncService). A design a moderator hid
+-- sends its plain look and plain name, no tagline.
+export type SnapshotDesign = {
+	uid: string,
+	name: string,
+	tagline: string,
+	classId: string,
+	hidden: boolean,
+	createdAt: number,
+	spec: { [string]: any }?, -- the design without its generation prompt; nil when it no longer validates
 }
 
 -- A zone a pod can work in, as the Fleet app shows it (Config/Fleet).
@@ -126,10 +144,13 @@ export type ProfileSnapshot = {
 	starterClaimed: boolean,
 	vehicles: { SnapshotVehicle }, -- favorites first, then the newest (Config/Garage.sortVehicles)
 	settings: Settings,
-	credits: { balance: number },
+	-- Phase 11: freeDesignUsed is true while the one free new car is used or held by a request.
+	credits: { balance: number, freeDesignUsed: boolean? },
 	-- Phase 9: ProfileSyncService always sends it; optional so a client copy built before it (ProfileController's
 	-- checked copy, specs) still type-checks.
 	fleet: SnapshotFleet?,
+	-- Phase 11: ProfileSyncService always sends it (optional for the same reason as `fleet`).
+	designs: { SnapshotDesign }?,
 }
 
 -- Driving -------------------------------------------------------------------------------------------------

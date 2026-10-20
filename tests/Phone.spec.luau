@@ -5,7 +5,8 @@
 -- optimistic patches (ProfileController), speed in the player's units (HudController) and GPS distances in
 -- kilometres (GpsController). Phase 9: the snapshot's fleet checks (ProfileController.normalizeFleet), the Fleet
 -- app's words and sums (UI/Phone/FleetApp) and the HUD's fleet chip (when it shows, and where: never over a
--- driving control). Pure logic on fixtures: runs in Edit mode and never touches module state.
+-- driving control). Phase 11: the Designer app is one of the phone's apps (its own logic is in
+-- tests/DesignerUi.spec). Pure logic on fixtures: runs in Edit mode and never touches module state.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
@@ -265,15 +266,16 @@ return function(t: Harness.Api)
 			end
 		end)
 
-		t.it("lists the seven apps once each", function()
+		t.it("lists the eight apps once each", function()
 			local seen: { [string]: boolean } = {}
 			for _, app in PhoneConfig.apps do
 				t.expect(seen[app.id]).toBe(nil)
 				seen[app.id] = true
 			end
-			for _, id in { "gps", "garage", "jobs", "fleet", "wallet", "codes", "settings" } do
+			for _, id in { "gps", "garage", "designer", "jobs", "fleet", "wallet", "codes", "settings" } do
 				t.expect(seen[id]).toBe(true)
 			end
+			t.expect(#PhoneConfig.apps).toBe(8)
 		end)
 
 		t.it("offers directions only to places on the map", function()

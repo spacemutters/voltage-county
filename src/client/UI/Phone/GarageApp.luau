@@ -7,6 +7,13 @@
 -- While one request is with the server every action button is disabled and the one that was tapped says what
 -- it's doing, so nothing can be tapped twice. An empty garage offers directions to the used lot and the
 -- dealership. Presentation only: PhoneController passes the snapshot, the state and the callbacks.
+--
+-- Phase 11 (docs/phase-11-contracts.md "Client"): a player design is named by its design's (filtered) name, and
+-- every card has a "Mod with AI" button, plus "Report" on designs and modded cars. Those open the designer's
+-- sheets through UI/Designer/DesignerStore (DesignerController puts the phone away); the designer data comes
+-- from ProfileController.designer(). Both can be passed in instead (`designer`, `onModWithAi`, `onReport`). A
+-- design can't be sold for cash: its Sell button says Scrap, and the confirm says it is gone for good and frees its
+-- design space (the same SellVehicle request; GarageService scraps designs).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -19,10 +26,15 @@ local Types = require(ReplicatedStorage.Shared.Types)
 local Kit = require(script.Parent.Kit)
 local PhoneConfig = require(script.Parent.PhoneConfig)
 local Theme = require(script.Parent.Parent.Theme)
+local DesignerModel = require(script.Parent.Parent.Designer.DesignerModel)
+local DesignerStore = require(script.Parent.Parent.Designer.DesignerStore)
+local DesignerStyle = require(script.Parent.Parent.Designer.DesignerStyle)
+local ProfileController = require(script.Parent.Parent.Parent.Controllers.ProfileController)
 
 local e = React.createElement
 local colors = Theme.colors
 local text = PhoneConfig.garageText
+local designerWords = DesignerStyle.garage
 
 export type Action = "spawn" | "despawn" | "sell"
 
@@ -41,14 +53,21 @@ export type Props = {
 	onCancelSell: () -> (),
 	onConfirmSell: (uid: string) -> (),
 	onDirections: (locationId: string) -> (),
+	-- Phase 11 (optional; by default the designer's data and sheets, see the header).
+	designer: ProfileController.Designer?,
+	onModWithAi: ((uid: string) -> ())?,
+	onReport: ((uid: string) -> ())?,
 }
 
 -- Names -------------------------------------------------------------------------------------------------------
 
--- The car's name and trim as players see them (only ever from the catalog), e.g. "Ohm Spark", "Spark (used)".
-local function namesOf(vehicle: Types.SnapshotVehicle): (string, string)
+-- The car's name and trim as players see them (only ever from the catalog, or a design's filtered name), e.g.
+-- "Ohm Spark", "Spark (used)".
+local function namesOf(vehicle: Types.SnapshotVehicle, designer: ProfileController.Designer?): (string, string)
 	if vehicle.vehicleId == Garage.customVehicleId then
-		return text.customName, ""
+		local design = DesignerModel.designOf(vehicle, designer)
+		local designName = if design ~= nil then design.name else nil
+		return designName or text.customName, ""
 	end
 	local entry = Catalog.getVehicle(vehicle.vehicleId)
 	local trim = Catalog.getTrim(vehicle.vehicleId, vehicle.trim)
@@ -80,17 +99,57 @@ local function Star(props: { on: boolean, onTap: () -> () })
 	})
 end
 
+-- "Mod with AI" on every car, and "Report" beside it on designs and modded cars (Phase 11).
+local function DesignerRow(props: {
+	vehicle: Types.SnapshotVehicle,
+	locked: boolean,
+	designer: ProfileController.Designer?,
+	actions: Props,
+})
+	local vehicle = props.vehicle
+	local words = designerWords
+	local onMod = props.actions.onModWithAi or DesignerStore.openMod
+	local onReport = props.actions.onReport or DesignerStore.openReport
+	local reportable = DesignerModel.reportable(vehicle, props.designer)
+	local buttons: { [string]: any } = {
+		Mod = e(Kit.Button, {
+			label = words.modWithAi,
+			style = "secondary",
+			disabled = props.locked,
+			order = 1,
+			size = UDim2.fromScale(1, 1),
+			onTap = function()
+				onMod(vehicle.uid)
+			end,
+		}),
+	}
+	if reportable then
+		buttons.Report = e(Kit.Button, {
+			label = words.report,
+			style = "dangerText",
+			disabled = props.locked,
+			order = 2,
+			size = UDim2.fromScale(1, 1),
+			onTap = function()
+				onReport(vehicle.uid)
+			end,
+		})
+	end
+	return Kit.ButtonRow({ order = 4, buttons = buttons, count = if reportable then 2 else 1 })
+end
+
 local function CarCard(props: {
 	vehicle: Types.SnapshotVehicle,
 	out: boolean,
 	busy: Busy?,
 	order: number,
 	actions: Props,
+	designer: ProfileController.Designer?,
 })
 	local vehicle = props.vehicle
 	local busy = props.busy
 	local garage = PhoneConfig.garage
-	local name, trimName = namesOf(vehicle)
+	local name, trimName = namesOf(vehicle, props.designer)
 	local canSell = sellable(vehicle)
 	local locked = busy ~= nil
 	local busyHere = busy ~= nil and (busy.uid == vehicle.uid or (busy.action == "despawn" and props.out))
@@ -118,9 +177,15 @@ local function CarCard(props: {
 		})
 	end
 	local buttons: { [string]: any } = { Primary = primary }
-	if canSell then
+	-- A design can't be sold for cash; the same request scraps it, freeing its design space (Phase 11).
+	local scrap = DesignerModel.isCustom(vehicle)
+	local selling = busyHere and busy ~= nil and busy.action == "sell"
+	if canSell or scrap then
 		buttons.Sell = e(Kit.Button, {
-			label = if busyHere and busy and busy.action == "sell" then text.selling else text.sell,
+			label = if scrap
+				then (if selling then designerWords.scrapping else designerWords.scrap)
+				elseif selling then text.selling
+				else text.sell,
 			style = "dangerText",
 			disabled = locked,
 			order = 2,
@@ -180,7 +245,13 @@ local function CarCard(props: {
 				BackgroundTransparency = 1,
 			}, notes)
 			else nil,
-		Buttons = Kit.ButtonRow({ order = 3, buttons = buttons, count = if canSell then 2 else 1 }),
+		Buttons = Kit.ButtonRow({ order = 3, buttons = buttons, count = if canSell or scrap then 2 else 1 }),
+		Designer = e(DesignerRow, {
+			vehicle = vehicle,
+			locked = locked,
+			designer = props.designer,
+			actions = props.actions,
+		}),
 	})
 end
 
@@ -188,9 +259,17 @@ end
 
 local function SellConfirm(props: { vehicle: Types.SnapshotVehicle, busy: boolean, actions: Props })
 	local vehicle = props.vehicle
-	local name = namesOf(vehicle)
+	local name = namesOf(vehicle, props.actions.designer or ProfileController.designer())
 	local price = Economy.formatCash(Garage.sellPrice(vehicle.paid))
 	local percent = math.round(Garage.sellBackRate * 100)
+	-- A design is scrapped rather than sold (Phase 11): different words, same request.
+	local scrap = DesignerModel.isCustom(vehicle)
+	local title = string.format(if scrap then designerWords.scrapTitle else text.confirmTitle, name)
+	local body = if scrap then designerWords.scrapBody else string.format(text.confirmBody, price, percent)
+	local confirmLabel = if props.busy
+		then (if scrap then designerWords.scrapping else text.selling)
+		elseif scrap then designerWords.scrapConfirm
+		else string.format(text.confirmSell, price)
 	local fade = Kit.useAppear(false)
 	local scrimTransparency = colors.scrimTransparency
 	return e("Frame", {
@@ -228,13 +307,13 @@ local function SellConfirm(props: { vehicle: Types.SnapshotVehicle, busy: boolea
 		}, {
 			Card = Kit.Card({ gap = Theme.spacing.md, padding = Theme.spacing.lg }, {
 				Title = Kit.Text({
-					text = string.format(text.confirmTitle, name),
+					text = title,
 					order = 1,
 					size = Theme.text.heading,
 					font = Theme.fonts.bold,
 				}),
 				Body = Kit.Text({
-					text = string.format(text.confirmBody, price, percent),
+					text = body,
 					order = 2,
 					color = colors.textDim,
 				}),
@@ -250,7 +329,7 @@ local function SellConfirm(props: { vehicle: Types.SnapshotVehicle, busy: boolea
 							onTap = props.actions.onCancelSell,
 						}),
 						Sell = e(Kit.Button, {
-							label = if props.busy then text.selling else string.format(text.confirmSell, price),
+							label = confirmLabel,
 							style = "danger",
 							disabled = props.busy,
 							order = 2,
@@ -315,6 +394,7 @@ local function GarageApp(props: Props)
 			color = colors.textDim,
 		}),
 	}
+	local designer = props.designer or ProfileController.designer()
 	local confirming: Types.SnapshotVehicle? = nil
 	for index, vehicle in profile.vehicles do
 		children[`Car_{vehicle.uid}`] = e(CarCard, {
@@ -323,6 +403,7 @@ local function GarageApp(props: Props)
 			busy = props.busy,
 			order = index,
 			actions = props,
+			designer = designer,
 		})
 		if vehicle.uid == props.confirmUid then
 			confirming = vehicle
