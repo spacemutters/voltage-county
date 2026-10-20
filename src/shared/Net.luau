@@ -175,6 +175,24 @@ local REMOTES: { [string]: Spec } = {
 		burst = 0,
 		perSecond = 0,
 	},
+	-- Phase 5: the server tells a driver their car is out of energy; payload { level, stationId? } (the nearest
+	-- compatible station's MapLayout location id, for the GPS).
+	EnergyAlert = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Studio only: set the caller's current car's energy (0..1) for the energy tests (EnergyService refuses it
+	-- outside Studio).
+	DevSetEnergy = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ level = Check.number(0, 1) }),
+		burst = 3,
+		perSecond = 1,
+	},
 	-- Studio only: set the caller's cash to exactly `amount` for the shop tests (DealershipService refuses it
 	-- outside Studio).
 	DevSetCash = {
