@@ -46,6 +46,9 @@ local MAX_PRICE = 100000000 -- the dearest car in the catalog is far below this
 local DATE_LENGTH = 10 -- "YYYY-MM-DD"
 local MAX_EXTRAS = 8 -- kit extras on one car
 local PLATE_LENGTH = 16 -- generous: the server trims and enforces Config/Customization's own limit
+local PROMPT_BYTES = 800 -- a 200-character design prompt in UTF-8; the server counts characters (DesignKit limits)
+local REPORT_REASON_LENGTH = 40 -- a report reason id from Config/Designer
+local MAX_DEV_CREDITS = 10000
 
 local REMOTES: { [string]: Spec } = {
 	-- Studio only: spawn a car next to the player for testing (VehicleService refuses it outside Studio).
@@ -366,6 +369,68 @@ local REMOTES: { [string]: Spec } = {
 		validate = Check.none(),
 		burst = 3,
 		perSecond = 0.5,
+	},
+	-- Phase 11: the AI Car Designer (docs/phase-11-contracts.md). The server filters the text, reserves credits
+	-- and calls the backend; the result comes back as DesignResult. Functions return { ok, message, ... }.
+	DesignCar = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({
+			prompt = Check.string(PROMPT_BYTES),
+			classId = Check.optional(Check.string(ID_LENGTH)), -- nil: "surprise me"
+		}),
+		burst = 2,
+		perSecond = 0.1,
+	},
+	ModCar = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH), prompt = Check.string(PROMPT_BYTES) }),
+		burst = 2,
+		perSecond = 0.1,
+	},
+	-- Server tells the player a design or mod is ready (or refused): { requestId, ok, message, design?, preview? }.
+	DesignResult = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- What to do with a finished new-car design: build it, re-roll it (one free re-roll) or discard it.
+	DesignChoice = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({
+			requestId = Check.string(UID_LENGTH),
+			choice = Check.oneOf({ "build", "reroll", "discard" }),
+		}),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Report a custom or modded car (moderation).
+	ReportDesign = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH), reason = Check.string(REPORT_REASON_LENGTH) }),
+		burst = 2,
+		perSecond = 0.1,
+	},
+	-- Admins only (Config/Admins): hide a design or mod; the car falls back to the plain kit or stock look.
+	HideDesign = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ designUid = Check.string(UID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Studio only: set the caller's Design Credits balance (CreditsService refuses it outside Studio).
+	DevCredits = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ amount = Check.integer(0, MAX_DEV_CREDITS) }),
+		burst = 3,
+		perSecond = 1,
 	},
 	-- Studio only: clear the caller's car's ability cooldowns (AbilityService refuses it outside Studio), for the
 	-- 50-run hop and flight tests.
