@@ -11,7 +11,14 @@
 -- snapshot from the server agrees with it, or until PhoneConfig.confirmHoldSeconds pass, after which the screen
 -- shows what the server has (so a refused change quietly goes back).
 --
--- The pure parts (normalize: checking a payload; merge: applying patches) are exposed for tests/Phone.spec.
+-- The robotaxi fleet (Phase 9, docs/phase-9-contracts.md "Fleet UI"): the snapshot's `fleet` field (pods with
+-- their zones, uncollected earnings, slots, the pod price and sell-back, the zones with their demand and expected
+-- $ per pod per hour, and the offline rule) is checked like the rest and read with fleetOf(snapshot) or fleet().
+-- It is nil until the server sends one. The fleet is never patched: Buy, Assign, Collect and Sell wait for the
+-- server's answer and the snapshot that follows it.
+--
+-- The pure parts (normalize: checking a payload; normalizeFleet; merge: applying patches) are exposed for
+-- tests/Phone.spec.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -32,6 +39,11 @@ export type Patches = {
 	settings: { [string]: Pending<any> }, -- by Settings field name
 	favorites: { [string]: Pending<boolean> }, -- by vehicle uid
 }
+
+-- The robotaxi fleet as the snapshot sends it (docs/phase-9-contracts.md; Services/ProfileSyncService).
+export type FleetPod = Types.FleetPod -- zone: a MapLayout zone id
+export type FleetZone = Types.SnapshotFleetZone
+export type Fleet = Types.SnapshotFleet
 
 local ProfileController = {}
 
@@ -102,6 +114,62 @@ local function normalizeVehicle(value: any): Types.SnapshotVehicle?
 	}
 end
 
+local function wholeAtLeastZero(value: any): number
+	return math.max(math.floor(numberOr(value, 0)), 0)
+end
+
+-- A checked copy of the snapshot's `fleet` field, or nil when there isn't one (a server without the fleet yet).
+-- Pods and zones without a string id are left out (as are repeats of a uid or zone id); money and counts are
+-- whole and never negative; the offline share stays within 0..1. The payload comes from our own server: this
+-- only keeps a bad field from breaking the Fleet app.
+function ProfileController.normalizeFleet(value: any): Fleet?
+	if type(value) ~= "table" then
+		return nil
+	end
+	local pods: { FleetPod } = {}
+	local seenPods: { [string]: boolean } = {}
+	if type(value.pods) == "table" then
+		for _, pod in value.pods do
+			if type(pod) == "table" and type(pod.uid) == "string" and type(pod.zone) == "string" then
+				if not seenPods[pod.uid] then
+					seenPods[pod.uid] = true
+					table.insert(pods, { uid = pod.uid, zone = pod.zone })
+				end
+			end
+		end
+	end
+	local zones: { FleetZone } = {}
+	local seenZones: { [string]: boolean } = {}
+	if type(value.zones) == "table" then
+		for _, zone in value.zones do
+			if type(zone) == "table" and type(zone.id) == "string" and not seenZones[zone.id] then
+				seenZones[zone.id] = true
+				table.insert(zones, {
+					id = zone.id,
+					name = stringOr(zone.name, zone.id),
+					demand = math.max(numberOr(zone.demand, 0), 0),
+					perHour = wholeAtLeastZero(zone.perHour),
+				})
+			end
+		end
+	end
+	return {
+		pods = pods,
+		uncollected = wholeAtLeastZero(value.uncollected),
+		slots = wholeAtLeastZero(value.slots),
+		podPrice = wholeAtLeastZero(value.podPrice),
+		sellBack = wholeAtLeastZero(value.sellBack),
+		zones = zones,
+		offlineRate = math.clamp(numberOr(value.offlineRate, 0), 0, 1),
+		offlineCapHours = math.max(numberOr(value.offlineCapHours, 0), 0),
+	}
+end
+
+-- The fleet a (normalized) snapshot carries, or nil.
+function ProfileController.fleetOf(profile: Types.ProfileSnapshot?): Fleet?
+	return if profile ~= nil then profile.fleet else nil
+end
+
 -- A checked copy of a ProfileSnapshot payload, or nil when it isn't one. The payload comes from our own server,
 -- but a bad field (an older server, a bug) must never break the phone: missing or wrong fields get safe
 -- defaults, broken cars are left out, and the cars come back in the garage order (Config/Garage).
@@ -127,6 +195,7 @@ function ProfileController.normalize(payload: any): Types.ProfileSnapshot?
 		vehicles = Garage.sortVehicles(vehicles),
 		settings = normalizeSettings(payload.settings),
 		credits = { balance = math.max(numberOr(credits.balance, 0), 0) },
+		fleet = ProfileController.normalizeFleet(payload.fleet), -- Phase 9; merge's table.clone carries it over
 	}
 end
 
@@ -209,6 +278,11 @@ end
 
 function ProfileController.isLoaded(): boolean
 	return merged ~= nil
+end
+
+-- The player's robotaxi fleet from the latest snapshot, or nil until one with a fleet arrives. Read-only.
+function ProfileController.fleet(): Fleet?
+	return ProfileController.fleetOf(merged)
 end
 
 -- The player's settings, or the defaults until their profile arrives.

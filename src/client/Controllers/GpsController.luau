@@ -14,7 +14,9 @@
 --                            line behind them, update the distance left, re-route when they are off it, and
 --                            clear with a notice when they arrive.
 --   route chip               UI/GpsPanel in its own ScreenGui: the active route with the distance left and an
---                            End button. Tapping it fires onChipTapped (the phone opens its GPS app).
+--                            End button. Tapping it fires onChipTapped (the phone opens its GPS app). Hidden
+--                            while a pod ride's cutscene plays (PhoneConfig.cutsceneAttribute, like the HUD); the
+--                            route line in the world stays.
 --   status                   getStatus() and onStatusChanged: the active route as the phone's GPS app shows it.
 --                            The destination list itself (MapLayout locations with gps = true, grouped by zone in
 --                            zoneOrder: destinations()) is shown by the phone's GPS app since Phase 4.
@@ -842,6 +844,13 @@ function GpsController:Start()
 	-- Keep every control clear of the Roblox top bar, notches and the home indicator.
 	screenGui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 	screenGui.Parent = playerGui
+
+	-- The route chip hides while a pod ride's cutscene plays (Controllers/HailController), like the HUD.
+	local function onCutsceneChanged()
+		screenGui.Enabled = Players.LocalPlayer:GetAttribute(PhoneConfig.cutsceneAttribute) ~= true
+	end
+	Players.LocalPlayer:GetAttributeChangedSignal(PhoneConfig.cutsceneAttribute):Connect(onCutsceneChanged)
+	onCutsceneChanged()
 
 	root = ReactRoblox.createRoot(screenGui)
 	view.scale = HudController.scaleFor(screenGui.AbsoluteSize)

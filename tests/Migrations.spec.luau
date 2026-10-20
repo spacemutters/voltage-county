@@ -1,7 +1,8 @@
 --!strict
 -- PlayerData migrations (CLAUDE.md hard rule 7; PLAN.md Phase 3 acceptance: migration specs pass; Phase 4 adds
 -- schema version 3, docs/phase-4-contracts.md "Data changes"; Phase 5 adds version 4, docs/phase-5-contracts.md
--- "Schema v4"; Phase 7 adds version 5, docs/phase-7-contracts.md "Schema v5"). Pure logic: runs in Edit mode.
+-- "Schema v4"; Phase 7 adds version 5, docs/phase-7-contracts.md "Schema v5"; Phase 9 adds version 6,
+-- docs/phase-9-contracts.md "Fleet economy"). Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -50,6 +51,8 @@ local function v2Save(): { [string]: any }
 	data.codesRedeemed = { LAUNCH = true }
 	data.receipts = { "purchase-1", "purchase-2" }
 	data.boosts = { { id = "LAUNCH2X", factor = 2, endsAt = JOIN_TIME + 1800 } }
+	-- The fleet as every template before version 6 wrote it.
+	data.fleet = { pods = {}, lastCollectedAt = JOIN_TIME }
 	return data
 end
 
@@ -87,8 +90,27 @@ local function v4Save(): { [string]: any }
 	return data
 end
 
+-- A version 5 save as the Phase 7 template wrote it: every car has its caliper, extras and plate format; the fleet
+-- has no `uncollected` or `lastOnlineAt`.
+local function v5Save(): { [string]: any }
+	local data = v4Save()
+	data.version = 5
+	for _, car in data.vehicles do
+		car.caliper = Data.defaults.vehicleLook.caliper
+		car.extras = {}
+		car.plateFormat = Data.defaults.vehicleLook.plateFormat
+		if car.paint == Data.defaults.vehicleLook.oldDefaultPaint then
+			car.paint = Data.defaults.vehicleLook.paint
+		end
+	end
+	data.vehicles[3].extras = { "roof_rack" }
+	return data
+end
+
 -- The v5 look fields, for the "only these were added" checks.
 local V5_FIELDS = { caliper = true, extras = true, plateFormat = true }
+-- The v6 fleet fields.
+local V6_FLEET_FIELDS = { uncollected = true, lastOnlineAt = true }
 
 local function keysOf(t: { [any]: any }): { [string]: boolean }
 	local keys = {}
@@ -121,8 +143,8 @@ end
 
 return function(t: Harness.Api)
 	t.describe("Migrations", function()
-		t.it("is at schema version 5", function()
-			t.expect(Data.schemaVersion).toBe(5)
+		t.it("is at schema version 6", function()
+			t.expect(Data.schemaVersion).toBe(6)
 		end)
 
 		t.it("has a step from every older version up to the schema version", function()
@@ -284,7 +306,7 @@ return function(t: Harness.Api)
 		t.it("4 -> 5: every owned car gains the stock caliper, plate format and no extras", function()
 			local migrated, fromVersion = Migrations.run(v4Save())
 			t.expect(fromVersion).toBe(4)
-			t.expect(migrated.version).toBe(5)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(#migrated.vehicles).toBe(6)
 			for _, car in migrated.vehicles do
 				t.expect(car.caliper).toBe(Data.defaults.vehicleLook.caliper)
@@ -317,10 +339,10 @@ return function(t: Harness.Api)
 			t.expect(carIn(migrated, "car-starter").energy).toBe(0.35)
 		end)
 
-		t.it("4 -> 5: older saves reach version 5 with the new fields too", function()
+		t.it("4 -> 5: older saves reach the latest version with the new fields too", function()
 			for _, makeSave in { v1Save, v2Save, v3Save } do
 				local migrated = Migrations.run(makeSave())
-				t.expect(migrated.version).toBe(5)
+				t.expect(migrated.version).toBe(Data.schemaVersion)
 				for _, car in migrated.vehicles do
 					t.expect(car.caliper).toBe(Data.defaults.vehicleLook.caliper)
 					t.expect(car.plateFormat).toBe(Data.defaults.vehicleLook.plateFormat)
@@ -353,7 +375,7 @@ return function(t: Harness.Api)
 			local missing = v4Save()
 			missing.vehicles = nil
 			local migrated = Migrations.run(missing)
-			t.expect(migrated.version).toBe(5)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(migrated.vehicles).toBe(nil) -- left for Reconcile to fill from the template
 
 			local damaged = v4Save()
@@ -381,8 +403,104 @@ return function(t: Harness.Api)
 			t.expect(migrated.vehicles[1].extras).toEqual(car.extras)
 		end)
 
-		t.it("never drops a field and keeps every player-owned value", function()
+		t.it("5 -> 6: the fleet gains uncollected = 0 and an unset lastOnlineAt", function()
+			local migrated, fromVersion = Migrations.run(v5Save())
+			t.expect(fromVersion).toBe(5)
+			t.expect(migrated.version).toBe(6)
+			t.expect(migrated.fleet.uncollected).toBe(0)
+			t.expect(migrated.fleet.lastOnlineAt).toBe(Template.UNSET_TIME)
+			-- What was there stays exactly as it was.
+			t.expect(migrated.fleet.pods).toEqual({})
+			t.expect(migrated.fleet.lastCollectedAt).toBe(JOIN_TIME)
+		end)
+
+		t.it("5 -> 6: the join stamps lastOnlineAt, so the save earns nothing for the time before", function()
+			local migrated = Migrations.run(v5Save())
+			local rejoinAt = JOIN_TIME + 86400
+			t.expect(Template.stamp(migrated :: any, rejoinAt)).toBe(true)
+			t.expect(migrated.fleet.lastOnlineAt).toBe(rejoinAt)
+			t.expect(migrated.fleet.lastCollectedAt).toBe(JOIN_TIME) -- a real time is never re-stamped
+			-- Once stamped, the fleet has the same fields a new profile's has.
+			t.expect(keysOf(migrated.fleet)).toEqual(keysOf(Template.new(rejoinAt).fleet :: any))
+		end)
+
+		t.it("5 -> 6: older saves reach version 6 with the fleet fields too", function()
 			for _, makeSave in { v1Save, v2Save, v3Save, v4Save } do
+				local migrated = Migrations.run(makeSave())
+				t.expect(migrated.version).toBe(6)
+				t.expect(migrated.fleet.uncollected).toBe(0)
+				t.expect(migrated.fleet.lastOnlineAt).toBe(Template.UNSET_TIME)
+				t.expect(migrated.fleet.lastCollectedAt).toBe(JOIN_TIME)
+			end
+		end)
+
+		t.it("5 -> 6: keeps pods and usable values a fleet already has", function()
+			local save = v5Save()
+			save.fleet.pods = { { uid = "pod-1", zone = "cedar_bend" }, { uid = "pod-2", zone = "retired_zone" } }
+			save.fleet.uncollected = 1234.5
+			save.fleet.lastOnlineAt = JOIN_TIME + 60
+			local migrated = Migrations.run(save)
+			t.expect(migrated.fleet.pods).toEqual({
+				{ uid = "pod-1", zone = "cedar_bend" },
+				{ uid = "pod-2", zone = "retired_zone" },
+			})
+			t.expect(migrated.fleet.uncollected).toBe(1234.5)
+			t.expect(migrated.fleet.lastOnlineAt).toBe(JOIN_TIME + 60)
+		end)
+
+		t.it("5 -> 6: replaces values that aren't usable", function()
+			for _, bad in { "lots", -5, 0 / 0, math.huge, true } :: { any } do
+				local save = v5Save()
+				save.fleet.uncollected = bad
+				t.expect(Migrations.run(save).fleet.uncollected).toBe(0)
+			end
+			for _, bad in { "later", 0 / 0, math.huge, -math.huge, false } :: { any } do
+				local save = v5Save()
+				save.fleet.lastOnlineAt = bad
+				t.expect(Migrations.run(save).fleet.lastOnlineAt).toBe(Template.UNSET_TIME)
+			end
+		end)
+
+		t.it("5 -> 6: survives a missing or damaged fleet", function()
+			local missing = v5Save()
+			missing.fleet = nil
+			local migrated = Migrations.run(missing)
+			t.expect(migrated.version).toBe(6)
+			t.expect(migrated.fleet).toBe(nil) -- left for Reconcile to fill from the template
+
+			local damaged = v5Save()
+			damaged.fleet = "scrapped"
+			local fixed = Migrations.run(damaged)
+			t.expect(fixed.fleet).toEqual({
+				pods = {},
+				lastCollectedAt = Template.UNSET_TIME,
+				uncollected = 0,
+				lastOnlineAt = Template.UNSET_TIME,
+			})
+		end)
+
+		t.it("5 -> 6: leaves everything outside the fleet alone", function()
+			local before = v5Save()
+			local snapshot = deepCopy(before)
+			local migrated = Migrations.run(before)
+			for key, value in snapshot do
+				if key ~= "version" and key ~= "fleet" then
+					t.expect(migrated[key]).toEqual(value)
+				end
+			end
+		end)
+
+		t.it("running the 5 -> 6 step twice changes nothing the second time", function()
+			local save = v5Save()
+			save.fleet.uncollected = 99
+			Migrations.steps[5](save)
+			local once = deepCopy(save)
+			Migrations.steps[5](save)
+			t.expect(save).toEqual(once)
+		end)
+
+		t.it("never drops a field and keeps every player-owned value", function()
+			for _, makeSave in { v1Save, v2Save, v3Save, v4Save, v5Save } do
 				local before = makeSave()
 				local snapshot = deepCopy(before)
 				local migrated = Migrations.run(before)
@@ -391,9 +509,16 @@ return function(t: Harness.Api)
 					t.expect(after[key]).toBe(true)
 				end
 				for key, value in snapshot do
-					if key ~= "version" and key ~= "vehicles" and key ~= "boosts" then
+					if key ~= "version" and key ~= "vehicles" and key ~= "boosts" and key ~= "fleet" then
 						t.expect(migrated[key]).toEqual(value)
 					end
+				end
+				-- The fleet: every old field kept as it was; only the v6 fields added.
+				for field, value in snapshot.fleet do
+					t.expect(migrated.fleet[field]).toEqual(value)
+				end
+				for field in migrated.fleet do
+					t.expect(snapshot.fleet[field] ~= nil or V6_FLEET_FIELDS[field] == true).toBe(true)
 				end
 				-- Cars: same cars in the same order, every old field kept as it was; only the new fields added.
 				t.expect(#migrated.vehicles).toBe(#snapshot.vehicles)

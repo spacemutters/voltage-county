@@ -7,7 +7,8 @@
 --                  opens the phone in its corner. Filled with the accent while the phone is open.
 --   dimming        behind the sheet when Layout asks for it (on foot); a tap on it closes the phone.
 --   sheet          slides up from the bottom of the screen. A header (Back inside an app, the title, Close),
---                  then the home screen's app grid or the open app.
+--                  then the home screen's app grid or the open app. An accent dot marks the GPS icon while a
+--                  route is active, and the Fleet icon while the fleet has earnings ready to collect (Phase 9).
 --
 -- On a gamepad the first app (or the Back button inside an app) is selected when the phone opens, so the D-pad
 -- moves around it straight away. Draw order: button, dimming, sheet, so an open sheet covers the button.
@@ -39,6 +40,7 @@ export type Props = {
 	title: string, -- the header title
 	body: any, -- the open app's element (ignored on the home screen)
 	routeActive: boolean, -- marks the GPS icon
+	fleetReady: boolean?, -- marks the Fleet icon: the fleet's earnings passed the HUD chip's threshold
 	onToggle: () -> (),
 	onClose: () -> (),
 	onBack: () -> (),
@@ -153,6 +155,7 @@ end
 local function Home(props: {
 	width: number,
 	routeActive: boolean,
+	fleetReady: boolean,
 	onOpenApp: (id: PhoneConfig.AppId) -> (),
 	focusRef: any,
 })
@@ -171,7 +174,7 @@ local function Home(props: {
 		tiles[`App_{app.id}`] = e(AppTile, {
 			app = app,
 			order = index,
-			badge = app.id == "gps" and props.routeActive,
+			badge = (app.id == "gps" and props.routeActive) or (app.id == "fleet" and props.fleetReady),
 			onOpen = props.onOpenApp,
 			tileRef = if index == 1 then props.focusRef else nil,
 		})
@@ -379,6 +382,7 @@ local function Sheet(props: Props)
 					else e(Home, {
 						width = Layout.width(rect),
 						routeActive = props.routeActive,
+						fleetReady = props.fleetReady == true,
 						onOpenApp = props.onOpenApp,
 						focusRef = focusRef,
 					}),

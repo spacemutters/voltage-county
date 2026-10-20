@@ -2,6 +2,49 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-20 — Phase 9: robotaxi fleet, ambient traffic, hail a pod
+
+**Shipped**
+- **Fleet** (phone Fleet app, a "Buy pods" card on the dealership's Ohm section, a "$X ready" HUD chip):
+  - buy Ohm Pods ($40,000 each, 3 slots; +5 with the Fleet Manager pass in Phase 12) and assign each to a zone
+  - zones differ in demand: Cedar Bend 1.3×, Lakefront 1.1×, Riverside 1×, The Plant 0.9×, Mesa 0.7×
+  - pods earn about $60/min each at average demand (§4), simulated, not driven: rides per hour × fare × demand,
+    with a seeded ±10 % per pod per hour, so the same on every server
+  - while you're away they earn a quarter as much for up to 8 hours, paid when you come back
+  - collect in the Fleet app; sell a pod for 60 % back
+- **Data v6:** `fleet.uncollected` and `fleet.lastOnlineAt`, with a migration and specs.
+- **Ambient traffic:** 12 pods drive the county's roads in the right-hand lane, slowing for bends. The server only
+  publishes routes (a compact buffer); every client draws the same pods from them, with no physics replication.
+  Pods slow down behind a player's car on that client only and never collide.
+- **Hail a pod:** a Hail button next to each GPS destination in the phone. On foot only; the fare is $30 + $0.04 a
+  stud of road, charged by the server. A short ride scene plays (HUD, phone, GPS chip and light-show button
+  hidden), then you're at the destination. Refunded if you die, leave or get in a car mid-ride.
+- Built by 4 helpers, then 2 reviewers. They found 6 issues (3 serious), all fixed:
+  - the long-distance arrival now asks Roblox to stream the destination in first
+  - a garage test that didn't know the new fleet field
+  - the GPS chip and light-show button hide during a ride
+- Then I made traffic cheaper to draw. The pods drop small details and lights (19 parts instead of 34), and pods
+  over 300 studs from the camera move every other frame.
+
+**Checked in Studio:**
+- Tests: `TESTS: passed=1085 failed=0`.
+- **Fleet test** (buy, offline, cap, sell), all checks pass:
+  - bought a pod into Cedar Bend for $40,000, 1 of 3 slots
+  - 2 h away paid $2,350, against $2,340 expected (a quarter of the online rate)
+  - 20 h away paid $9,266, against $9,360 for the 8 h cap; uncapped would have been $23,400
+  - sold for $24,000 (60 %)
+- **Traffic, 12 pods for 10 minutes, all drawn at once:** 0 stuck, 91 routes driven. Frame cost **0.39 ms mean**
+  (budget 0.5), **0.51 ms p95** (budget 1.5). Before the trim it was 0.97 ms mean. Yielding behind a player's car
+  wasn't exercised (no car near a pod during the run).
+- **Hail a pod** from spawn to the Flight Field (2,749 studs): $221 charged, a 7-second ride with the HUD hidden,
+  then on foot 36 studs from the destination with the HUD back. A second ride where the rider died mid-ride
+  refunded the $171 fare.
+
+**Open issues**
+- The Fleet app, HUD chip and dealership card haven't been looked at on screen (phone resolution still
+  unchecked, as since Phase 4).
+- The Fleet Manager pass is a placeholder until Phase 12.
+
 ## 2026-10-20 — Phase 8: pickup towing and semi freight
 
 **Shipped**

@@ -3,7 +3,8 @@
 --
 --   header    the brand's name (accent) and segment, the car's name
 --   main      trim chips, the class / drive / energy line, the five stat bars (scaled to the whole catalog),
---             and the test-drive small print
+--             and the test-drive small print; on the robotaxi brand's cars (Phase 9, ShopModel.isFleetBrand) a
+--             Buy pods card that opens the phone's Fleet app
 --   summary   the price with the cash left after (or the cash still needed), and a note when Buy can't be used
 --             or the trim is sold somewhere else (starter, used lot, fleet, limited drop)
 --   actions   Test drive, and Buy or Upgrade (an upgrade trim, when the player owns the trim it upgrades)
@@ -34,6 +35,7 @@ export type Props = {
 	onBuy: () -> (),
 	onUpgrade: () -> (),
 	onTestDrive: () -> (),
+	onOpenFleet: (() -> ())?, -- Buy pods (Phase 9); without it the fleet card is left out
 }
 
 local DealershipSheet = {}
@@ -131,6 +133,19 @@ function DealershipSheet.content(props: Props): Primitives.Content
 	if offer.canTestDrive and seconds ~= nil and seconds > 0 then
 		local minutes = math.max(1, math.round(seconds / 60))
 		table.insert(main, Primitives.finePrintSection("FinePrint", string.format(copy.testDriveFinePrint, minutes)))
+	end
+	local onOpenFleet = props.onOpenFleet
+	if onOpenFleet ~= nil and ShopModel.isFleetBrand(vehicle.brandId) then
+		table.insert(
+			main,
+			Primitives.fleetCardSection("Fleet", {
+				title = copy.fleetCard.title,
+				text = copy.fleetCard.body,
+				label = copy.fleetCard.open,
+				disabled = busy,
+				onTap = onOpenFleet,
+			})
+		)
 	end
 
 	-- Summary: price and the note that goes with it.

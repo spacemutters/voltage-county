@@ -123,6 +123,11 @@ local Economy = {
 			refund = "Shop", -- a failed purchase's charge given back, so it nets out against the shop sink
 			-- Phase 7 Wrap & Tint shop (Config/Customization.shop.economyReason).
 			customize = "Shop",
+			-- Phase 9 robotaxi fleet (Config/Fleet.reasons; selling a pod reuses "sell", a refund "refund") and
+			-- pod rides (Config/Hail.economyReason; a cancelled ride's refund is "refund", so it nets out here).
+			pod = "Shop", -- buying a pod
+			fleet = "Gameplay", -- fleet earnings collected
+			hail = "Shop", -- a pod ride's fare
 		} :: { [string]: string },
 	},
 

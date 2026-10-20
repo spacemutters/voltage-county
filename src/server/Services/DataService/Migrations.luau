@@ -15,10 +15,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
+local Template = require(script.Parent.Template) -- UNSET_TIME only
 
 export type Step = (data: { [string]: any }) -> ()
 
 local Migrations = {}
+
+local function isFinite(value: any): boolean
+	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
 
 -- What a car saved before version 3 cost: the catalog's total price for its trim (an upgrade trim includes the
 -- trim it upgrades), or 0 when it was never sold for cash (the free starter, a player design, a limited drop)
@@ -107,6 +112,36 @@ Migrations.steps = {
 					vehicle.paint = look.paint
 				end
 			end
+		end
+	end,
+
+	-- 5 -> 6 (Phase 9, the robotaxi fleet): the fleet gains `uncollected` (0, nothing earned yet) and
+	-- `lastOnlineAt`, left unset (Template.UNSET_TIME) so DataService's Template.stamp sets it to the join time and
+	-- the save earns nothing for the time before (nobody could own a pod before this version). Values already there
+	-- are kept when usable: an uncollected amount that isn't a finite number of at least 0 becomes 0, and a
+	-- lastOnlineAt that isn't a finite number is unset. Pods and lastCollectedAt are left exactly as they were. A
+	-- save with no fleet is left for Reconcile to fill in; a fleet that isn't a table (it can hold nothing a player
+	-- owns) is replaced by an empty one.
+	[5] = function(data: { [string]: any })
+		local fleet = data.fleet
+		if fleet == nil then
+			return
+		end
+		if type(fleet) ~= "table" then
+			data.fleet = {
+				pods = {},
+				lastCollectedAt = Template.UNSET_TIME,
+				uncollected = 0,
+				lastOnlineAt = Template.UNSET_TIME,
+			}
+			return
+		end
+		local uncollected = fleet.uncollected
+		if not isFinite(uncollected) or uncollected < 0 then
+			fleet.uncollected = 0
+		end
+		if not isFinite(fleet.lastOnlineAt) then
+			fleet.lastOnlineAt = Template.UNSET_TIME
 		end
 	end,
 } :: { [number]: Step }

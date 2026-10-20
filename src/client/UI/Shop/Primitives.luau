@@ -456,6 +456,75 @@ function Primitives.Note(props: { text: string, tone: Tone? })
 	})
 end
 
+-- Robotaxi fleet card (Phase 9) ---------------------------------------------------------------------------------
+
+function Primitives.fleetCardHeight(): number
+	return 2 * layout.fleetCardPadding
+		+ layout.fleetCardTitleHeight
+		+ layout.fleetCardGap
+		+ layout.fleetCardLines * layout.noteLineHeight
+		+ layout.fleetCardGap
+		+ layout.buttonHeight
+end
+
+export type FleetCardProps = {
+	title: string,
+	text: string,
+	label: string, -- the button
+	disabled: boolean,
+	onTap: () -> (),
+}
+
+-- On the fleet brand's dealership sheets: a title, a short line about the robotaxi fleet, and a button that opens
+-- the phone's Fleet app. Outlined rather than raised, so the raised (secondary) button stands out inside it.
+function Primitives.FleetCard(props: FleetCardProps)
+	local pad = UDim.new(0, layout.fleetCardPadding)
+	return e("Frame", {
+		Size = UDim2.new(1, 0, 0, Primitives.fleetCardHeight()),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+	}, {
+		Corner = corner(Theme.radius.card),
+		Outline = e("UIStroke", {
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Color = colors.divider,
+			Thickness = 1,
+		}),
+		Padding = e("UIPadding", { PaddingLeft = pad, PaddingRight = pad, PaddingTop = pad, PaddingBottom = pad }),
+		Layout = e("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, layout.fleetCardGap),
+		}),
+		Title = e(Primitives.Label, {
+			order = 1,
+			text = props.title,
+			height = layout.fleetCardTitleHeight,
+			font = fonts.bold,
+		}),
+		Text = e(Primitives.Label, {
+			order = 2,
+			text = props.text,
+			height = layout.fleetCardLines * layout.noteLineHeight,
+			textSize = Theme.text.small,
+			color = colors.textDim,
+			wrapped = true,
+		}),
+		Button = e(Primitives.Button, {
+			order = 3,
+			label = props.label,
+			style = "secondary",
+			disabled = props.disabled,
+			size = UDim2.new(1, 0, 0, layout.buttonHeight),
+			onTap = props.onTap,
+		}),
+	})
+end
+
+function Primitives.fleetCardSection(key: string, props: FleetCardProps): Section
+	return { key = key, height = Primitives.fleetCardHeight(), element = e(Primitives.FleetCard, props) }
+end
+
 -- Small sections -----------------------------------------------------------------------------------------------
 
 -- A one-line dim detail ("Sedan · RWD · Electric") as a body section.

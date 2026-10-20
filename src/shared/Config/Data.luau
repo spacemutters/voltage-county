@@ -23,7 +23,8 @@ local Data = {
 	--   3  owned cars remember `favorite` and `paid` (Phase 4 garage)
 	--   4  owned cars remember their `energy` level (Phase 5 charging and fuel)
 	--   5  owned cars gain `caliper`, `extras` and `plateFormat` (Phase 7 Wrap & Tint shop)
-	schemaVersion = 5,
+	--   6  the fleet gains `uncollected` and `lastOnlineAt` (Phase 9 robotaxi fleet)
+	schemaVersion = 6,
 	-- A save with no version field predates versioning and is treated as this version.
 	unversionedVersion = 1,
 

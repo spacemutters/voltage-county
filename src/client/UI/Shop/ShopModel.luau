@@ -7,6 +7,7 @@
 --   ranges() / fraction()     stat bars scaled to the whole catalog's range (0-60 inverted: quicker is fuller)
 --   stats()                   the five stat rows for a trim, in the player's speed units
 --   initialTrim(), chipLabel() which trim the dealership opens on, and the short names on the trim chips
+--   isFleetBrand()            whether a brand's sheets carry the robotaxi fleet's Buy pods card (Phase 9)
 --   offer()                   what the dealership can do with a trim for this player: buy, upgrade, or where
 --                             to get it instead, with the price and the cash left after
 --   normalizeLot()            today's used-lot stock from a GetUsedLot reply
@@ -312,6 +313,22 @@ function ShopModel.brandOf(vehicle: Vehicles.Vehicle): (string, string)
 		return "", ""
 	end
 	return brand.displayName, brand.segment
+end
+
+-- True when the brand makes the robotaxi fleet's pods (any of its cars has a "fleet" trim, Config/Vehicles): its
+-- dealership sheets carry the Buy pods card (Phase 9).
+function ShopModel.isFleetBrand(brandId: string): boolean
+	for _, vehicleId in Catalog.vehicleIds() do
+		local vehicle = Catalog.getVehicle(vehicleId)
+		if vehicle ~= nil and vehicle.brandId == brandId then
+			for _, trim in vehicle.trims do
+				if trim.acquisition == "fleet" then
+					return true
+				end
+			end
+		end
+	end
+	return false
 end
 
 -- The display name of the free starter car (the first vehicle with a "starter" trim), for the claim banner.

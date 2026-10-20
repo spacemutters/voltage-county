@@ -6,10 +6,11 @@
 --               reads the prompt and the car it sits in). One sheet at a time; nothing opens while the player
 --               sits in a car.
 --   closing     the close button, a tap on the dim area, gamepad B, walking away (the prompt is hidden or
---               removed), getting into a car, or the character resetting.
+--               removed), getting into a car, the character resetting, or a pod ride's cutscene starting.
 --   dealership  trims, stats and price from Config (UI/Shop/DealershipSheet). Buy and Upgrade ask first (a
 --               confirm with the price and the cash left after), then call BuyVehicle / UpgradeVehicle; Test
---               drive calls StartTestDrive.
+--               drive calls StartTestDrive. On the robotaxi brand's cars (Phase 9) a Buy pods card closes the
+--               sheet and fires onFleetRequested, and PhoneController opens the phone's Fleet app.
 --   used lot    GetUsedLot when the sheet opens (today's stock), Buy with a confirm (BuyUsed), and the free
 --               starter (ClaimStarter) until the player has claimed it (UI/Shop/UsedLotSheet).
 --
@@ -39,6 +40,7 @@ local InputController = require(script.Parent.InputController)
 local NotifyController = require(script.Parent.NotifyController)
 
 local UI = script.Parent.Parent.UI
+local PhoneConfig = require(UI.Phone.PhoneConfig)
 local Theme = require(UI.Theme)
 local DealershipSheet = require(UI.Shop.DealershipSheet)
 local Primitives = require(UI.Shop.Primitives)
@@ -51,6 +53,7 @@ local GUI_NAME = "Shop"
 local CLOSE_ACTION = "ShopClose"
 local PROFILE_MODULE = "ProfileController" -- written alongside this one (phone helper); looked up in Start
 local PROFILE_REMOTE = "ProfileSnapshot"
+local CUTSCENE_ATTRIBUTE = PhoneConfig.cutsceneAttribute
 
 local e = React.createElement
 local copy = Style.copy
@@ -98,6 +101,10 @@ local ShopController = {}
 -- gamepad B (the phone can't be required here: it requires this module).
 ShopController.onOpened = InputController.newSignal()
 
+-- Fires () when the player taps Buy pods on a dealership sheet, after the sheet has closed. PhoneController opens
+-- the Fleet app on it.
+ShopController.onFleetRequested = InputController.newSignal()
+
 local localPlayer = Players.LocalPlayer
 
 local view: View = {
@@ -134,6 +141,7 @@ local requestBuy: () -> ()
 local requestUpgrade: () -> ()
 local requestBuyUsed: () -> ()
 local testDrive: () -> ()
+local openFleet: () -> ()
 local claimStarter: () -> ()
 local loadLot: () -> ()
 local confirmPending: () -> ()
@@ -155,6 +163,7 @@ local function contentFor(current: View, open: Open): Primitives.Content
 			onBuy = requestBuy,
 			onUpgrade = requestUpgrade,
 			onTestDrive = testDrive,
+			onOpenFleet = openFleet,
 		})
 	end
 	-- The snapshot knows best whether the free starter was claimed; until it arrives, GetUsedLot's answer.
@@ -664,6 +673,15 @@ claimStarter = function()
 	transact("claim", "ClaimStarter", nil)
 end
 
+-- Buy pods: pods are bought in the phone's Fleet app, so the sheet makes way for it.
+openFleet = function()
+	if view.open == nil or view.busy ~= nil then
+		return
+	end
+	close()
+	ShopController.onFleetRequested:Fire()
+end
+
 -- Boot ---------------------------------------------------------------------------------------------------------
 
 -- The screen in unscaled pixels and the UI scale (the HUD's rule: scale up from a landscape phone, never down).
@@ -740,6 +758,12 @@ function ShopController:Start()
 	end)
 	localPlayer.CharacterRemoving:Connect(function()
 		close()
+	end)
+	-- A pod ride's cutscene (Phase 9, Controllers/HailController) clears the screen.
+	localPlayer:GetAttributeChangedSignal(CUTSCENE_ATTRIBUTE):Connect(function()
+		if localPlayer:GetAttribute(CUTSCENE_ATTRIBUTE) == true then
+			close()
+		end
 	end)
 end
 

@@ -8,6 +8,12 @@
 -- cash and the garage in quick succession) is coalesced: at most one snapshot per player every
 -- Config/Data.snapshotMinInterval seconds, and always one after the last change.
 --
+-- Phase 9 (docs/phase-9-contracts.md): the snapshot also carries the robotaxi fleet (Types.SnapshotFleet): the
+-- pods, the whole dollars ready to collect, the slots (Config/Fleet's default plus the Fleet Manager bonus while
+-- the player attribute Config/Fleet.pass.attribute is true, which FleetService sets), the pod price and sell-back,
+-- every zone with its demand and expected $ an hour, and the offline rule. `push` sends a fresh snapshot for a
+-- change that isn't in the save (FleetService calls it when the pass is bought).
+--
 -- Only ever sends a player their own data. No polling: one task.defer or task.delay per burst, per player.
 
 local Players = game:GetService("Players")
@@ -15,6 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
+local Fleet = require(ReplicatedStorage.Shared.Config.Fleet)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Types = require(ReplicatedStorage.Shared.Types)
@@ -62,9 +69,44 @@ local function snapshotVehicle(vehicle: { [string]: any }): Types.SnapshotVehicl
 	}
 end
 
+-- The client's copy of the fleet: the saved pods (each a plain uid and zone; entries without a string uid left
+-- out), the whole dollars waiting, and the prices, slots, zones and offline rule from Config/Fleet.
+-- `hasFleetManager` adds the pass's bonus slots.
+function ProfileSyncService.snapshotFleet(fleet: any, hasFleetManager: boolean): Types.SnapshotFleet
+	local saved = if type(fleet) == "table" then fleet else {}
+	local pods: { Types.FleetPod } = {}
+	if type(saved.pods) == "table" then
+		for _, pod in saved.pods do
+			if type(pod) == "table" and type(pod.uid) == "string" then
+				table.insert(pods, { uid = pod.uid, zone = text(pod.zone, Fleet.defaultZone) })
+			end
+		end
+	end
+	local zones: { Types.SnapshotFleetZone } = {}
+	for _, zone in Fleet.zones do
+		table.insert(zones, {
+			id = zone.id,
+			name = Fleet.zoneName(zone.id),
+			demand = zone.demand,
+			perHour = Fleet.perHour(zone.id),
+		})
+	end
+	return {
+		pods = pods,
+		uncollected = math.max(math.floor(number(saved.uncollected, 0)), 0),
+		slots = Fleet.slotsFor(hasFleetManager),
+		podPrice = Fleet.podPrice,
+		sellBack = Fleet.sellBack,
+		zones = zones,
+		offlineRate = Fleet.offlineRate,
+		offlineCapHours = Fleet.offlineCapHours,
+	}
+end
+
 -- The snapshot a player's client gets of their own data: new tables throughout (nothing shared with the save),
--- sanitized fields only, cars sorted favorites first then newest (Config/Garage.sortVehicles).
-function ProfileSyncService.snapshot(data: Types.PlayerData): Types.ProfileSnapshot
+-- sanitized fields only, cars sorted favorites first then newest (Config/Garage.sortVehicles). `hasFleetManager`
+-- (default false) is whether the player owns the Fleet Manager pass, for the fleet's slots.
+function ProfileSyncService.snapshot(data: Types.PlayerData, hasFleetManager: boolean?): Types.ProfileSnapshot
 	local raw = data :: any
 	local vehicles: { Types.SnapshotVehicle } = {}
 	if type(raw.vehicles) == "table" then
@@ -89,6 +131,7 @@ function ProfileSyncService.snapshot(data: Types.PlayerData): Types.ProfileSnaps
 			musicVolume = number(settings.musicVolume, defaults.musicVolume),
 		},
 		credits = { balance = number(credits.balance, Data.defaults.credits) },
+		fleet = ProfileSyncService.snapshotFleet(raw.fleet, hasFleetManager == true),
 	}
 end
 
@@ -102,7 +145,8 @@ local function send(player: Player)
 		return -- left, or the session ended; nothing to send
 	end
 	lastSent[player] = os.clock()
-	Net.fireClient(REMOTE, player, ProfileSyncService.snapshot(data))
+	local hasFleetManager = player:GetAttribute(Fleet.pass.attribute) == true
+	Net.fireClient(REMOTE, player, ProfileSyncService.snapshot(data, hasFleetManager))
 end
 
 -- Schedules a snapshot for the player unless one is already on its way (it will read the latest data when it
@@ -117,6 +161,14 @@ local function schedule(player: Player)
 		pending[player] = task.delay(waitSeconds, send, player)
 	else
 		pending[player] = task.defer(send, player)
+	end
+end
+
+-- Sends the player a fresh snapshot soon, coalesced like every other change. For changes that aren't in the save
+-- (the Fleet Manager pass bought or found on join); changes to the save are sent on their own.
+function ProfileSyncService.push(player: Player)
+	if player.Parent == Players then
+		schedule(player)
 	end
 end
 

@@ -8,6 +8,13 @@
 -- in Studio. Since Phase 4 codes live in the phone (PhoneController), which draws its own button beside the
 -- speed panel.
 --
+-- Phase 9: the fleet chip ("$1,240 ready") once the robotaxi fleet's uncollected earnings in the profile snapshot
+-- reach PhoneConfig.hud.fleetChip.threshold. It sits right of the cash, or under the cash column when that spot
+-- would touch a driving control (fleetChipPlacement), and tapping it fires onFleetChipTapped (PhoneController
+-- opens the Fleet app). While the LocalPlayer attribute PhoneConfig.cutsceneAttribute is true (a pod ride,
+-- Controllers/HailController) the whole HUD hides and the touch controls unmount (letting go of anything held);
+-- both come back when it clears.
+--
 -- Telemetry is read from DriveController about 10 times a second (Heartbeat plus an accumulator, connected
 -- only while driving), and the tree re-renders only when a shown value changes. Speed shows in the player's
 -- units (mph or km/h) from ProfileController. Cash comes from the player's `Cash` attribute, which the server
@@ -54,13 +61,15 @@ local HITCH_ROW = {
 }
 
 -- The Studio spawn menu (which places itself in the top-left corner) is pushed down below the cash readout,
--- the active-job slot and the hitch row.
+-- the active-job slot, the hitch row and the fleet chip's lower place.
 local DEV_MENU_TOP = Controls.touch.margin
 	+ Economy.hud.rowHeight
 	+ Economy.hud.gap
 	+ PhoneConfig.hud.jobSlot.size.Y
 	+ HITCH_ROW.gap
 	+ HITCH_ROW.size.Y
+	+ Economy.hud.gap
+	+ Economy.hud.rowHeight
 	+ Economy.hud.gap
 
 -- The charging card (PhoneConfig.hud.chargingCard, px at UI scale 1) and where it may go. It sits above the
@@ -79,6 +88,7 @@ export type Energy = Hud.Energy
 export type Charging = Hud.Charging
 export type Hitch = Hud.Hitch
 export type HitchAction = Hud.HitchAction
+export type FleetChipPlacement = Hud.FleetChipPlacement
 
 -- Everything the tree shows. render() hands a copy to the App component.
 type View = {
@@ -98,6 +108,8 @@ type View = {
 	cash: number?, -- nil until the player's data has loaded
 	job: ActiveJob?,
 	hitch: Hitch?, -- nil: no hitch row
+	fleetReady: number?, -- the fleet's uncollected $ while the chip shows (nil: no chip)
+	cutscene: boolean, -- a pod ride's cutscene is playing: the HUD is hidden
 }
 
 local e = React.createElement
@@ -110,6 +122,10 @@ HudController.onInputKindChanged = InputController.newSignal()
 -- Fires (action: HitchAction) when the player taps the hitch row's Couple or Uncouple button
 -- (HitchInputController sends it to the server).
 HudController.onHitch = InputController.newSignal()
+
+-- Fires () when the player taps the fleet chip (PhoneController opens the Fleet app; it can't be required here,
+-- since it requires this module).
+HudController.onFleetChipTapped = InputController.newSignal()
 
 local view: View = {
 	driving = false,
@@ -128,33 +144,51 @@ local view: View = {
 	cash = nil,
 	job = nil,
 	hitch = nil,
+	fleetReady = nil,
+	cutscene = false,
 }
 
 local root: any = nil
+local screenGui: ScreenGui? = nil
 local ticker: RBXScriptConnection? = nil
 local lastMph = 0 -- the latest telemetry speed, so a units switch redraws at once
 
 -- Declared with the pure helpers below; App places the charging card and labels the hitch button with them.
 local chargingCardRect: (screen: Vector2, context: Layout.Context, hitch: boolean?) -> Layout.Rect
 local hitchKeyFor: (kind: InputKind) -> string?
+local fleetChipPlacement: (screen: Vector2, context: Layout.Context) -> FleetChipPlacement?
 
 -- The hitch row's button was tapped: HitchInputController takes it from here.
 local function onHitchTapped(action: HitchAction)
 	HudController.onHitch:Fire(action)
 end
 
+-- The fleet chip was tapped: PhoneController opens the Fleet app.
+local function onFleetChipTapped()
+	HudController.onFleetChipTapped:Fire()
+end
+
 -- The whole tree. The root frame is sized 1/scale so that, after the UIScale, it exactly fills the screen
 -- and every child can be laid out in unscaled (phone) pixels.
 local function App(props: View)
 	local showHints = props.hints ~= nil and #props.hints > 0
+	local touch = props.inputKind == "touch"
 	local charging = if props.driving then props.charging else nil
 	local hitch = if props.driving then props.hitch else nil
 	local chargingRect = if charging
 		then chargingCardRect(props.screen, {
 			driving = true,
-			touch = props.inputKind == "touch",
+			touch = touch,
 			hints = showHints,
 		}, hitch ~= nil)
+		else nil
+	local fleetReady = props.fleetReady
+	local fleetPlacement = if fleetReady ~= nil
+		then fleetChipPlacement(props.screen, {
+			driving = props.driving,
+			touch = props.driving and touch,
+			hints = props.driving and showHints,
+		})
 		else nil
 	return e("Frame", {
 		Size = UDim2.fromScale(1 / props.scale, 1 / props.scale),
@@ -177,8 +211,12 @@ local function App(props: View)
 			hitch = hitch,
 			hitchKey = hitchKeyFor(props.inputKind),
 			onHitch = onHitchTapped,
+			fleetReady = if fleetPlacement ~= nil then fleetReady else nil,
+			fleetPlacement = fleetPlacement,
+			onFleetChip = onFleetChipTapped,
 		}),
-		TouchControls = if props.driving and props.inputKind == "touch" then e(TouchControls, {}) else nil,
+		-- Unmounted (not just hidden) during a cutscene, so a held pedal or steering zone lets go.
+		TouchControls = if props.driving and touch and not props.cutscene then e(TouchControls, {}) else nil,
 		DevSpawnMenu = if props.showDevMenu
 			then e("Frame", {
 				Position = UDim2.fromOffset(0, DEV_MENU_TOP),
@@ -374,6 +412,80 @@ function HudController.chargingCardRect(screen: Vector2, context: Layout.Context
 end
 chargingCardRect = HudController.chargingCardRect
 
+-- The fleet chip (Phase 9) ---------------------------------------------------------------------------------------
+
+-- The uncollected $ the fleet chip shows for this fleet (ProfileController.fleet()), or nil when it shouldn't
+-- show: no fleet yet, or less than PhoneConfig.hud.fleetChip.threshold waiting.
+function HudController.fleetChipAmount(fleet: ProfileController.Fleet?): number?
+	if fleet == nil or fleet.uncollected <= 0 or fleet.uncollected < PhoneConfig.hud.fleetChip.threshold then
+		return nil
+	end
+	return fleet.uncollected
+end
+
+-- The fleet chip right of the cash readout, as wide as it can get (with the cash readout at its widest too), so
+-- a spot found clear stays clear whatever the amounts.
+function HudController.fleetChipBesideRect(_screen: Vector2): Layout.Rect
+	local hud = Economy.hud
+	local margin = Controls.touch.margin
+	return Layout.rect(margin + hud.cashMaxWidth + hud.gap, margin, PhoneConfig.hud.fleetChip.maxWidth, hud.rowHeight)
+end
+
+-- The fleet chip under the cash column at its lowest: one gap under the hitch row's place (with no job or hitch
+-- row showing it rises into theirs, which is clear of the same things).
+function HudController.fleetChipBelowRect(screen: Vector2): Layout.Rect
+	local hitch = HudController.hitchRect(screen)
+	local hud = Economy.hud
+	return Layout.rect(hitch.left, hitch.bottom + hud.gap, PhoneConfig.hud.fleetChip.maxWidth, hud.rowHeight)
+end
+
+-- What the fleet chip must stay clear of on `screen` (UI-scale-1 pixels): the GPS route chip and the phone
+-- button, the speed panel while driving, and on touch the steering zones, pedals and touch buttons. (The notices
+-- band is left out: notices come and go above it.)
+function HudController.fleetChipBlockers(screen: Vector2, context: Layout.Context): { Layout.Rect }
+	local list: { Layout.Rect } = {
+		HudController.gpsChipRect(screen),
+		Layout.phoneButton(screen, context),
+	}
+	if context.driving then
+		table.insert(list, Layout.cluster(screen, context.hints))
+	end
+	if context.touch then
+		local zones = Layout.touchZones(screen)
+		table.insert(list, zones.steering)
+		table.insert(list, zones.pedals)
+		table.insert(list, zones.buttons)
+	end
+	return list
+end
+
+-- Where the fleet chip goes on `screen`: "beside" the cash when that spot is on screen and clear of everything in
+-- fleetChipBlockers (landscape phones, tablets, desktops, and portrait on foot), else "below" the cash column
+-- (portrait phones driving on touch, where the touch buttons take the top right), else nil: no room, so no chip
+-- rather than one over a driving control.
+function HudController.fleetChipPlacement(screen: Vector2, context: Layout.Context): FleetChipPlacement?
+	local whole = Layout.screen(screen)
+	local blockers = HudController.fleetChipBlockers(screen, context)
+	local candidates: { { placement: FleetChipPlacement, rect: Layout.Rect } } = {
+		{ placement = "beside", rect = HudController.fleetChipBesideRect(screen) },
+		{ placement = "below", rect = HudController.fleetChipBelowRect(screen) },
+	}
+	for _, candidate in candidates do
+		local clear = Layout.contains(whole, candidate.rect)
+		for _, blocker in blockers do
+			if not clear then
+				break
+			end
+			clear = not Layout.overlaps(candidate.rect, blocker)
+		end
+		if clear then
+			return candidate.placement
+		end
+	end
+	return nil
+end
+fleetChipPlacement = HudController.fleetChipPlacement
+
 -- Input kind -------------------------------------------------------------------------------------------------
 
 -- Which controls the player is using, from the last input type (nil: an input that says nothing about it).
@@ -562,42 +674,69 @@ local function readCash()
 end
 
 local function onProfileChanged()
+	local changed = false
 	local units = ProfileController.settings().units
 	if units ~= view.units then
 		view.units = units
 		view.speed = HudController.speedFor(lastMph, units)
+		changed = true
+	end
+	local fleetReady = HudController.fleetChipAmount(ProfileController.fleet())
+	if fleetReady ~= view.fleetReady then
+		view.fleetReady = fleetReady
+		changed = true
+	end
+	if changed then
 		render()
 	end
+end
+
+-- Cutscene (Phase 9) -----------------------------------------------------------------------------------------------
+
+-- Hides the whole HUD while a pod ride's cutscene plays, and brings it back after.
+local function onCutsceneChanged()
+	local cutscene = Players.LocalPlayer:GetAttribute(PhoneConfig.cutsceneAttribute) == true
+	if cutscene == view.cutscene then
+		return
+	end
+	view.cutscene = cutscene
+	local gui = screenGui
+	if gui then
+		gui.Enabled = not cutscene
+	end
+	render()
 end
 
 function HudController:Start()
 	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = GUI_NAME
+	local gui = Instance.new("ScreenGui")
+	gui.Name = GUI_NAME
 	-- One GUI for the whole session: what it shows follows DriveController, not the character.
-	screenGui.ResetOnSpawn = false
-	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	screenGui.DisplayOrder = Theme.displayOrder.hud
+	gui.ResetOnSpawn = false
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	gui.DisplayOrder = Theme.displayOrder.hud
 	-- Keep every control clear of the Roblox top bar, notches and the home indicator.
-	screenGui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
-	screenGui.Parent = playerGui
+	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+	gui.Parent = playerGui
+	screenGui = gui
 
-	root = ReactRoblox.createRoot(screenGui)
+	root = ReactRoblox.createRoot(gui)
 	view.showDevMenu = RunService:IsStudio()
-	view.scale = HudController.scaleFor(screenGui.AbsoluteSize)
-	view.screen = Layout.layoutSize(screenGui.AbsoluteSize, view.scale)
+	view.scale = HudController.scaleFor(gui.AbsoluteSize)
+	view.screen = Layout.layoutSize(gui.AbsoluteSize, view.scale)
 	setInputKind(kindFor(UserInputService:GetLastInputType()) or deviceKind())
 	-- Controllers that started before this one (the phone) hear the first guess too.
 	HudController.onInputKindChanged:Fire(view.inputKind)
 
-	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		local scale = HudController.scaleFor(screenGui.AbsoluteSize)
-		local screen = Layout.layoutSize(screenGui.AbsoluteSize, scale)
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local scale = HudController.scaleFor(gui.AbsoluteSize)
+		local screen = Layout.layoutSize(gui.AbsoluteSize, scale)
 		local moved = screen ~= view.screen
 		view.screen = screen
-		-- The charging card's spot depends on the screen size; everything else only on the scale.
-		if scale ~= view.scale or (moved and view.charging ~= nil) then
+		-- The charging card's and the fleet chip's spots depend on the screen size; everything else only on the
+		-- scale.
+		if scale ~= view.scale or (moved and (view.charging ~= nil or view.fleetReady ~= nil)) then
 			view.scale = scale
 			render()
 		end
@@ -621,6 +760,9 @@ function HudController:Start()
 
 	ProfileController.onChanged:Connect(onProfileChanged)
 	onProfileChanged()
+
+	Players.LocalPlayer:GetAttributeChangedSignal(PhoneConfig.cutsceneAttribute):Connect(onCutsceneChanged)
+	onCutsceneChanged()
 
 	DriveController.onDrivingChanged:Connect(onDrivingChanged)
 	if DriveController.getCar() then

@@ -24,6 +24,10 @@
 --                   "Nearby <name>" with a Couple button. On keyboard and gamepad the button wears its key cap (T,
 --                   RB), like the phone button. As wide as the job slot and a button tall, so it stays above the
 --                   touch steering zones and left of the light-show button on the smallest landscape phone.
+--   fleet chip      once the robotaxi fleet has PhoneConfig.hud.fleetChip.threshold or more waiting (Phase 9): a
+--                   small "$1,240 ready" chip with a little pod drawn on it. Right of the cash, or under the cash
+--                   column on a portrait phone driving on touch (HudController.fleetChipPlacement picks, and leaves
+--                   it out when neither is clear of the driving controls). Tapping it opens the Fleet app.
 --
 -- Codes moved to the phone's Codes app, and the phone button is drawn by the phone itself (UI/Phone), placed
 -- beside this speed panel by UI/Phone/Layout, which shares the panel's size and position with this file.
@@ -39,6 +43,7 @@ local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Types = require(ReplicatedStorage.Shared.Types)
 
+local Glyph = require(script.Parent.Phone.Glyphs)
 local Layout = require(script.Parent.Phone.Layout)
 local PhoneConfig = require(script.Parent.Phone.PhoneConfig)
 local Theme = require(script.Parent.Theme)
@@ -85,6 +90,9 @@ export type Hitch = {
 	busy: boolean, -- a TrailerAction is with the server: the button waits
 }
 
+-- Where the fleet chip goes (HudController.fleetChipPlacement): right of the cash, or under the cash column.
+export type FleetChipPlacement = "beside" | "below"
+
 -- The car is charging or fueling right now.
 export type Charging = {
 	kind: "battery" | "fuel",
@@ -109,6 +117,9 @@ export type Props = {
 	hitch: Hitch?, -- nil: nothing coupled and nothing near, no hitch row
 	hitchKey: string?, -- the key cap on the hitch button ("T", "RB"); nil on touch
 	onHitch: ((action: HitchAction) -> ())?, -- the hitch button was tapped
+	fleetReady: number?, -- the fleet's uncollected $ for the fleet chip; nil: no chip
+	fleetPlacement: FleetChipPlacement?, -- where the chip goes (nil: no chip)
+	onFleetChip: (() -> ())?, -- the fleet chip was tapped
 }
 
 type DrivingProps = {
@@ -1019,14 +1030,85 @@ local function HitchRow(props: {
 	})
 end
 
--- The player's cash, top left (lined up with the touch steering zones), with the active job under it and the
--- hitch row under that.
+-- The fleet chip: a little pod and "$1,240 ready", as tall as the cash readout, growing with the amount up to
+-- PhoneConfig.hud.fleetChip.maxWidth. Never a gamepad selection target (like the hitch button): gamepads open the
+-- phone with LB.
+local function FleetChip(props: { amount: number, order: number, onTap: (() -> ())? })
+	local colors = Theme.colors
+	local hud = Economy.hud
+	local chip = PhoneConfig.hud.fleetChip
+	local textLeft = chip.glyphSize + chip.gap
+	return e("TextButton", {
+		LayoutOrder = props.order,
+		Size = UDim2.fromOffset(0, hud.rowHeight),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = colors.panel,
+		BackgroundTransparency = colors.panelTransparency,
+		BorderSizePixel = 0,
+		AutoButtonColor = true,
+		Selectable = false,
+		Text = "",
+		[React.Event.Activated] = function()
+			local onTap = props.onTap
+			if onTap then
+				onTap()
+			end
+		end,
+	}, {
+		Corner = e("UICorner", { CornerRadius = UDim.new(0, hud.cornerRadius) }),
+		Padding = e("UIPadding", {
+			PaddingLeft = UDim.new(0, chip.padding),
+			PaddingRight = UDim.new(0, chip.padding),
+		}),
+		Limits = e("UISizeConstraint", {
+			MinSize = Vector2.new(hud.rowHeight, hud.rowHeight),
+			MaxSize = Vector2.new(chip.maxWidth, hud.rowHeight),
+		}),
+		Pod = e("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.fromScale(0, 0.5),
+			Size = UDim2.fromOffset(chip.glyphSize, chip.glyphSize),
+			BackgroundTransparency = 1,
+		}, {
+			Glyph = e(Glyph, {
+				name = "fleet",
+				color = colors.accent,
+				background = colors.panel,
+				size = Vector2.new(chip.glyphSize, chip.glyphSize),
+			}),
+		}),
+		-- Sized to its text so the chip grows with it; cut short at the chip's widest.
+		Amount = e("TextLabel", {
+			Position = UDim2.fromOffset(textLeft, 0),
+			Size = UDim2.fromScale(0, 1),
+			AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundTransparency = 1,
+			FontFace = Theme.fonts.bold,
+			Text = string.format(chip.text, Economy.formatCash(props.amount)),
+			TextColor3 = colors.text,
+			TextSize = Theme.text.body,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}, {
+			Limits = e("UISizeConstraint", {
+				MaxSize = Vector2.new(chip.maxWidth - 2 * chip.padding - textLeft, hud.rowHeight),
+			}),
+		}),
+	})
+end
+
+-- The player's cash, top left (lined up with the touch steering zones), with the fleet chip on its right, the
+-- active job under it and the hitch row under that; the fleet chip goes under those instead when HudController
+-- placed it "below".
 local function Wallet(props: {
 	cash: number?,
 	job: ActiveJob?,
 	hitch: Hitch?,
 	hitchKey: string?,
 	onHitch: ((action: HitchAction) -> ())?,
+	fleetReady: number?,
+	fleetPlacement: FleetChipPlacement?,
+	onFleetChip: (() -> ())?,
 })
 	local colors = Theme.colors
 	local hud = Economy.hud
@@ -1034,12 +1116,15 @@ local function Wallet(props: {
 	local cash = props.cash
 	local job = props.job
 	local hitch = props.hitch
+	local fleetReady = props.fleetReady
+	local placement = if fleetReady ~= nil then props.fleetPlacement else nil
+	local chipRow = if placement == "below" then hud.gap + hud.rowHeight else 0
 
 	return e("Frame", {
 		Position = UDim2.fromOffset(margin, margin),
 		Size = UDim2.fromOffset(
 			math.max(hud.cashMaxWidth, PhoneConfig.hud.jobSlot.size.X, HITCH.width),
-			hud.rowHeight + hud.gap + PhoneConfig.hud.jobSlot.size.Y + hud.gap + HITCH.height
+			hud.rowHeight + hud.gap + PhoneConfig.hud.jobSlot.size.Y + hud.gap + HITCH.height + chipRow
 		),
 		BackgroundTransparency = 1,
 	}, {
@@ -1049,33 +1134,53 @@ local function Wallet(props: {
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = UDim.new(0, hud.gap),
 		}),
-		-- Grows with the amount, between cashMinWidth and cashMaxWidth.
-		Cash = e("TextLabel", {
+		-- The cash, with the fleet chip right of it when it goes there. As tall as the cash readout, so the job
+		-- slot under it stays where HudController.jobSlotRect says.
+		Top = e("Frame", {
 			LayoutOrder = 1,
 			Size = UDim2.fromOffset(0, hud.rowHeight),
 			AutomaticSize = Enum.AutomaticSize.X,
-			BackgroundColor3 = colors.panel,
-			BackgroundTransparency = colors.panelTransparency,
-			BorderSizePixel = 0,
-			FontFace = Theme.fonts.bold,
-			RichText = cash ~= nil,
-			Text = if cash ~= nil then cashText(cash) else hud.loadingText,
-			TextColor3 = if cash ~= nil then colors.text else colors.textDim,
-			TextSize = hud.cashTextSize,
+			BackgroundTransparency = 1,
 		}, {
-			Corner = e("UICorner", { CornerRadius = UDim.new(0, hud.cornerRadius) }),
-			Padding = e("UIPadding", {
-				PaddingLeft = UDim.new(0, hud.cashPadding),
-				PaddingRight = UDim.new(0, hud.cashPadding),
+			Layout = e("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, hud.gap),
 			}),
-			Limits = e("UISizeConstraint", {
-				MinSize = Vector2.new(hud.cashMinWidth, hud.rowHeight),
-				MaxSize = Vector2.new(hud.cashMaxWidth, hud.rowHeight),
+			Cash = e("TextLabel", {
+				LayoutOrder = 1,
+				Size = UDim2.fromOffset(0, hud.rowHeight),
+				AutomaticSize = Enum.AutomaticSize.X,
+				BackgroundColor3 = colors.panel,
+				BackgroundTransparency = colors.panelTransparency,
+				BorderSizePixel = 0,
+				FontFace = Theme.fonts.bold,
+				RichText = cash ~= nil,
+				Text = if cash ~= nil then cashText(cash) else hud.loadingText,
+				TextColor3 = if cash ~= nil then colors.text else colors.textDim,
+				TextSize = hud.cashTextSize,
+			}, {
+				Corner = e("UICorner", { CornerRadius = UDim.new(0, hud.cornerRadius) }),
+				Padding = e("UIPadding", {
+					PaddingLeft = UDim.new(0, hud.cashPadding),
+					PaddingRight = UDim.new(0, hud.cashPadding),
+				}),
+				Limits = e("UISizeConstraint", {
+					MinSize = Vector2.new(hud.cashMinWidth, hud.rowHeight),
+					MaxSize = Vector2.new(hud.cashMaxWidth, hud.rowHeight),
+				}),
 			}),
+			Fleet = if fleetReady ~= nil and placement == "beside"
+				then e(FleetChip, { amount = fleetReady, order = 2, onTap = props.onFleetChip })
+				else nil,
 		}),
 		Job = if job then e(JobSlot, { job = job, order = 2 }) else nil,
 		Hitch = if hitch
 			then e(HitchRow, { hitch = hitch, keyText = props.hitchKey, order = 3, onHitch = props.onHitch })
+			else nil,
+		Fleet = if fleetReady ~= nil and placement == "below"
+			then e(FleetChip, { amount = fleetReady, order = 4, onTap = props.onFleetChip })
 			else nil,
 	})
 end
@@ -1107,6 +1212,9 @@ local function Hud(props: Props)
 			hitch = if props.driving then props.hitch else nil,
 			hitchKey = props.hitchKey,
 			onHitch = props.onHitch,
+			fleetReady = props.fleetReady,
+			fleetPlacement = props.fleetPlacement,
+			onFleetChip = props.onFleetChip,
 		}),
 	})
 end

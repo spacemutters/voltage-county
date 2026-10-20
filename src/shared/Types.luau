@@ -47,7 +47,18 @@ export type Boost = { id: string, factor: number, endsAt: number } -- endsAt = o
 -- Player settings, set from the phone's Settings app (Net UpdateSettings, validated by GarageService).
 export type Settings = { units: "mph" | "kph", camera: string, musicVolume: number }
 
--- Schema version 5 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
+-- One robotaxi pod (Phase 9): its uid (HttpService:GenerateGUID(false)) and the Config/Fleet zone it works in.
+export type FleetPod = { uid: string, zone: string }
+
+-- The robotaxi fleet (Phase 9; Services/FleetService owns it). Times are os.time() seconds.
+export type FleetData = {
+	pods: { FleetPod },
+	lastCollectedAt: number, -- the player's last Collect (the collect cooldown)
+	uncollected: number, -- v6: $ earned and not yet collected (not rounded; collecting pays the whole dollars)
+	lastOnlineAt: number, -- v6: earnings are counted up to here; saved on the fleet timer and on leaving
+}
+
+-- Schema version 6 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
 export type PlayerData = {
 	version: number,
 	cash: number,
@@ -57,7 +68,7 @@ export type PlayerData = {
 	designs: { CustomDesign },
 	customSlots: number,
 	credits: { balance: number, freeDesignUsed: boolean, reserved: { CreditReservation } },
-	fleet: { pods: { { uid: string, zone: string } }, lastCollectedAt: number },
+	fleet: FleetData,
 	jobs: { xp: { [string]: number }, licenses: { [string]: boolean } },
 	house: { upgrades: { [string]: boolean } },
 	stats: { milesDriven: number, tripsCompleted: number, playtimeSec: number },
@@ -88,6 +99,26 @@ export type SnapshotVehicle = {
 	acquiredAt: number,
 }
 
+-- A zone a pod can work in, as the Fleet app shows it (Config/Fleet).
+export type SnapshotFleetZone = {
+	id: string, -- a MapLayout zone id
+	name: string, -- its display name
+	demand: number, -- 1 = average
+	perHour: number, -- expected $ per pod per hour online there (before the hourly variation and boosts)
+}
+
+-- The robotaxi fleet part of the snapshot (Phase 9, docs/phase-9-contracts.md).
+export type SnapshotFleet = {
+	pods: { FleetPod },
+	uncollected: number, -- whole dollars ready to collect
+	slots: number, -- pods allowed now (Config/Fleet default slots + the Fleet Manager pass bonus)
+	podPrice: number, -- what BuyPod costs now
+	sellBack: number, -- what SellPod pays for one pod
+	zones: { SnapshotFleetZone },
+	offlineRate: number, -- share of the online rate pods earn while the player is away
+	offlineCapHours: number, -- away time past this earns nothing
+}
+
 export type ProfileSnapshot = {
 	cash: number,
 	garageSlots: number,
@@ -96,6 +127,9 @@ export type ProfileSnapshot = {
 	vehicles: { SnapshotVehicle }, -- favorites first, then the newest (Config/Garage.sortVehicles)
 	settings: Settings,
 	credits: { balance: number },
+	-- Phase 9: ProfileSyncService always sends it; optional so a client copy built before it (ProfileController's
+	-- checked copy, specs) still type-checks.
+	fleet: SnapshotFleet?,
 }
 
 -- Driving -------------------------------------------------------------------------------------------------

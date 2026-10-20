@@ -615,19 +615,19 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 9 — Robotaxi fleet (tycoon layer + ambient traffic)
 
 **Tasks**
-- [ ] Fleet tab in the dealership: buy pods (3 slots by default, +5 with the Fleet Manager pass) and assign each one a service zone.
-- [ ] Simulated earnings, not physical ones:
+- [x] Fleet tab in the dealership: buy pods (3 slots by default, +5 with the Fleet Manager pass) and assign each one a service zone.
+- [x] Simulated earnings, not physical ones:
   - Rides per hour × fare × zone demand.
   - Collected in the Fleet app.
   - Offline accrual at 25%, capped at 8 h.
-- [ ] Ambient pods, which double as ambient traffic:
+- [x] Ambient pods, which double as ambient traffic:
   - The server publishes routes (road-graph paths + start times), and every client renders the same pods moving along them with no physics replication.
   - Pods don't collide with players; they slow down locally when a player car is ahead.
-- [ ] Hail a pod from the phone for fast travel: a short ride cutscene, then arrival at the destination. The fare is charged server-side.
+- [x] Hail a pod from the phone for fast travel: a short ride cutscene, then arrival at the destination. The fare is charged server-side.
 
 **Acceptance**
-- [ ] Fleet earnings spec: deterministic for a given seed and clock; offline accrual correct across rejoin (fake clock).
-- [ ] 12 ambient pods run for 10 minutes with no stuck pods, and client frame cost stays within budget.
+- [x] Fleet earnings spec: deterministic for a given seed and clock; offline accrual correct across rejoin (fake clock).
+- [x] 12 ambient pods run for 10 minutes with no stuck pods, and client frame cost stays within budget.
 
 **Stop.**
 

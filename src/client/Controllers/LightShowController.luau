@@ -26,7 +26,8 @@
 -- a button under the notices band asks the server to start or join the show there (JoinLightShow); while
 -- their own car is in a show it turns into "Leave show" (LeaveLightShow), and anyone just watching a show gets
 -- "Hide show" (also LeaveLightShow; the server then keeps that meet spot's shows off their screen for a while). Mobile-first: one 48 px button, UI
--- scaled up (never down) like the HUD.
+-- scaled up (never down) like the HUD. The button hides while a pod ride's cutscene plays (the LocalPlayer
+-- attribute Config/Hail cutscene.attribute, like the HUD).
 --
 -- Studio only: a BindableFunction "Probe" under this module returns the timing of the first cues each car ran
 -- (Dev/LightShowTests.sync reads it from its own copy of the modules).
@@ -39,6 +40,7 @@ local Workspace = game:GetService("Workspace")
 
 local React = require(ReplicatedStorage.Packages.React)
 local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
+local Hail = require(ReplicatedStorage.Shared.Config.Hail)
 local LightShows = require(ReplicatedStorage.Shared.Config.LightShows)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
 local Net = require(ReplicatedStorage.Shared.Net)
@@ -952,6 +954,13 @@ function LightShowController:Start()
 	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 	gui.Parent = playerGui
 	screenGui = gui
+	-- The button hides while a pod ride's cutscene plays (Controllers/HailController), like the HUD.
+	local cutsceneAttribute = Hail.cutscene.attribute
+	local function onCutsceneChanged()
+		gui.Enabled = Players.LocalPlayer:GetAttribute(cutsceneAttribute) ~= true
+	end
+	Players.LocalPlayer:GetAttributeChangedSignal(cutsceneAttribute):Connect(onCutsceneChanged)
+	onCutsceneChanged()
 	root = ReactRoblox.createRoot(gui)
 	scale = HudController.scaleFor(gui.AbsoluteSize)
 	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()

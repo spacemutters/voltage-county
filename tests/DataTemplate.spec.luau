@@ -1,6 +1,7 @@
 --!strict
 -- A fresh PlayerData profile (PLAN.md §4 and §6; docs/phase-3-contracts.md "Player data"; schema 5 owned-car
--- look fields, docs/phase-7-contracts.md "Schema v5").
+-- look fields, docs/phase-7-contracts.md "Schema v5"; schema 6 fleet fields, docs/phase-9-contracts.md "Fleet
+-- economy").
 -- Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,7 +25,7 @@ local SHAPE: { [string]: any } = {
 	designs = "table",
 	customSlots = "number",
 	credits = { balance = "number", freeDesignUsed = "boolean", reserved = "table" },
-	fleet = { pods = "table", lastCollectedAt = "number" },
+	fleet = { pods = "table", lastCollectedAt = "number", uncollected = "number", lastOnlineAt = "number" }, -- v6
 	jobs = { xp = "table", licenses = "table" },
 	house = { upgrades = "table" },
 	stats = { milesDriven = "number", tripsCompleted = "number", playtimeSec = "number" },
@@ -121,6 +122,7 @@ return function(t: Harness.Api)
 			t.expect(data.codesRedeemed).toEqual({})
 			t.expect(data.pendingGrants).toEqual({})
 			t.expect(data.fleet.pods).toEqual({})
+			t.expect(data.fleet.uncollected).toBe(0) -- v6: nothing earned yet
 		end)
 
 		t.it("uses the default settings", function()
@@ -134,6 +136,7 @@ return function(t: Harness.Api)
 		t.it("stamps the join time, defaulting to now", function()
 			t.expect(Template.new(JOIN_TIME).firstJoinAt).toBe(JOIN_TIME)
 			t.expect(Template.new(JOIN_TIME).fleet.lastCollectedAt).toBe(JOIN_TIME)
+			t.expect(Template.new(JOIN_TIME).fleet.lastOnlineAt).toBe(JOIN_TIME)
 			local before = os.time()
 			local data = Template.new()
 			t.expect(data.firstJoinAt >= before and data.firstJoinAt <= os.time()).toBe(true)
@@ -144,8 +147,10 @@ return function(t: Harness.Api)
 			t.expect(Template.stamp(fresh, JOIN_TIME)).toBe(true)
 			t.expect(fresh.firstJoinAt).toBe(JOIN_TIME)
 			t.expect(fresh.fleet.lastCollectedAt).toBe(JOIN_TIME)
+			t.expect(fresh.fleet.lastOnlineAt).toBe(JOIN_TIME)
 			t.expect(Template.stamp(fresh, JOIN_TIME + 60)).toBe(false)
 			t.expect(fresh.firstJoinAt).toBe(JOIN_TIME)
+			t.expect(fresh.fleet.lastOnlineAt).toBe(JOIN_TIME)
 		end)
 
 		t.it("makes a new owned car with every field and the default look", function()

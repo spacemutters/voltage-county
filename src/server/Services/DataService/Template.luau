@@ -34,7 +34,7 @@ function Template.new(now: number?): Types.PlayerData
 		designs = {},
 		customSlots = Economy.customSlots,
 		credits = { balance = Data.defaults.credits, freeDesignUsed = false, reserved = {} },
-		fleet = { pods = {}, lastCollectedAt = stamp },
+		fleet = { pods = {}, lastCollectedAt = stamp, uncollected = 0, lastOnlineAt = stamp },
 		jobs = { xp = {}, licenses = {} },
 		house = { upgrades = {} },
 		stats = { milesDriven = 0, tripsCompleted = 0, playtimeSec = 0 },
@@ -93,6 +93,12 @@ function Template.stamp(data: Types.PlayerData, now: number): boolean
 	end
 	if data.fleet.lastCollectedAt == Template.UNSET_TIME then
 		data.fleet.lastCollectedAt = now
+		changed = true
+	end
+	-- Schema 6: a new profile, and a save the 5 -> 6 migration just gave the field, has been "online" since now,
+	-- so it earns nothing for the time before (it had no pods then anyway).
+	if data.fleet.lastOnlineAt == Template.UNSET_TIME then
+		data.fleet.lastOnlineAt = now
 		changed = true
 	end
 	return changed

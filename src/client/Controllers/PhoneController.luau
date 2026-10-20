@@ -12,9 +12,17 @@
 --   Garage       cars from the profile snapshot (ProfileController). Spawn -> Net SpawnOwned, Put away ->
 --                DespawnOwned, Sell (after a confirm) -> SellVehicle, the star -> SetFavorite. One request at a
 --                time; every reply shows as a notice (NotifyController).
+--   Fleet        the robotaxi fleet from the snapshot (ProfileController.fleetOf; docs/phase-9-contracts.md "Fleet
+--                UI"). Collect -> Net CollectFleet; Buy a pod opens the zone picker and a zone -> BuyPod; Move
+--                opens it for a pod and a zone -> AssignPod; Sell (after a confirm) -> SellPod. One request at a
+--                time; every reply shows as a notice. The HUD's fleet chip (HudController.onFleetChipTapped)
+--                and the dealership's Buy pods card (ShopController.onFleetRequested) open this app.
 --   Codes        Net RedeemCode, as the HUD did in Phase 3.
 --   Settings     units, starting camera and music volume -> Net UpdateSettings. The camera setting is applied to
 --                CameraController whenever it changes.
+--
+-- While the LocalPlayer attribute PhoneConfig.cutsceneAttribute is true (a pod ride, Controllers/HailController)
+-- the phone is put away and its button hidden, and nothing opens it until the attribute clears.
 --
 -- Clients send intents only: the server decides every outcome and sends a new ProfileSnapshot. Settings and
 -- favorites show at once (ProfileController patches) and are sent after a short pause, so a burst of taps sends
@@ -83,6 +91,10 @@ type View = {
 	confirmUid: string?, -- the car whose sell confirm is showing
 	redeeming: boolean, -- a code is with the server
 	codesClear: number, -- bumped when a code worked, to empty the box
+	fleetBusy: FleetApp.Busy?, -- a fleet request is with the server
+	fleetPicker: FleetApp.Picker?, -- the Fleet app's zone picker is showing
+	fleetConfirmUid: string?, -- the pod whose sell confirm is showing
+	cutscene: boolean, -- a pod ride's cutscene is playing: the phone is put away and hidden
 }
 
 local PhoneController = {}
@@ -102,9 +114,14 @@ local view: View = {
 	confirmUid = nil,
 	redeeming = false,
 	codesClear = 0,
+	fleetBusy = nil,
+	fleetPicker = nil,
+	fleetConfirmUid = nil,
+	cutscene = false,
 }
 
 local root: any = nil
+local screenGui: ScreenGui? = nil
 local sections: { GpsApp.Section } = {}
 local closeSerial = 0 -- bumped on every open and close, so a stale close timer does nothing
 local backBound = false
@@ -155,10 +172,16 @@ local function bindBack(on: boolean)
 	end
 end
 
+-- The Fleet app's picker and sell confirm go away (a request already with the server still shows its notice).
+local function clearFleetOverlays()
+	view.fleetPicker = nil
+	view.fleetConfirmUid = nil
+end
+
 -- Opens the phone on an app (nil: the home screen). Opening while it's open switches to that app. Does nothing
--- while a shop sheet is open: the two would stack and fight over gamepad B.
+-- while a shop sheet is open (the two would stack and fight over gamepad B) or during a cutscene.
 function PhoneController.open(app: AppId?)
-	if ShopController.isOpen() then
+	if ShopController.isOpen() or view.cutscene then
 		return
 	end
 	closeSerial += 1
@@ -166,6 +189,7 @@ function PhoneController.open(app: AppId?)
 	view.leaving = false
 	view.app = app
 	view.confirmUid = nil
+	clearFleetOverlays()
 	bindBack(true)
 	render()
 end
@@ -179,6 +203,7 @@ function PhoneController.close()
 	local serial = closeSerial
 	view.leaving = true
 	view.confirmUid = nil
+	clearFleetOverlays()
 	bindBack(false)
 	render()
 	task.delay(Theme.motion.sheetSeconds, function()
@@ -199,10 +224,13 @@ function PhoneController.toggle()
 	end
 end
 
--- One step back: the sell confirm, then the home screen, then closed.
+-- One step back: a sell confirm or the fleet's zone picker, then the home screen, then closed.
 function PhoneController.back()
 	if view.confirmUid ~= nil and view.busy == nil then
 		view.confirmUid = nil
+		render()
+	elseif (view.fleetConfirmUid ~= nil or view.fleetPicker ~= nil) and view.fleetBusy == nil then
+		clearFleetOverlays()
 		render()
 	elseif view.app ~= nil then
 		view.app = nil
@@ -221,8 +249,8 @@ local function onToggleAction(
 	state: Enum.UserInputState,
 	_input: InputObject
 ): Enum.ContextActionResult
-	if UserInputService:GetFocusedTextBox() ~= nil then
-		return Enum.ContextActionResult.Pass -- typing a P in the chat or the code box
+	if UserInputService:GetFocusedTextBox() ~= nil or view.cutscene then
+		return Enum.ContextActionResult.Pass -- typing a P in the chat or the code box, or riding a pod
 	end
 	if state == Enum.UserInputState.Begin then
 		PhoneController.toggle()
@@ -418,6 +446,136 @@ local function directions(locationId: string)
 	end
 end
 
+-- Fleet --------------------------------------------------------------------------------------------------------
+
+-- Sends one fleet request (one at a time) and shows the reply. `after` runs once the answer is in, told whether
+-- the request worked. The server sends a fresh snapshot after any change, which redraws the app.
+local function fleetRequest(remote: string, payload: any, busy: FleetApp.Busy, after: (worked: boolean) -> ())
+	if view.fleetBusy ~= nil then
+		return
+	end
+	view.fleetBusy = busy
+	render()
+	task.spawn(function()
+		local called, reply = pcall(Net.invokeServer, remote, payload)
+		view.fleetBusy = nil
+		after(showReply(called, reply))
+		render()
+	end)
+end
+
+local function collectFleet()
+	fleetRequest("CollectFleet", nil, { action = "collect" }, function(_worked: boolean) end)
+end
+
+local function askBuyPod()
+	if view.fleetBusy == nil then
+		view.fleetPicker = { kind = "buy" }
+		render()
+	end
+end
+
+local function askMovePod(uid: string)
+	if view.fleetBusy == nil then
+		view.fleetPicker = { kind = "assign", uid = uid }
+		render()
+	end
+end
+
+local function cancelPick()
+	if view.fleetBusy == nil then
+		view.fleetPicker = nil
+		render()
+	end
+end
+
+-- A zone was picked in the open picker: buy a pod there, or move the pod there. The picker closes once that
+-- worked; when it didn't, it stays so another zone can be tried (the notice says why).
+local function pickZone(zone: string)
+	local picker = view.fleetPicker
+	if picker == nil then
+		return
+	end
+	local function after(worked: boolean)
+		if worked and view.fleetPicker == picker then
+			view.fleetPicker = nil
+		end
+	end
+	if picker.kind == "buy" then
+		fleetRequest("BuyPod", { zone = zone }, { action = "buy", zone = zone }, after)
+	elseif picker.uid ~= nil then
+		local uid: string = picker.uid
+		fleetRequest("AssignPod", { uid = uid, zone = zone }, { action = "assign", uid = uid, zone = zone }, after)
+	end
+end
+
+local function askSellPod(uid: string)
+	if view.fleetBusy == nil then
+		view.fleetConfirmUid = uid
+		render()
+	end
+end
+
+local function cancelSellPod()
+	if view.fleetBusy == nil then
+		view.fleetConfirmUid = nil
+		render()
+	end
+end
+
+local function confirmSellPod(uid: string)
+	fleetRequest("SellPod", { uid = uid }, { action = "sell", uid = uid }, function(_worked: boolean)
+		-- The confirm closes once the answer is in, worked or not; the notice says which.
+		if view.fleetConfirmUid == uid then
+			view.fleetConfirmUid = nil
+		end
+	end)
+end
+
+-- Drops a picker or confirm whose pod the latest snapshot no longer has (sold, or never confirmed).
+local function pruneFleetOverlays(fleet: ProfileController.Fleet?)
+	local owned: { [string]: boolean } = {}
+	if fleet then
+		for _, pod in fleet.pods do
+			owned[pod.uid] = true
+		end
+	end
+	local picker = view.fleetPicker
+	if picker ~= nil and picker.kind == "assign" and (picker.uid == nil or not owned[picker.uid]) then
+		view.fleetPicker = nil
+	end
+	local confirmUid = view.fleetConfirmUid
+	if confirmUid ~= nil and not owned[confirmUid] then
+		view.fleetConfirmUid = nil
+	end
+end
+
+-- Cutscene -----------------------------------------------------------------------------------------------------
+
+-- Puts the phone away at once (no slide: it is hidden anyway) and hides its button while a pod ride's cutscene
+-- plays; brings the button back after. The phone stays closed.
+local function onCutsceneChanged()
+	local cutscene = Players.LocalPlayer:GetAttribute(PhoneConfig.cutsceneAttribute) == true
+	if cutscene == view.cutscene then
+		return
+	end
+	view.cutscene = cutscene
+	if cutscene then
+		closeSerial += 1 -- a close already sliding out does nothing when its timer ends
+		view.open = false
+		view.leaving = false
+		view.app = nil
+		view.confirmUid = nil
+		clearFleetOverlays()
+		bindBack(false)
+	end
+	local gui = screenGui
+	if gui then
+		gui.Enabled = not cutscene
+	end
+	render()
+end
+
 -- GPS ----------------------------------------------------------------------------------------------------------
 
 local function pickDestination(id: string)
@@ -507,7 +665,16 @@ end
 -- The open app's screen.
 local function appBody(app: AppId?): any
 	if app == "gps" then
-		return e(GpsApp, { sections = sections, status = view.gps, onPick = pickDestination, onClear = clearRoute })
+		return e(GpsApp, {
+			sections = sections,
+			status = view.gps,
+			onPick = pickDestination,
+			onClear = clearRoute,
+			-- A booked pod ride: get the phone out of the way (the ride's cutscene hides it anyway).
+			onHailed = function()
+				PhoneController.close()
+			end,
+		})
 	elseif app == "garage" then
 		return e(GarageApp, {
 			profile = view.profile,
@@ -525,7 +692,22 @@ local function appBody(app: AppId?): any
 	elseif app == "jobs" then
 		return e(JobsApp, {})
 	elseif app == "fleet" then
-		return e(FleetApp, {})
+		local profile = view.profile
+		return e(FleetApp.App, {
+			fleet = ProfileController.fleetOf(profile),
+			cash = if profile then profile.cash else nil,
+			busy = view.fleetBusy,
+			picker = view.fleetPicker,
+			confirmUid = view.fleetConfirmUid,
+			onCollect = collectFleet,
+			onAskBuy = askBuyPod,
+			onAskMove = askMovePod,
+			onPickZone = pickZone,
+			onCancelPick = cancelPick,
+			onAskSell = askSellPod,
+			onCancelSell = cancelSellPod,
+			onConfirmSell = confirmSellPod,
+		})
 	elseif app == "wallet" then
 		return e(WalletApp, { profile = view.profile })
 	elseif app == "codes" then
@@ -579,6 +761,7 @@ render = function()
 			title = appTitle(view.app),
 			body = if view.open then appBody(view.app) else nil,
 			routeActive = view.gps ~= nil,
+			fleetReady = HudController.fleetChipAmount(ProfileController.fleetOf(view.profile)) ~= nil,
 			onToggle = PhoneController.toggle,
 			onClose = PhoneController.close,
 			onBack = PhoneController.back,
@@ -595,24 +778,25 @@ function PhoneController:Start()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = GUI_NAME
-	screenGui.ResetOnSpawn = false -- one phone for the whole session
-	screenGui.DisplayOrder = Theme.displayOrder.phone
-	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	local gui = Instance.new("ScreenGui")
+	gui.Name = GUI_NAME
+	gui.ResetOnSpawn = false -- one phone for the whole session
+	gui.DisplayOrder = Theme.displayOrder.phone
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	-- The same safe area as the HUD, so the phone button lines up with the speed panel.
-	screenGui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
-	screenGui.Parent = playerGui
+	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+	gui.Parent = playerGui
+	screenGui = gui
 
-	root = ReactRoblox.createRoot(screenGui)
+	root = ReactRoblox.createRoot(gui)
 	sections = GpsController.destinations()
 
 	local function measure()
-		view.scale = HudController.scaleFor(screenGui.AbsoluteSize)
-		view.screen = Layout.layoutSize(screenGui.AbsoluteSize, view.scale)
+		view.scale = HudController.scaleFor(gui.AbsoluteSize)
+		view.screen = Layout.layoutSize(gui.AbsoluteSize, view.scale)
 	end
 	measure()
-	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		measure()
 		render()
 	end)
@@ -645,7 +829,7 @@ function PhoneController:Start()
 		render()
 	end)
 
-	-- The profile: garage, wallet, settings.
+	-- The profile: garage, fleet, wallet, settings.
 	ProfileController.onChanged:Connect(function(snapshot: Types.ProfileSnapshot)
 		view.profile = snapshot
 		if view.confirmUid ~= nil then
@@ -657,6 +841,7 @@ function PhoneController:Start()
 				view.confirmUid = nil
 			end
 		end
+		pruneFleetOverlays(ProfileController.fleetOf(snapshot))
 		applyCamera()
 		render()
 	end)
@@ -676,6 +861,17 @@ function PhoneController:Start()
 	ShopController.onOpened:Connect(function()
 		PhoneController.close()
 	end)
+	-- The fleet chip on the HUD and the dealership's Buy pods card (which closes its sheet first) open the Fleet app.
+	HudController.onFleetChipTapped:Connect(function()
+		PhoneController.open("fleet")
+	end)
+	ShopController.onFleetRequested:Connect(function()
+		PhoneController.open("fleet")
+	end)
+
+	-- A pod ride's cutscene puts the phone away and hides its button until it ends.
+	player:GetAttributeChangedSignal(PhoneConfig.cutsceneAttribute):Connect(onCutsceneChanged)
+	onCutsceneChanged()
 
 	-- Which garage car is out: this player's spawned cars that carry an owned-car uid.
 	CollectionService:GetInstanceAddedSignal(Spawning.vehicleTag):Connect(track)

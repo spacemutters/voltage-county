@@ -76,6 +76,13 @@ local Style = {
 		claimTextHeight = smallLine,
 		claimGap = spacing.sm,
 
+		-- The robotaxi fleet card on the fleet brand's cars (Phase 9): a title, two lines of small text and a
+		-- button, inside an outline (so the raised button shows against it).
+		fleetCardPadding = spacing.md,
+		fleetCardTitleHeight = line + 2,
+		fleetCardLines = 2,
+		fleetCardGap = spacing.sm,
+
 		-- Action buttons in the footer.
 		buttonHeight = Theme.size.buttonHeight,
 		actionGap = spacing.sm,
@@ -139,10 +146,16 @@ local Style = {
 		upgrading = "Upgrading...",
 		upgradeOwned = "Upgrades the %s you already own.",
 		upgradeLocked = "Buy the %s first, then upgrade it here.",
+		-- The robotaxi fleet card (Phase 9): opens the phone's Fleet app, where pods are bought.
+		fleetCard = {
+			title = "Robotaxi fleet",
+			body = "Self-driving pods carry riders around the county and earn for you.",
+			open = "Buy pods",
+		},
 		how = {
 			starter = "Your first used %s is free at the used lot.",
 			usedLot = "Sold at the used lot. The stock changes every day.",
-			fleet = "Bought for your robotaxi fleet. The fleet opens soon.",
+			fleet = "Bought for your robotaxi fleet in the phone's Fleet app.",
 			limited = "Only in limited drops. Watch for the next one.",
 			other = "Not sold here.",
 		} :: { [string]: string },

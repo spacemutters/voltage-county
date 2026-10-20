@@ -2,12 +2,18 @@
 -- Tunables and words for the phone (docs/phase-4-contracts.md "Client UI") and the parts of the redesigned HUD
 -- that are new in Phase 4: the energy row, the active-job slot and the speed unit labels.
 --
+-- Phase 9 adds the Fleet app (`fleet`, `fleetText`), the HUD's fleet chip (`hud.fleetChip`) and the cutscene
+-- attribute that hides the HUD, the touch controls and the phone during a pod ride (`cutsceneAttribute`).
+--
 -- Read by Controllers/PhoneController, Controllers/HudController, UI/Hud and every file in UI/Phone. Colors,
 -- fonts, text sizes, corner radii and draw order come from UI/Theme; the driving HUD's own sizes stay in
 -- Config/Controls `hud` and Config/Economy `hud`. Sizes are pixels at UI scale 1 (a landscape phone, Config/
 -- Controls `hud.referenceShortSide`); the UI only ever scales up from there, so every touch target listed here
 -- stays at least Theme.size.touchTarget (tests/Phone.spec checks them).
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Hail = require(ReplicatedStorage.Shared.Config.Hail)
 local Theme = require(script.Parent.Parent.Theme)
 
 local spacing = Theme.spacing
@@ -95,7 +101,15 @@ local PhoneConfig = {
 		dealershipLocation = "dealership",
 	},
 
-	-- The "arriving soon" screens (Jobs, Fleet).
+	-- The Fleet app (Phase 9). Its cards and buttons use the garage's sizes; these are the zone picker's rows.
+	fleet = {
+		zoneRowPadding = 10, -- above and below a zone's two lines (each row stays taller than a touch target)
+		zoneLineGap = 2, -- between the zone's name and its demand and earnings line
+		hereNowWidth = 88, -- room kept at the right of the moving pod's zone for its "Here now" pill
+		cardGap = Theme.spacing.sm, -- between the lines and the button inside the earnings and buy cards
+	},
+
+	-- The "arriving soon" screen (Kit.ComingSoon), for an app whose feature lands in a later update.
 	comingSoon = {
 		topSpace = spacing.lg, -- above the badge
 		badgeSize = 96, -- the round badge holding the app's drawing
@@ -115,6 +129,11 @@ local PhoneConfig = {
 		kilometersFormat = "%.1f km",
 		minKilometers = 0.1,
 	},
+
+	-- The LocalPlayer attribute Controllers/HailController sets to true for a pod ride's cutscene and back to nil
+	-- after it (docs/phase-9-contracts.md; named in Config/Hail). While it is true the HUD, the touch controls
+	-- and the phone hide.
+	cutsceneAttribute = Hail.cutscene.attribute,
 
 	-- Optimistic changes (a units switch, a favorite star) show at once and wait this long for the server's
 	-- next ProfileSnapshot to confirm them; if it never does, the screen goes back to what the server has.
@@ -179,10 +198,57 @@ local PhoneConfig = {
 		pill = "Arriving soon",
 	},
 
-	fleet = {
-		title = "Run your own robotaxi fleet",
-		body = "Buy self-driving pods that pick up riders around the county and earn for you.",
-		pill = "Arriving soon",
+	fleetText = {
+		loading = "Loading your fleet...",
+		introTitle = "Run your own robotaxi fleet",
+		introBody = "Buy self-driving pods that pick up riders around the county and earn for you.",
+		-- Earnings.
+		ready = "Ready to collect",
+		perHour = "Your pods make about %s an hour.", -- the whole fleet's expected $ an hour
+		collect = "Collect",
+		collecting = "Collecting...",
+		-- The offline rule, from the snapshot: "Pods earn a quarter as much while you're away, for up to 8 hours."
+		offline = "Pods earn %s as much while you're away, for up to %s.", -- the share in words, the hours
+		offlineShares = {
+			{ rate = 0.25, words = "a quarter" },
+			{ rate = 0.5, words = "half" },
+			{ rate = 0.75, words = "three quarters" },
+		} :: { { rate: number, words: string } },
+		offlinePercent = "%d%%", -- any other share
+		hours = "%s hours",
+		oneHour = "1 hour",
+		onlineOnly = "Pods earn only while you're in the game.",
+		-- Buying.
+		slots = "%d of %d pod slots used",
+		buy = "Buy a pod for %s", -- the price
+		buying = "Buying...",
+		slotsFull = "Every slot has a pod in it. Sell one to make room.",
+		cashNeeded = "You need %s more for a pod.",
+		noZones = "There's nowhere to send a pod right now. Check back soon.",
+		-- Pods.
+		yourPods = "Your pods",
+		podName = "Pod %d", -- its place in the list
+		demand = "%sx demand", -- the zone's demand multiplier, "1.2x demand"
+		zoneLine = "%s · %s", -- zone name, demand
+		earns = "About %s an hour", -- what one pod makes there
+		unknownZone = "Waiting for a zone",
+		move = "Move",
+		moving = "Moving...",
+		sell = "Sell",
+		selling = "Selling...",
+		-- The zone picker.
+		pickBuyTitle = "Where should it drive?",
+		pickBuyBody = "Your new pod costs %s. Busier zones earn more.", -- the price
+		pickMoveTitle = "Move %s", -- the pod's name
+		pickMoveBody = "Pick the zone it drives riders around. Busier zones earn more.",
+		zoneDetail = "%s · %s", -- demand, what one pod makes there
+		hereNow = "Here now",
+		cancel = "Cancel",
+		-- The sell confirm.
+		confirmTitle = "Sell %s?", -- the pod's name
+		confirmBody = "You'll get %s back, and it stops earning for you.", -- the price
+		keep = "Keep it",
+		confirmSell = "Sell for %s", -- the price
 	},
 
 	wallet = {
@@ -272,6 +338,18 @@ local PhoneConfig = {
 			minTextSize = 11,
 		},
 		phoneHint = "Phone", -- the HUD hint row entry for the phone key
+		-- The fleet chip (Phase 9): "$1,240 ready" once the robotaxi fleet's uncollected earnings reach the
+		-- threshold; tapping it opens the Fleet app. It sits right of the cash readout, or under the cash column
+		-- when that spot would touch a driving control (Controllers/HudController.fleetChipPlacement), and is
+		-- as tall as the cash readout (Config/Economy hud.rowHeight, a touch target).
+		fleetChip = {
+			threshold = 1000, -- whole $ uncollected before the chip shows
+			maxWidth = 160, -- wider amounts are cut short ("$1,234,5...")
+			padding = 12, -- inside the chip, each side
+			glyphSize = 18, -- the little pod drawn at its left
+			gap = 6, -- between the drawing and the text
+			text = "%s ready", -- the amount
+		},
 	},
 }
 

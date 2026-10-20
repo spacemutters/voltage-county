@@ -218,11 +218,13 @@ return function(t: Harness.Api)
 				"cash",
 				"credits",
 				"customSlots",
+				"fleet",
 				"garageSlots",
 				"settings",
 				"starterClaimed",
 				"vehicles",
 			})
+			t.expect(snapshot.fleet).toEqual(ProfileSyncService.snapshotFleet(data.fleet, false))
 			t.expect(snapshot.cash).toBe(1234)
 			t.expect(snapshot.starterClaimed).toBe(true)
 			t.expect(snapshot.credits).toEqual({ balance = 7 })

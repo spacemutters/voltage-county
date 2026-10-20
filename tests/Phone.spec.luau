@@ -3,13 +3,16 @@
 -- phone, tablet and desktop screens (UI/Phone/Layout: never over the touch pedals or steering while driving,
 -- always on screen), touch targets and keys (UI/Phone/PhoneConfig), the profile cache's payload checks and
 -- optimistic patches (ProfileController), speed in the player's units (HudController) and GPS distances in
--- kilometres (GpsController). Pure logic on fixtures: runs in Edit mode and never touches module state.
+-- kilometres (GpsController). Phase 9: the snapshot's fleet checks (ProfileController.normalizeFleet), the Fleet
+-- app's words and sums (UI/Phone/FleetApp) and the HUD's fleet chip (when it shows, and where: never over a
+-- driving control). Pure logic on fixtures: runs in Edit mode and never touches module state.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
 local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
+local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
 local Types = require(ReplicatedStorage.Shared.Types)
@@ -19,6 +22,7 @@ local Client = StarterPlayer.StarterPlayerScripts.Client
 local GpsController = require(Client.Controllers.GpsController)
 local HudController = require(Client.Controllers.HudController)
 local ProfileController = require(Client.Controllers.ProfileController)
+local FleetApp = require(Client.UI.Phone.FleetApp)
 local Layout = require(Client.UI.Phone.Layout)
 local PhoneConfig = require(Client.UI.Phone.PhoneConfig)
 local Theme = require(Client.UI.Theme)
@@ -75,6 +79,30 @@ local function payload(): { [string]: any }
 		settings = { units = "kph", camera = "hood", musicVolume = 0.3 },
 		credits = { balance = 2 },
 	}
+end
+
+-- A fleet as ProfileSyncService sends it (docs/phase-9-contracts.md interface 1).
+local function fleetPayload(): { [string]: any }
+	return {
+		pods = { { uid = "p1", zone = "cedar_bend" }, { uid = "p2", zone = "riverside" } },
+		uncollected = 1250,
+		slots = 3,
+		podPrice = 40000,
+		sellBack = 24000,
+		zones = {
+			{ id = "cedar_bend", name = "Cedar Bend", demand = 1.2, perHour = 4320 },
+			{ id = "riverside", name = "Riverside", demand = 1, perHour = 3600 },
+			{ id = "lakefront", name = "Lakefront", demand = 0.8, perHour = 2880 },
+		},
+		offlineRate = 0.25,
+		offlineCapHours = 8,
+	}
+end
+
+local function normalizedFleet(): ProfileController.Fleet
+	local fleet = ProfileController.normalizeFleet(fleetPayload())
+	assert(fleet, "normalized fleet")
+	return fleet
 end
 
 local function uids(snapshot: Types.ProfileSnapshot): { string }
@@ -381,6 +409,152 @@ return function(t: Harness.Api)
 			t.expect(GpsController.distanceText(studsPerMile * 1.26)).toBe("1.3 mi")
 			t.expect(GpsController.distanceText(1, "kph"))
 				.toBe(string.format(PhoneConfig.distance.kilometersFormat, PhoneConfig.distance.minKilometers))
+		end)
+	end)
+
+	t.describe("Fleet snapshot (ProfileController)", function()
+		t.it("keeps a good fleet", function()
+			local fleet = normalizedFleet()
+			t.expect(#fleet.pods).toBe(2)
+			t.expect(fleet.pods[1]).toEqual({ uid = "p1", zone = "cedar_bend" })
+			t.expect(fleet.uncollected).toBe(1250)
+			t.expect(fleet.slots).toBe(3)
+			t.expect(fleet.podPrice).toBe(40000)
+			t.expect(fleet.sellBack).toBe(24000)
+			t.expect(#fleet.zones).toBe(3)
+			t.expect(fleet.zones[1]).toEqual({ id = "cedar_bend", name = "Cedar Bend", demand = 1.2, perHour = 4320 })
+			t.expect(fleet.offlineRate).toBe(0.25)
+			t.expect(fleet.offlineCapHours).toBe(8)
+		end)
+
+		t.it("comes with the snapshot and is nil without one", function()
+			local withFleet = payload()
+			withFleet.fleet = fleetPayload()
+			local snapshot = ProfileController.normalize(withFleet)
+			assert(snapshot, "normalized")
+			local fleet = ProfileController.fleetOf(snapshot)
+			assert(fleet, "fleet")
+			t.expect(fleet.uncollected).toBe(1250)
+			-- Patches keep it (merge clones the snapshot).
+			local merged = ProfileController.merge(snapshot, { settings = {}, favorites = {} })
+			t.expect(ProfileController.fleetOf(merged)).toBe(fleet)
+
+			local without = ProfileController.normalize(payload())
+			t.expect(ProfileController.fleetOf(without)).toBe(nil)
+			t.expect(ProfileController.normalizeFleet("pods")).toBe(nil)
+			t.expect(ProfileController.fleetOf(nil)).toBe(nil)
+		end)
+
+		t.it("drops broken pods and zones and fixes broken fields", function()
+			local bad = fleetPayload()
+			bad.pods =
+				{ { uid = 5, zone = "x" }, "pod", { uid = "p1", zone = "riverside" }, { uid = "p1", zone = "a" } }
+			bad.zones =
+				{ { id = "riverside", demand = "lots", perHour = -5 }, { name = "No id" }, { id = "riverside" } }
+			bad.uncollected = 99.7
+			bad.slots = "three"
+			bad.podPrice = -1
+			bad.sellBack = 0 / 0
+			bad.offlineRate = 4
+			bad.offlineCapHours = nil
+			local fleet = ProfileController.normalizeFleet(bad)
+			assert(fleet, "normalized fleet")
+			t.expect(fleet.pods).toEqual({ { uid = "p1", zone = "riverside" } })
+			t.expect(fleet.zones).toEqual({ { id = "riverside", name = "riverside", demand = 0, perHour = 0 } })
+			t.expect(fleet.uncollected).toBe(99)
+			t.expect(fleet.slots).toBe(0)
+			t.expect(fleet.podPrice).toBe(0)
+			t.expect(fleet.sellBack).toBe(0)
+			t.expect(fleet.offlineRate).toBe(1)
+			t.expect(fleet.offlineCapHours).toBe(0)
+		end)
+	end)
+
+	t.describe("Fleet app", function()
+		t.it("says the offline rule in plain words", function()
+			t.expect(FleetApp.offlineRuleText(0.25, 8))
+				.toBe("Pods earn a quarter as much while you're away, for up to 8 hours.")
+			t.expect(FleetApp.offlineRuleText(0.5, 1))
+				.toBe("Pods earn half as much while you're away, for up to 1 hour.")
+			t.expect(FleetApp.offlineRuleText(0.3, 2.5))
+				.toBe("Pods earn 30% as much while you're away, for up to 2.5 hours.")
+			t.expect(FleetApp.offlineRuleText(0, 8)).toBe(PhoneConfig.fleetText.onlineOnly)
+			t.expect(FleetApp.offlineRuleText(0.25, 0)).toBe(PhoneConfig.fleetText.onlineOnly)
+		end)
+
+		t.it("shows demand without trailing zeros", function()
+			t.expect(FleetApp.demandText(1.2)).toBe("1.2x demand")
+			t.expect(FleetApp.demandText(1)).toBe("1x demand")
+			t.expect(FleetApp.demandText(1.256)).toBe("1.26x demand")
+		end)
+
+		t.it("adds up what the pods make an hour from their zones", function()
+			local fleet = normalizedFleet()
+			t.expect(FleetApp.hourlyTotal(fleet)).toBe(4320 + 3600)
+			fleet.pods = { { uid = "p9", zone = "nowhere" } }
+			t.expect(FleetApp.hourlyTotal(fleet)).toBe(0)
+		end)
+
+		t.it("says why Buy is off: slots full, then no zones, then cash short", function()
+			local fleet = normalizedFleet()
+			t.expect(FleetApp.buyBlock(fleet, 50000)).toBe(nil)
+			t.expect(FleetApp.buyBlock(fleet, nil)).toBe(nil) -- unknown cash: the server checks
+			local block, short = FleetApp.buyBlock(fleet, 39000)
+			t.expect(block).toBe("cash")
+			t.expect(short).toBe(1000)
+			fleet.slots = 2
+			t.expect(FleetApp.buyBlock(fleet, 50000)).toBe("full")
+			fleet.slots = 3
+			fleet.zones = {}
+			t.expect(FleetApp.buyBlock(fleet, 50000)).toBe("zones")
+		end)
+	end)
+
+	t.describe("HUD fleet chip", function()
+		t.it("shows once the uncollected earnings reach the threshold", function()
+			local threshold = PhoneConfig.hud.fleetChip.threshold
+			local fleet = normalizedFleet()
+			fleet.uncollected = threshold - 1
+			t.expect(HudController.fleetChipAmount(fleet)).toBe(nil)
+			fleet.uncollected = threshold
+			t.expect(HudController.fleetChipAmount(fleet)).toBe(threshold)
+			fleet.uncollected = 0
+			t.expect(HudController.fleetChipAmount(fleet)).toBe(nil)
+			t.expect(HudController.fleetChipAmount(nil)).toBe(nil)
+		end)
+
+		t.it("is a full touch target", function()
+			t.expect(Economy.hud.rowHeight >= MIN_TARGET).toBe(true)
+			t.expect(PhoneConfig.hud.fleetChip.maxWidth >= MIN_TARGET).toBe(true)
+		end)
+
+		t.it("always finds a spot on screen that no driving control, phone button or GPS chip covers", function()
+			for _, screen in SCREENS do
+				for _, context in { ON_FOOT, DRIVING_TOUCH, DRIVING_KEYS } do
+					local placement = HudController.fleetChipPlacement(screen.size, context)
+					t.expect(`{screen.name} chip placed: {placement ~= nil}`).toBe(`{screen.name} chip placed: true`)
+					local rect = if placement == "below"
+						then HudController.fleetChipBelowRect(screen.size)
+						else HudController.fleetChipBesideRect(screen.size)
+					within(t, `{screen.name} fleet chip`, screen.size, rect)
+					for index, blocker in HudController.fleetChipBlockers(screen.size, context) do
+						clear(t, `{screen.name} fleet chip/blocker {index}`, rect, blocker)
+					end
+				end
+			end
+		end)
+
+		t.it("sits beside the cash on a landscape phone and under it on a portrait phone driving on touch", function()
+			t.expect(HudController.fleetChipPlacement(Vector2.new(844, 390), DRIVING_TOUCH)).toBe("beside")
+			t.expect(HudController.fleetChipPlacement(Vector2.new(375, 667), DRIVING_TOUCH)).toBe("below")
+			t.expect(HudController.fleetChipPlacement(Vector2.new(375, 667), ON_FOOT)).toBe("beside")
+		end)
+
+		t.it("stays clear of the job slot and the hitch row when it goes under them", function()
+			local screen = Vector2.new(375, 667)
+			local below = HudController.fleetChipBelowRect(screen)
+			clear(t, "fleet chip/job slot", below, HudController.jobSlotRect(screen))
+			clear(t, "fleet chip/hitch row", below, HudController.hitchRect(screen))
 		end)
 	end)
 end
