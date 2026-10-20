@@ -287,6 +287,70 @@ local REMOTES: { [string]: Spec } = {
 		burst = 2,
 		perSecond = 0.2,
 	},
+	-- Phase 9: the robotaxi fleet (docs/phase-9-contracts.md). Functions return { ok, message, ... }; the server
+	-- prices pods and counts slots. `zone` is a MapLayout zone id.
+	BuyPod = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ zone = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	AssignPod = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH), zone = Check.string(ID_LENGTH) }),
+		burst = 4,
+		perSecond = 1,
+	},
+	-- Pays out the fleet's uncollected earnings; returns { ok, message, amount }.
+	CollectFleet = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 2,
+		perSecond = 0.5,
+	},
+	SellPod = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Ride a pod to a GPS destination (a MapLayout destination id); the server charges the fare and moves you.
+	HailPod = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ destinationId = Check.string(ID_LENGTH) }),
+		burst = 2,
+		perSecond = 0.2,
+	},
+	-- Server sends every client the ambient pods' routes (all of them on join, one pod's new route after that).
+	TrafficRoutes = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Server tells a rider to play their pod ride: { from, to, seconds, route }.
+	HailRide = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Studio only: pretend the caller was away for `hours` (FleetService refuses it outside Studio), for the
+	-- offline-earnings check in the fleet tests.
+	DevFleet = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ action = Check.oneOf({ "simulateOffline" }), hours = Check.number(0, 24) }),
+		burst = 3,
+		perSecond = 1,
+	},
 	-- Studio only: dev shortcuts for the automated job tests (JobService refuses it outside Studio).
 	DevJob = {
 		kind = "function",
