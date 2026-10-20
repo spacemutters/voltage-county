@@ -271,6 +271,22 @@ local REMOTES: { [string]: Spec } = {
 		burst = 0,
 		perSecond = 0,
 	},
+	-- Phase 8: couple or uncouple a trailer / towed car (HitchService picks the nearest valid target).
+	TrailerAction = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ action = Check.oneOf({ "couple", "decouple" }) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Buy a job license (Phase 8: freight).
+	BuyLicense = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ license = Check.oneOf({ "freight" }) }),
+		burst = 2,
+		perSecond = 0.2,
+	},
 	-- Studio only: dev shortcuts for the automated job tests (JobService refuses it outside Studio).
 	DevJob = {
 		kind = "function",
