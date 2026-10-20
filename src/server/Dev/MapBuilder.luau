@@ -25,7 +25,15 @@
 --   Streetlights                 posts along streets and arterials; only some of them emit light
 --   Locations                    one part per MapLayout location (tag, attributes, DisplayName, Zone), with
 --                                small props parented to it (charger posts, pumps, signs, gate gantries...)
+--   Dealership/<brandId>         Phase 4: a low platform per MapLayout.dealership pad (tag DealershipPad,
+--                                attributes BrandId and Index) and the section's brand sign behind its pads
+--   UsedLot                      Phase 4: a numbered platform per MapLayout.usedLot pad (tag UsedLotPad,
+--                                attribute Index)
 --   PlayerSpawns                 SpawnLocations at MapLayout.playerSpawns
+--
+-- Display pads keep buildings, lots, streetlights and props off themselves and off the rectangle round each
+-- group of them (so a block given over to the dealership is cleared of buildings), and a note is left if one
+-- lands on a road, sidewalk, landmark or location.
 --
 -- How the roads fit together. A road edge is a straight slab whose top runs between its two nodes' surface
 -- heights. Where roads meet, each one is cut back ("trimmed") until it clears its neighbours, and the space
@@ -42,6 +50,8 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = ReplicatedStorage.Shared.Config
+local Brands = require(Config.Brands)
+local Dealership = require(Config.Dealership)
 local MapLayoutModule = require(Config.MapLayout)
 local RoadGraphModule = require(Config.RoadGraph)
 local World = require(Config.World)
@@ -80,6 +90,10 @@ export type LakeData = { id: string, min: Vector2, max: Vector2, waterY: number,
 export type MesaData = { id: string, topMin: Vector2, topMax: Vector2, height: number, slope: number }
 export type RampData = { id: string, position: Vector3, yaw: number, size: Vector3 }
 export type LandmarkData = { id: string, kind: string, position: Vector3, yaw: number, size: Vector3 }
+-- Display pads (Phase 4): each pad's CFrame is the centre of its footprint on the ground, facing the way the car
+-- on it points; every pad of a layout is padSize.
+export type DealershipData = { padSize: Vector3, sections: { { brandId: string, pads: { CFrame } } } }
+export type UsedLotData = { padSize: Vector3, pads: { CFrame } }
 
 export type LayoutData = {
 	seed: number,
@@ -91,6 +105,8 @@ export type LayoutData = {
 	mesas: { MesaData }?,
 	jumpRamps: { RampData }?,
 	landmarks: { LandmarkData }?,
+	dealership: DealershipData?,
+	usedLot: UsedLotData?,
 	reservedWestOfX: number?, -- nothing but the County Loop west of this x (the dev track's ground)
 	groundHeight: ((x: number, z: number) -> number)?,
 }
@@ -124,6 +140,12 @@ export type Role =
 	| "location" -- a MapLayout location's tagged part
 	| "prop" -- small things on a location
 	| "spawn"
+	| "displayPad" -- a dealership or used-lot display platform
+	| "sign" -- a dealership brand sign (post and board)
+
+-- Text painted on one face of a part (a SurfaceGui with one TextLabel). `center` and `size` are fractions of the
+-- face (defaults: centred, TUNING.labelSize).
+export type LabelSpec = { face: Enum.NormalId, text: string, color: Color3, center: Vector2?, size: Vector2? }
 
 export type LightSpec = {
 	kind: "point" | "spot",
@@ -156,6 +178,7 @@ export type PartSpec = {
 	tag: string?,
 	attributes: { [string]: any }?,
 	light: LightSpec?,
+	labels: { LabelSpec }?,
 }
 
 export type Container = { path: string, class: "Folder" | "Model", streaming: Enum.ModelStreamingMode? }
@@ -340,6 +363,24 @@ local TUNING = {
 	gatePostSearch = 40, -- ...and slide out up to this far looking for clear ground
 	propColor = Color3.fromRGB(70, 74, 80),
 	railPropColor = Color3.fromRGB(190, 186, 176),
+
+	-- Display pads (dealership and used lot; their sizes and places come from MapLayout)
+	displayPadColor = Color3.fromRGB(228, 228, 224),
+	displayPadMaterial = Enum.Material.SmoothPlastic,
+	displayPadMargin = 4, -- lots, buildings and streetlights keep this far from each pad...
+	displayAreaMargin = 8, -- ...and this far from the rectangle round each group of pads facing one way
+	brandSignGap = 2, -- a section's sign stands this far behind its pads' back edge
+	brandSignPost = Vector3.new(0.8, 9, 0.8), -- up to the board's bottom edge, over the tallest display car
+	brandSignBoard = Vector3.new(24, 5, 0.6),
+	brandSignColor = Color3.fromRGB(34, 36, 40),
+	brandSignTextColor = Color3.fromRGB(245, 245, 242),
+	padNumberColor = Color3.fromRGB(70, 72, 76),
+	labelPixelsPerStud = 30, -- SurfaceGui resolution on signs and pad numbers
+	labelFont = Enum.Font.BuilderSansBold,
+	labelSize = Vector2.new(0.86, 0.7), -- a sign's name fills this much of the board
+	-- A used-lot space's number is painted across its front edge, clear of the car standing in the middle.
+	padNumberCenter = Vector2.new(0.5, 0.08),
+	padNumberSize = Vector2.new(0.4, 0.12),
 
 	-- Player spawns
 	spawnSize = Vector3.new(6, 0.2, 6),
@@ -2507,6 +2548,189 @@ local function addSpawns(ctx: Ctx)
 end
 
 ---------------------------------------------------------------------------------------------------------------
+-- Display pads: the dealership's brand sections and the used lot's numbered spaces (Phase 4)
+---------------------------------------------------------------------------------------------------------------
+
+-- What a display pad must not stand on. Roads, sidewalks and driveways would put a car in the street; landmarks,
+-- locations (with their margins) and props are other things' ground.
+local PAD_BLOCKERS: { [string]: boolean } = {
+	road = true,
+	sidewalk = true,
+	driveway = true,
+	support = true,
+	landmark = true,
+	location = true,
+	prop = true,
+	ramp = true,
+	mesa = true,
+	lake = true,
+}
+
+-- A pad's footprint, grown by `grow` on every side.
+local function padRect(pad: CFrame, size: Vector3, grow: number): Rect
+	local look = flat(pad.LookVector).Unit
+	return { c = flat(pad.Position), u = look, ha = size.Z / 2 + grow, hc = size.X / 2 + grow }
+end
+
+-- The rectangle round pads that share pads[1]'s heading, grown by `grow` (nil with no pads).
+local function areaRect(pads: { CFrame }, size: Vector3, grow: number): Rect?
+	if #pads == 0 then
+		return nil
+	end
+	local first = pads[1]
+	local u = flat(first.LookVector).Unit
+	local l = perp(u)
+	local minA, maxA, minC, maxC = HUGE, -HUGE, HUGE, -HUGE
+	for _, pad in pads do
+		for _, corner in rectCorners(padRect(pad, size, 0)) do
+			local along, across = corner:Dot(u), corner:Dot(l)
+			minA, maxA = math.min(minA, along), math.max(maxA, along)
+			minC, maxC = math.min(minC, across), math.max(maxC, across)
+		end
+	end
+	local c = u * ((minA + maxA) / 2) + l * ((minC + maxC) / 2)
+	return { c = c, u = u, ha = (maxA - minA) / 2 + grow, hc = (maxC - minC) / 2 + grow }
+end
+
+-- One platform; `name` within `folder`. Notes a pad that would stand on something it mustn't.
+local function addDisplayPad(
+	ctx: Ctx,
+	folder: string,
+	name: string,
+	pad: CFrame,
+	size: Vector3,
+	tag: string,
+	attributes: { [string]: any },
+	label: string?
+)
+	if gridHits(ctx.grid, padRect(pad, size, 0), PAD_BLOCKERS, 0) then
+		note(ctx, `display pad {folder}/{name} stands on a road, sidewalk, landmark or location`)
+	end
+	local spec = block(
+		folder,
+		name,
+		"displayPad",
+		pad * CFrame.new(0, size.Y / 2, 0),
+		size,
+		TUNING.displayPadColor,
+		TUNING.displayPadMaterial
+	)
+	spec.shadow = false
+	spec.tag = tag
+	spec.attributes = attributes
+	if label then
+		spec.labels = {
+			{
+				face = Enum.NormalId.Top,
+				text = label,
+				color = TUNING.padNumberColor,
+				center = TUNING.padNumberCenter,
+				size = TUNING.padNumberSize,
+			},
+		}
+	end
+	add(ctx, spec)
+end
+
+-- Keeps lots, buildings and streetlights off a group of pads: each pad, and the rectangle round all of them that
+-- face the same way (so nothing stands between the rows).
+local function reservePads(ctx: Ctx, pads: { CFrame }, size: Vector3)
+	for _, pad in pads do
+		gridInsert(ctx.grid, padRect(pad, size, TUNING.displayPadMargin), "location")
+	end
+	local byHeading: { [string]: { CFrame } } = {}
+	local order: { string } = {}
+	for _, pad in pads do
+		local look = flat(pad.LookVector).Unit
+		local key = `{math.round(look.X * 1000)}:{math.round(look.Y * 1000)}`
+		if byHeading[key] == nil then
+			byHeading[key] = {}
+			table.insert(order, key)
+		end
+		table.insert(byHeading[key], pad)
+	end
+	for _, key in order do
+		local area = areaRect(byHeading[key], size, TUNING.displayAreaMargin)
+		if area then
+			gridInsert(ctx.grid, area, "location")
+		end
+	end
+end
+
+-- A brand's name board on a post, centred behind a section's pads and facing the way they do, its name on both
+-- sides.
+local function addBrandSign(ctx: Ctx, folder: string, brandId: string, pads: { CFrame }, size: Vector3)
+	if #pads == 0 then
+		return
+	end
+	local first = pads[1]
+	local sum = Vector3.zero
+	for _, pad in pads do
+		sum += pad.Position
+	end
+	local centre = CFrame.new(sum / #pads) * first.Rotation
+	local post, board = TUNING.brandSignPost, TUNING.brandSignBoard
+	local back = size.Z / 2 + TUNING.brandSignGap + post.Z / 2 -- behind the pads is local +Z
+	local postFrame = centre * CFrame.new(0, post.Y / 2, back)
+	local footprint: Rect =
+		{ c = flat(postFrame.Position), u = flat(first.LookVector).Unit, ha = board.Z / 2, hc = board.X / 2 }
+	if gridHits(ctx.grid, footprint, ROAD_KINDS, 0) then
+		note(ctx, `the {brandId} brand sign would stand on a road, left out`)
+		return
+	end
+	local brand = Brands[brandId]
+	local text = if brand then brand.displayName else brandId
+	local postSpec = block(folder, "SignPost", "sign", postFrame, post, TUNING.propColor, Enum.Material.Metal)
+	postSpec.shadow = false
+	add(ctx, postSpec)
+	local boardFrame = centre * CFrame.new(0, post.Y + board.Y / 2, back)
+	local boardSpec =
+		block(folder, "Sign", "sign", boardFrame, board, TUNING.brandSignColor, Enum.Material.SmoothPlastic)
+	boardSpec.labels = {
+		{ face = Enum.NormalId.Front, text = text, color = TUNING.brandSignTextColor },
+		{ face = Enum.NormalId.Back, text = text, color = TUNING.brandSignTextColor },
+	}
+	add(ctx, boardSpec)
+	gridInsert(ctx.grid, footprint, "prop")
+end
+
+local function addDisplayPads(ctx: Ctx)
+	local pads = Dealership.pads
+	local dealership = ctx.layout.dealership
+	if dealership then
+		container(ctx, "Dealership", "Folder")
+		for _, section in dealership.sections do
+			local folder = `Dealership/{section.brandId}`
+			container(ctx, folder, "Folder")
+			for i, pad in section.pads do
+				local attributes: { [string]: any } =
+					{ [pads.brandAttribute] = section.brandId, [pads.indexAttribute] = i }
+				addDisplayPad(ctx, folder, `Pad{i}`, pad, dealership.padSize, pads.dealershipTag, attributes, nil)
+			end
+		end
+		-- Reserve after placing every pad, so one section's margins never count against its neighbour's pads, and
+		-- all sections together, so the rows facing one way clear their whole block.
+		local all: { CFrame } = {}
+		for _, section in dealership.sections do
+			table.move(section.pads, 1, #section.pads, #all + 1, all)
+		end
+		reservePads(ctx, all, dealership.padSize)
+		for _, section in dealership.sections do
+			addBrandSign(ctx, `Dealership/{section.brandId}`, section.brandId, section.pads, dealership.padSize)
+		end
+	end
+	local usedLot = ctx.layout.usedLot
+	if usedLot then
+		container(ctx, "UsedLot", "Folder")
+		for i, pad in usedLot.pads do
+			local attributes: { [string]: any } = { [pads.indexAttribute] = i }
+			addDisplayPad(ctx, "UsedLot", `Space{i}`, pad, usedLot.padSize, pads.usedLotTag, attributes, tostring(i))
+		end
+		reservePads(ctx, usedLot.pads, usedLot.padSize)
+	end
+end
+
+---------------------------------------------------------------------------------------------------------------
 -- Streetlights
 ---------------------------------------------------------------------------------------------------------------
 
@@ -2857,6 +3081,7 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 	addLandmarks(ctx)
 	addLocations(ctx)
 	addSpawns(ctx)
+	addDisplayPads(ctx)
 	addStreetlights(ctx)
 	addBuildings(ctx, zones)
 
@@ -2947,6 +3172,29 @@ local function createPart(spec: PartSpec): BasePart
 		instance.Color = light.color
 		instance.Shadows = false
 		instance.Parent = part
+	end
+	local labels: { LabelSpec } = spec.labels or {}
+	for i, label in labels do
+		local gui = Instance.new("SurfaceGui")
+		gui.Name = `Label{i}`
+		gui.Face = label.face
+		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		gui.PixelsPerStud = TUNING.labelPixelsPerStud
+		gui.LightInfluence = 0 -- readable by night too
+		gui.Parent = part
+		local center = label.center or Vector2.new(0.5, 0.5)
+		local size = label.size or TUNING.labelSize
+		local text = Instance.new("TextLabel")
+		text.Name = "Text"
+		text.AnchorPoint = Vector2.new(0.5, 0.5)
+		text.Position = UDim2.fromScale(center.X, center.Y)
+		text.Size = UDim2.fromScale(size.X, size.Y)
+		text.BackgroundTransparency = 1
+		text.Text = label.text
+		text.TextColor3 = label.color
+		text.Font = TUNING.labelFont
+		text.TextScaled = true
+		text.Parent = gui
 	end
 	return part
 end

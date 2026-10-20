@@ -4,13 +4,16 @@
 -- Dev/MapCheck measures them (every part as its whole box, parts of one pad model excepted); road surfaces with
 -- no gaps and no lips; every location with its part and tag; every part within the size limit and the map;
 -- buildings off roads, sidewalks and locations; a way from every pad to its road with no kerb or post a car
--- can't drive over (sidewalks stop for a driveway). Pure: builds nothing. Runs on small hand-made junctions and on
--- the real county.
+-- can't drive over (sidewalks stop for a driveway); every dealership and used-lot display pad built where
+-- MapLayout puts it, with its tag, attributes and brand sign, and nothing built on it (Phase 4). Pure: builds
+-- nothing. Runs on small hand-made junctions and on the real county.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
+local Brands = require(ReplicatedStorage.Shared.Config.Brands)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
+local Dealership = require(ReplicatedStorage.Shared.Config.Dealership)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local MapBuilder = require(ServerScriptService.Server.Dev.MapBuilder)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
@@ -966,6 +969,99 @@ return function(t: Harness.Api)
 
 		t.it("leaves every pad a way to its road with nothing a car can't drive over", function()
 			report(t, "pad exit", padExitProblems(plan, MapLayout :: any, RoadGraph :: any, lowestRideHeight()))
+		end)
+
+		t.it("builds every dealership and used-lot display pad with its tag and attributes", function()
+			local pads = Dealership.pads
+			local byKey: { [string]: PartSpec } = {}
+			local signs: { [string]: PartSpec } = {}
+			for _, spec in plan.specs do
+				local attributes: { [string]: any } = spec.attributes or {}
+				if spec.tag == pads.dealershipTag then
+					byKey[`{attributes[pads.brandAttribute]}:{attributes[pads.indexAttribute]}`] = spec
+				elseif spec.tag == pads.usedLotTag then
+					byKey[`usedLot:{attributes[pads.indexAttribute]}`] = spec
+				elseif spec.role == "sign" and spec.name == "Sign" then
+					signs[spec.folder] = spec
+				end
+			end
+			local problems: { string } = {}
+			local function expectPad(key: string, pad: CFrame, size: Vector3)
+				local spec = byKey[key]
+				if spec == nil then
+					table.insert(problems, `{key}: no pad`)
+				elseif spec.role ~= "displayPad" or (spec.size - size).Magnitude > 1e-3 then
+					table.insert(problems, `{key}: role {spec.role}, size {spec.size}`)
+				elseif (spec.cframe.Position - (pad.Position + Vector3.yAxis * size.Y / 2)).Magnitude > 1e-3 then
+					table.insert(problems, `{key}: not where MapLayout puts it`)
+				end
+			end
+			for _, section in MapLayout.dealership.sections do
+				for i, pad in section.pads do
+					expectPad(`{section.brandId}:{i}`, pad, MapLayout.dealership.padSize)
+				end
+				local sign = signs[`Dealership/{section.brandId}`]
+				local labels = if sign then sign.labels or {} else {}
+				local brand = Brands[section.brandId]
+				if sign == nil or #labels == 0 or brand == nil or labels[1].text ~= brand.displayName then
+					table.insert(problems, `{section.brandId}: no sign with the brand's name`)
+				end
+			end
+			for i, pad in MapLayout.usedLot.pads do
+				expectPad(`usedLot:{i}`, pad, MapLayout.usedLot.padSize)
+			end
+			report(t, "display pad", problems)
+			t.expect(#MapLayout.usedLot.pads >= 8).toBe(true)
+		end)
+
+		t.it("keeps buildings, lots, sidewalks, roads, lights and props off the display pads", function()
+			report(
+				t,
+				"display pad",
+				crossOverlaps(plan, { displayPad = true }, {
+					building = true,
+					lot = true,
+					sidewalk = true,
+					road = true,
+					pad = true,
+					light = true,
+					prop = true,
+					landmark = true,
+					location = true,
+					support = true,
+					sign = true,
+				})
+			)
+		end)
+
+		t.it("clears the dealership's mall block of buildings", function()
+			-- The rectangle round the dealership pads that face north (the block across from the showroom).
+			local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+			local size = MapLayout.dealership.padSize
+			for _, section in MapLayout.dealership.sections do
+				for _, pad in section.pads do
+					if pad.LookVector.Z < -0.5 then
+						minX, maxX =
+							math.min(minX, pad.Position.X - size.X / 2), math.max(maxX, pad.Position.X + size.X / 2)
+						minZ, maxZ =
+							math.min(minZ, pad.Position.Z - size.Z / 2), math.max(maxZ, pad.Position.Z + size.Z / 2)
+					end
+				end
+			end
+			local built: { string } = {}
+			for _, spec in plan.specs do
+				local p = spec.cframe.Position
+				if
+					(spec.role == "building" or spec.role == "lot")
+					and p.X > minX
+					and p.X < maxX
+					and p.Z > minZ
+					and p.Z < maxZ
+				then
+					table.insert(built, `{spec.folder}/{spec.name}`)
+				end
+			end
+			report(t, "building in the mall", built)
 		end)
 
 		t.it("gives every MapLayout location one part with its tag, DisplayName and Zone", function()

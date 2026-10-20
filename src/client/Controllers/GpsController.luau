@@ -10,10 +10,13 @@
 --                            while a destination is set): find where the player is along the route, trim the
 --                            line behind them, update the distance left, re-route when they are off it, and
 --                            clear with a notice when they arrive.
---   panel                    UI/GpsPanel in its own ScreenGui: the GPS button, the destination list (MapLayout
---                            locations with gps = true, grouped by zone in zoneOrder) and the active route with
---                            the distance left in miles and an End button.
+--   route chip               UI/GpsPanel in its own ScreenGui: the active route with the distance left and an
+--                            End button. Tapping it fires onChipTapped (the phone opens its GPS app).
+--   status                   getStatus() and onStatusChanged: the active route as the phone's GPS app shows it.
+--                            The destination list itself (MapLayout locations with gps = true, grouped by zone in
+--                            zoneOrder: destinations()) is shown by the phone's GPS app since Phase 4.
 --
+-- Distances are shown in miles, or in kilometres when the player's speed units are km/h (ProfileController).
 -- The player's position is their car's chassis while they sit in a car (driver or passenger), otherwise their
 -- HumanoidRootPart. The pure route math (distance to the route, trimming, distance left, simplifying) is
 -- exposed as GpsController.RouteMath so tests/Gps.spec can check it in Edit mode.
@@ -32,17 +35,25 @@ local Units = require(ReplicatedStorage.Shared.Util.Units)
 local HudController = require(script.Parent.HudController)
 local InputController = require(script.Parent.InputController)
 local NotifyController = require(script.Parent.NotifyController)
+local ProfileController = require(script.Parent.ProfileController)
 
-local GpsPanel = require(script.Parent.Parent.UI.GpsPanel)
+local UI = script.Parent.Parent.UI
+local GpsApp = require(UI.Phone.GpsApp)
+local GpsPanel = require(UI.GpsPanel)
+local PhoneConfig = require(UI.Phone.PhoneConfig)
 
 local GUI_NAME = "Gps"
 local VEHICLE_ATTRIBUTE = "VehicleId" -- every spawned car model carries it (vehicle model contract)
 local METERS_PER_MILE = 1609.344
+local METERS_PER_KILOMETER = 1000
 local EPSILON = 1e-6 -- studs; shorter than this counts as no distance at all
 
 local e = React.createElement
 
 export type Route = Pathfind.Route
+
+-- The active route as the phone's GPS app and the route chip show it.
+export type Status = GpsApp.Status
 
 -- Where the GPS is taking the player.
 export type Destination = {
@@ -189,6 +200,10 @@ function RouteMath.studsToMiles(studs: number): number
 	return Units.studsToMeters(studs) / METERS_PER_MILE
 end
 
+function RouteMath.studsToKilometers(studs: number): number
+	return Units.studsToMeters(studs) / METERS_PER_KILOMETER
+end
+
 -- Controller ------------------------------------------------------------------------------------------------
 
 local GpsController = {}
@@ -197,6 +212,13 @@ GpsController.RouteMath = RouteMath
 -- Fires (route: Route?, destination: Destination?) when the route changes: a new route, a re-route, or the
 -- route cleared (by the player, by arriving, or because no road leads there).
 GpsController.onChanged = InputController.newSignal()
+
+-- Fires (status: Status?) when what the route chip shows changes: the destination or the distance left (as
+-- shown, so a few times a minute while driving rather than every check).
+GpsController.onStatusChanged = InputController.newSignal()
+
+-- Fires () when the player taps the route chip (PhoneController opens the GPS app).
+GpsController.onChipTapped = InputController.newSignal()
 
 type BeamEntry = {
 	beam: Beam,
@@ -228,12 +250,11 @@ local beams: { BeamEntry } = {}
 local marker: Marker? = nil
 
 local root: any = nil
-local sections: { GpsPanel.Section } = {}
 local view: View = { scale = 1, activeId = nil, activeName = nil, distanceText = nil }
 
 local locationsById: { [string]: MapLayout.Location }? = nil
 
--- The public GpsController.setDestination (defined in the API section below), for the panel's callbacks.
+-- The public GpsController.setDestination (defined in the API section below), for the chip's callbacks.
 local setDestination: (target: string | Vector3 | nil) -> ()
 
 local function locationIndex(): { [string]: MapLayout.Location }
@@ -249,10 +270,15 @@ local function locationIndex(): { [string]: MapLayout.Location }
 	return index
 end
 
+-- True when `id` is a MapLayout location (so the phone only offers directions to places that exist).
+function GpsController.hasLocation(id: string): boolean
+	return locationIndex()[id] ~= nil
+end
+
 -- Every GPS destination (MapLayout locations with gps = true), grouped by zone in MapLayout.zoneOrder and
 -- sorted by name. Zones missing from zoneOrder come last.
-function GpsController.destinations(): { GpsPanel.Section }
-	local byZone: { [string]: { GpsPanel.Item } } = {}
+function GpsController.destinations(): { GpsApp.Section }
+	local byZone: { [string]: { GpsApp.Item } } = {}
 	for _, location in MapLayout.locations do
 		if location.gps then
 			local items = byZone[location.zone]
@@ -273,11 +299,11 @@ function GpsController.destinations(): { GpsPanel.Section }
 	table.sort(extra)
 	table.move(extra, 1, #extra, #order + 1, order)
 
-	local result: { GpsPanel.Section } = {}
+	local result: { GpsApp.Section } = {}
 	for _, zoneId in order do
 		local items = byZone[zoneId]
 		if items ~= nil and #items > 0 then
-			table.sort(items, function(a: GpsPanel.Item, b: GpsPanel.Item): boolean
+			table.sort(items, function(a: GpsApp.Item, b: GpsApp.Item): boolean
 				return a.name < b.name
 			end)
 			local zone = MapLayout.zones[zoneId]
@@ -287,8 +313,12 @@ function GpsController.destinations(): { GpsPanel.Section }
 	return result
 end
 
--- "1.2 mi": the distance left as the panel shows it.
-function GpsController.distanceText(studs: number): string
+-- "1.2 mi" (or "1.9 km" when `units` is "kph"): the distance left as the chip and the GPS app show it.
+function GpsController.distanceText(studs: number, units: string?): string
+	if units == "kph" then
+		local km = PhoneConfig.distance
+		return string.format(km.kilometersFormat, math.max(RouteMath.studsToKilometers(studs), km.minKilometers))
+	end
 	local panel = Gps.panel
 	return string.format(panel.milesFormat, math.max(RouteMath.studsToMiles(studs), panel.minMiles))
 end
@@ -510,18 +540,18 @@ local function createDrawing()
 	folder.Parent = Workspace
 end
 
--- Panel -----------------------------------------------------------------------------------------------------
-
-local function onPick(id: string)
-	setDestination(id)
-end
+-- Route chip -------------------------------------------------------------------------------------------------
 
 local function onClear()
 	setDestination(nil)
 end
 
+local function onOpen()
+	GpsController.onChipTapped:Fire()
+end
+
 -- The whole tree: the root frame is sized 1/scale so that, after the UIScale, it fills the screen and the
--- panel is laid out in unscaled (phone) pixels, like the driving HUD.
+-- chip is laid out in unscaled (phone) pixels, like the driving HUD.
 local function App(props: View)
 	return e("Frame", {
 		Size = UDim2.fromScale(1 / props.scale, 1 / props.scale),
@@ -529,12 +559,10 @@ local function App(props: View)
 	}, {
 		Scale = e("UIScale", { Scale = props.scale }),
 		Panel = e(GpsPanel, {
-			sections = sections,
-			activeId = props.activeId,
 			activeName = props.activeName,
 			distanceText = props.distanceText,
-			onPick = onPick,
 			onClear = onClear,
+			onOpen = onOpen,
 		}),
 	})
 end
@@ -545,14 +573,18 @@ local function render()
 	end
 end
 
--- Copies the destination and distance left into the view; re-renders only if something shown changed.
+-- Copies the destination and distance left into the view; re-renders and tells the phone only if something
+-- shown changed.
 local function refreshPanel()
 	local target = destination
 	local currentPath, currentProgress = path, progress
 	local activeId = if target then target.id else nil
 	local activeName = if target then target.name else nil
 	local distanceText = if currentPath and currentProgress
-		then GpsController.distanceText(RouteMath.remaining(currentPath, currentProgress))
+		then GpsController.distanceText(
+			RouteMath.remaining(currentPath, currentProgress),
+			ProfileController.settings().units
+		)
 		else nil
 	if activeId == view.activeId and activeName == view.activeName and distanceText == view.distanceText then
 		return
@@ -561,6 +593,7 @@ local function refreshPanel()
 	view.activeName = activeName
 	view.distanceText = distanceText
 	render()
+	GpsController.onStatusChanged:Fire(GpsController.getStatus())
 end
 
 -- Routing ---------------------------------------------------------------------------------------------------
@@ -732,7 +765,8 @@ function GpsController.setDestination(target: string | Vector3 | nil)
 			warn(`[GpsController] No MapLayout location "{target}"`)
 			return
 		end
-		resolved = { id = location.id, name = location.displayName, position = location.position }
+		-- gpsTarget: the part of the site players want (the dealership's display cars), when it isn't the door.
+		resolved = { id = location.id, name = location.displayName, position = location.gpsTarget or location.position }
 	else
 		resolved = { id = nil, name = Gps.panel.labels.markedSpot, position = target }
 	end
@@ -768,6 +802,15 @@ function GpsController.getDestination(): Destination?
 	return destination
 end
 
+-- The active route as the route chip shows it (place, distance left in the player's units), or nil.
+function GpsController.getStatus(): Status?
+	local name = view.activeName
+	if name == nil then
+		return nil
+	end
+	return { id = view.activeId, name = name, distanceText = view.distanceText }
+end
+
 function GpsController:Start()
 	createDrawing()
 
@@ -782,7 +825,6 @@ function GpsController:Start()
 	screenGui.Parent = playerGui
 
 	root = ReactRoblox.createRoot(screenGui)
-	sections = GpsController.destinations()
 	view.scale = HudController.scaleFor(screenGui.AbsoluteSize)
 	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		local scale = HudController.scaleFor(screenGui.AbsoluteSize)
@@ -790,6 +832,10 @@ function GpsController:Start()
 			view.scale = scale
 			render()
 		end
+	end)
+	-- Distances follow the player's speed units (mph shows miles, km/h kilometres).
+	ProfileController.onChanged:Connect(function()
+		refreshPanel()
 	end)
 	render()
 end

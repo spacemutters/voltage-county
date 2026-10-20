@@ -17,6 +17,13 @@
         "Client": { "$path": "src/client" }
       }
     },
+    "StarterGui": {
+      "$className": "StarterGui",
+      "$ignoreUnknownInstances": true,
+      "$properties": {
+        "ScreenOrientation": "LandscapeSensor"
+      }
+    },
     "Workspace": {
       "$className": "Workspace",
       "$ignoreUnknownInstances": true,

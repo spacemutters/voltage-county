@@ -14,6 +14,8 @@
 -- When a player gets out, switches cars or respawns, the driving since the last payout is paid at once (same
 -- rules, cap pro rata), then their samples and pay timer start over. Leaving the game drops it unpaid.
 --
+-- Dealership test-drive cars (attribute Config/Garage.testDriveAttribute) never earn: they count as not driving.
+--
 -- Who's driving comes from VehicleService.getCar(player) and the car's Driver seat Occupant. Neither
 -- VehicleService nor EconomyService requires this module, so there is no require cycle. No polling loops beyond
 -- the sampling Heartbeat (CLAUDE.md hard rule 10).
@@ -27,6 +29,7 @@ local Shared = ReplicatedStorage.Shared
 local Catalog = require(Shared.Vehicle.Catalog)
 local DriveEarn = require(Shared.Config.DriveEarn)
 local Economy = require(Shared.Config.Economy)
+local Garage = require(Shared.Config.Garage)
 local Graph = require(Shared.Road.Graph)
 local Net = require(Shared.Net)
 local Units = require(Shared.Util.Units)
@@ -90,6 +93,9 @@ local function drivenCar(player: Player): (Model?, Humanoid?)
 	local character = player.Character
 	if car == nil or car.Parent == nil or character == nil then
 		return nil, nil
+	end
+	if car:GetAttribute(Garage.testDriveAttribute) == true then
+		return nil, nil -- a dealership test drive: no earnings
 	end
 	local seats = car:FindFirstChild(SEATS_FOLDER)
 	local seat = if seats then seats:FindFirstChild(DRIVER_SEAT) else nil

@@ -13,11 +13,23 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 
 export type Step = (data: { [string]: any }) -> ()
 
 local Migrations = {}
+
+-- What a car saved before version 3 cost: the catalog's total price for its trim (an upgrade trim includes the
+-- trim it upgrades), or 0 when it was never sold for cash (the free starter, a player design, a limited drop)
+-- or the save names a vehicle or trim the catalog no longer has.
+local function pricePaid(vehicle: { [string]: any }): number
+	local vehicleId, trim = vehicle.vehicleId, vehicle.trim
+	if type(vehicleId) ~= "string" or type(trim) ~= "string" then
+		return 0
+	end
+	return Catalog.totalPrice(vehicleId, trim) or 0
+end
 
 -- Keyed by the version a step upgrades FROM.
 Migrations.steps = {
@@ -25,6 +37,25 @@ Migrations.steps = {
 	[1] = function(data: { [string]: any })
 		if type(data.boosts) ~= "table" then
 			data.boosts = {}
+		end
+	end,
+
+	-- 2 -> 3: every owned car gains `favorite` (false) and `paid` (the catalog price of its trim, or 0). A car
+	-- that already has either keeps it. A save with no vehicles list is left for Reconcile to fill in.
+	[2] = function(data: { [string]: any })
+		local vehicles = data.vehicles
+		if type(vehicles) ~= "table" then
+			return
+		end
+		for _, vehicle in vehicles do
+			if type(vehicle) == "table" then
+				if type(vehicle.favorite) ~= "boolean" then
+					vehicle.favorite = false
+				end
+				if type(vehicle.paid) ~= "number" then
+					vehicle.paid = pricePaid(vehicle)
+				end
+			end
 		end
 	end,
 } :: { [number]: Step }

@@ -115,6 +115,12 @@ local Economy = {
 			drive = "Gameplay", -- drive-to-earn
 			code = "TimedReward", -- codes are time-limited rewards
 			dev = "Gameplay", -- Studio-only grants (Roblox never records Studio events)
+			-- Phase 4 car trade (Config/Dealership, Config/UsedLot and Config/Garage reasons).
+			dealership = "Shop", -- buying a new car
+			usedLot = "Shop", -- buying a used car
+			upgrade = "Shop", -- an upgrade trim
+			sell = "Shop", -- selling a car back (a source)
+			refund = "Shop", -- a failed purchase's charge given back, so it nets out against the shop sink
 		} :: { [string]: string },
 	},
 

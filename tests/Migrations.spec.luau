@@ -1,10 +1,11 @@
 --!strict
--- PlayerData migrations (CLAUDE.md hard rule 7; PLAN.md Phase 3 acceptance: migration specs pass).
--- Pure logic: runs in Edit mode.
+-- PlayerData migrations (CLAUDE.md hard rule 7; PLAN.md Phase 3 acceptance: migration specs pass; Phase 4 adds
+-- schema version 3, docs/phase-4-contracts.md "Data changes"). Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
+local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local Migrations = require(ServerScriptService.Server.Services.DataService.Migrations)
@@ -12,27 +13,50 @@ local Template = require(ServerScriptService.Server.Services.DataService.Templat
 
 local JOIN_TIME = 1700000000 -- any fixed os.time()
 
--- A version 1 save as the Phase 1-2 template wrote it (no boosts), with some player-owned data in it.
-local function v1Save(): { [string]: any }
-	local data: { [string]: any } = Template.new(JOIN_TIME) :: any
-	data.version = 1
-	data.boosts = nil
-	data.cash = 48250
-	data.vehicles = {
-		{
-			uid = "car-1",
-			vehicleId = "ohm_spark",
-			trim = "base",
-			paint = "white",
-			finish = "gloss",
-			wheels = "stock",
-			rideHeight = 0,
-			tint = 0.2,
-			acquiredAt = JOIN_TIME,
-		},
+-- A car as a version 1 or 2 save stored it (no `favorite`, no `paid`).
+local function oldCar(uid: string, vehicleId: string, trim: string): { [string]: any }
+	return {
+		uid = uid,
+		vehicleId = vehicleId,
+		trim = trim,
+		paint = "white",
+		finish = "gloss",
+		wheels = "stock",
+		rideHeight = 0,
+		tint = 0.2,
+		acquiredAt = JOIN_TIME,
 	}
+end
+
+-- A version 2 save with some player-owned data in it: the free starter, a bought Spark, an upgraded Arc (its
+-- price includes the trim it upgrades), a limited drop (never sold for cash), a player design and a car whose
+-- trim the catalog no longer has.
+local function v2Save(): { [string]: any }
+	local data: { [string]: any } = Template.new(JOIN_TIME) :: any
+	data.version = 2
+	data.cash = 48250
+	data.starterClaimed = true
+	data.vehicles = {
+		oldCar("car-starter", "ohm_spark", "used"),
+		oldCar("car-spark", "ohm_spark", "standard"),
+		oldCar("car-arc", "ohm_arc", "boost"),
+		oldCar("car-flight", "ohm_arc", "flight"),
+		oldCar("car-custom", "custom", "base"),
+		oldCar("car-gone", "ohm_spark", "retired_trim"),
+	}
+	data.vehicles[5].designUid = "design-1"
+	data.vehicles[2].plateText = "VOLT 1"
 	data.codesRedeemed = { LAUNCH = true }
 	data.receipts = { "purchase-1", "purchase-2" }
+	data.boosts = { { id = "LAUNCH2X", factor = 2, endsAt = JOIN_TIME + 1800 } }
+	return data
+end
+
+-- A version 1 save as the Phase 1-2 template wrote it (no boosts).
+local function v1Save(): { [string]: any }
+	local data = v2Save()
+	data.version = 1
+	data.boosts = nil
 	return data
 end
 
@@ -55,15 +79,29 @@ local function deepCopy(value: any): any
 	return copy
 end
 
+-- The car with `uid` in a migrated save.
+local function carIn(data: { [string]: any }, uid: string): { [string]: any }
+	for _, car in data.vehicles do
+		if car.uid == uid then
+			return car
+		end
+	end
+	error(`no car {uid} in the migrated save`)
+end
+
 return function(t: Harness.Api)
 	t.describe("Migrations", function()
+		t.it("is at schema version 3", function()
+			t.expect(Data.schemaVersion).toBe(3)
+		end)
+
 		t.it("has a step from every older version up to the schema version", function()
 			for version = Data.unversionedVersion, Data.schemaVersion - 1 do
 				t.expect(type(Migrations.steps[version])).toBe("function")
 			end
 		end)
 
-		t.it("upgrades a version 1 save without boosts to version 2 with boosts = {}", function()
+		t.it("upgrades a version 1 save without boosts to the latest version with boosts = {}", function()
 			local migrated, fromVersion = Migrations.run(v1Save())
 			t.expect(fromVersion).toBe(1)
 			t.expect(migrated.version).toBe(Data.schemaVersion)
@@ -78,21 +116,7 @@ return function(t: Harness.Api)
 			t.expect(fromVersion).toBe(1)
 			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(migrated.boosts).toEqual({})
-		end)
-
-		t.it("never drops a field and keeps every player-owned value", function()
-			local before = v1Save()
-			local snapshot = deepCopy(before)
-			local migrated = Migrations.run(before)
-			local after = keysOf(migrated)
-			for key in keysOf(snapshot) do
-				t.expect(after[key]).toBe(true)
-			end
-			for key, value in snapshot do
-				if key ~= "version" then
-					t.expect(migrated[key]).toEqual(value)
-				end
-			end
+			t.expect(carIn(migrated, "car-spark").favorite).toBe(false)
 		end)
 
 		t.it("keeps boosts a version 1 save somehow already has", function()
@@ -103,9 +127,93 @@ return function(t: Harness.Api)
 			t.expect(migrated.boosts[1].factor).toBe(2)
 		end)
 
+		t.it("2 -> 3: every owned car gains favorite = false", function()
+			local migrated, fromVersion = Migrations.run(v2Save())
+			t.expect(fromVersion).toBe(2)
+			t.expect(migrated.version).toBe(3)
+			t.expect(#migrated.vehicles).toBe(6)
+			for _, car in migrated.vehicles do
+				t.expect(car.favorite).toBe(false)
+			end
+		end)
+
+		t.it("2 -> 3: paid is the catalog price of the car's trim", function()
+			local migrated = Migrations.run(v2Save())
+			t.expect(carIn(migrated, "car-spark").paid).toBe(Catalog.totalPrice("ohm_spark", "standard"))
+			t.expect(carIn(migrated, "car-spark").paid > 0).toBe(true)
+			-- An upgrade trim counts the trim it upgrades as well.
+			local arcPaid = carIn(migrated, "car-arc").paid
+			t.expect(arcPaid).toBe(Catalog.totalPrice("ohm_arc", "boost"))
+			t.expect(arcPaid > (Catalog.totalPrice("ohm_arc", "performance") :: number)).toBe(true)
+		end)
+
+		t.it("2 -> 3: paid is 0 for cars never sold for cash or no longer in the catalog", function()
+			local migrated = Migrations.run(v2Save())
+			t.expect(carIn(migrated, "car-starter").paid).toBe(0) -- the free starter
+			t.expect(carIn(migrated, "car-flight").paid).toBe(0) -- a limited drop
+			t.expect(carIn(migrated, "car-custom").paid).toBe(0) -- a player design
+			t.expect(carIn(migrated, "car-gone").paid).toBe(0) -- a trim the catalog dropped
+		end)
+
+		t.it("2 -> 3: keeps favorite and paid a car already has", function()
+			local save = v2Save()
+			save.vehicles[2].favorite = true
+			save.vehicles[2].paid = 12345
+			local migrated = Migrations.run(save)
+			t.expect(carIn(migrated, "car-spark").favorite).toBe(true)
+			t.expect(carIn(migrated, "car-spark").paid).toBe(12345)
+		end)
+
+		t.it("2 -> 3: survives damaged vehicle lists and entries", function()
+			local missing = v2Save()
+			missing.vehicles = nil
+			local migrated = Migrations.run(missing)
+			t.expect(migrated.version).toBe(3)
+			t.expect(migrated.vehicles).toBe(nil) -- left for Reconcile to fill from the template
+
+			local damaged = v2Save()
+			damaged.vehicles =
+				{ "not a car", oldCar("car-ok", "ohm_spark", "standard"), { uid = "car-bare" } } :: { any }
+			local fixed = Migrations.run(damaged)
+			t.expect(fixed.vehicles[1]).toBe("not a car")
+			t.expect(carIn(fixed, "car-ok").favorite).toBe(false)
+			t.expect(carIn(fixed, "car-bare").paid).toBe(0)
+		end)
+
+		t.it("never drops a field and keeps every player-owned value", function()
+			for _, makeSave in { v1Save, v2Save } do
+				local before = makeSave()
+				local snapshot = deepCopy(before)
+				local migrated = Migrations.run(before)
+				local after = keysOf(migrated)
+				for key in keysOf(snapshot) do
+					t.expect(after[key]).toBe(true)
+				end
+				for key, value in snapshot do
+					if key ~= "version" and key ~= "vehicles" and key ~= "boosts" then
+						t.expect(migrated[key]).toEqual(value)
+					end
+				end
+				-- Cars: same cars in the same order, every old field kept as it was; only the new fields added.
+				t.expect(#migrated.vehicles).toBe(#snapshot.vehicles)
+				for index, oldCarValue in snapshot.vehicles do
+					local newCar = migrated.vehicles[index]
+					for field, value in oldCarValue do
+						t.expect(newCar[field]).toEqual(value)
+					end
+					for field in newCar do
+						local isNew = field == "favorite" or field == "paid"
+						t.expect(oldCarValue[field] ~= nil or isNew).toBe(true)
+					end
+				end
+			end
+		end)
+
 		t.it("leaves a save at the latest version unchanged (idempotent)", function()
 			local current: { [string]: any } = Template.new(JOIN_TIME) :: any
 			current.cash = 777
+			table.insert(current.vehicles, Template.ownedVehicle("car-new", "ohm_spark", "standard", 30000, JOIN_TIME))
+			current.vehicles[1].favorite = true
 			local snapshot = deepCopy(current)
 			local migrated, fromVersion = Migrations.run(current)
 			t.expect(fromVersion).toBe(Data.schemaVersion)
@@ -113,6 +221,14 @@ return function(t: Harness.Api)
 			local again, againFrom = Migrations.run(migrated)
 			t.expect(againFrom).toBe(Data.schemaVersion)
 			t.expect(again).toEqual(snapshot)
+		end)
+
+		t.it("running the 2 -> 3 step twice changes nothing the second time", function()
+			local save = v2Save()
+			Migrations.steps[2](save)
+			local once = deepCopy(save)
+			Migrations.steps[2](save)
+			t.expect(save).toEqual(once)
 		end)
 
 		t.it("refuses a save from a newer version and leaves it untouched", function()

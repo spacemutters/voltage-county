@@ -1,16 +1,18 @@
 --!strict
--- The HUD.
+-- The HUD (PLAN.md Phase 4 "HUD: speed, energy placeholder, cash, active job").
 --
---   driving panel   (PLAN.md Phase 1 "HUD stub") while driving: speed in mph, gear and drive mode in one panel
---                   at the bottom center, with a row of key hints under it on keyboard and gamepad.
---   wallet          (Phase 3, docs/phase-3-contracts.md "HUD cash readout") always: the player's cash
---                   ("$12,345") in the top-left corner, with a small Codes button under it.
---   code sheet      while open: a text box and a Redeem button in the middle of the screen (until Phase 4's
---                   phone takes codes over).
+--   speed panel     while driving, bottom centre: the gear, the speed in the player's units (mph or km/h, from
+--                   their settings), the drive mode and regen level, and along its bottom the energy row (Phase 5
+--                   fills it: until then the bar shows full with no number). On keyboard and gamepad a row of
+--                   key hints sits under it, ending with the phone key.
+--   wallet          always, top left: the player's cash ("$12,345"), lined up with the touch steering zones.
+--   active job      under the cash: the job in progress (Phase 6 fills it; empty until then, so nothing shows).
 --
--- Presentation only: HudController passes every value and callback in as props and redraws about 10 times a
--- second while driving. Sizes come from Config/Controls and Config/Economy `hud` at UI scale 1; HudController
--- scales the whole tree for bigger screens. Every touch target is at least 44 px (Economy.spec checks).
+-- Codes moved to the phone's Codes app, and the phone button is drawn by the phone itself (UI/Phone), placed
+-- beside this speed panel by UI/Phone/Layout, which shares the panel's size and position with this file.
+-- Presentation only: HudController passes every value in as props and redraws about 10 times a second while
+-- driving. Sizes come from Config/Controls, Config/Economy `hud` and UI/Phone/PhoneConfig `hud` at UI scale 1;
+-- HudController scales the whole tree for bigger screens.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -19,36 +21,46 @@ local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Types = require(ReplicatedStorage.Shared.Types)
 
+local Layout = require(script.Parent.Phone.Layout)
+local PhoneConfig = require(script.Parent.Phone.PhoneConfig)
+local Theme = require(script.Parent.Theme)
+
 local e = React.createElement
 
 export type HintItem = { keys: string, label: string }
 
+-- The job in progress, as the HUD shows it (Phase 6 decides what goes in it).
+export type ActiveJob = { title: string, detail: string? }
+
+-- The car's energy: what kind, and how full (0..1); nil level until Phase 5 tracks it.
+export type Energy = { kind: "battery" | "fuel", level: number? }
+
 export type Props = {
-	driving: boolean, -- the driving panel and hints show only while driving
-	mph: number, -- already rounded
+	driving: boolean, -- the speed panel and hints show only while driving
+	speed: number, -- already rounded, in the units of `unitLabel`
+	unitLabel: string, -- "mph" or "km/h"
 	gear: string,
 	mode: Types.DriveMode,
 	regen: Types.RegenLevel,
+	energy: Energy?,
 	hints: { HintItem }?, -- nil or empty hides the hint row (touch devices)
 	cash: number?, -- from the player's Cash attribute; nil until their data has loaded
-	codesOpen: boolean, -- the code sheet is showing
-	redeeming: boolean, -- a code is being checked by the server
-	onToggleCodes: () -> (),
-	onCloseCodes: () -> (),
-	onRedeem: (text: string) -> (),
+	job: ActiveJob?, -- nil: no job, the slot stays empty
 }
 
 type DrivingProps = {
-	mph: number,
+	speed: number,
+	unitLabel: string,
 	gear: string,
 	mode: Types.DriveMode,
 	regen: Types.RegenLevel,
+	energy: Energy?,
 	hints: { HintItem }?,
 }
 
 -- "W/S Drive    A/D Steer ..." with the keys in bold white and the labels in the dim text color.
 local function hintText(hints: { HintItem }): string
-	local keyColor = Controls.theme.text:ToHex()
+	local keyColor = Theme.colors.text:ToHex()
 	local parts: { string } = {}
 	for _, hint in hints do
 		table.insert(parts, `<font color="#{keyColor}"><b>{hint.keys}</b></font> {hint.label}`)
@@ -78,6 +90,7 @@ local function line(props: {
 	})
 end
 
+-- A column of lines in the top part of the speed panel, vertically centred there.
 local function column(props: {
 	anchor: Vector2,
 	position: UDim2,
@@ -95,43 +108,103 @@ local function column(props: {
 	return e("Frame", {
 		AnchorPoint = props.anchor,
 		Position = props.position,
-		Size = UDim2.new(0, props.width, 1, 0),
+		Size = UDim2.fromOffset(props.width, Controls.hud.clusterSize.Y),
 		BackgroundTransparency = 1,
 	}, children)
 end
 
--- Speed, gear and drive mode, bottom center, with the key hints under them.
+-- The energy row along the bottom of the speed panel: "Battery", a bar, and the percentage once it's known.
+local function EnergyRow(props: { energy: Energy? })
+	local config = PhoneConfig.hud.energy
+	local colors = Theme.colors
+	local energy = props.energy
+	local level = if energy then energy.level else nil
+	local known = level ~= nil
+	local fill = if level ~= nil then math.clamp(level, 0, 1) else 1
+	local kind = if energy then energy.kind else "battery"
+	local pad = Controls.hud.clusterPadding
+	local valueWidth = if known then config.valueWidth else 0
+	return e("Frame", {
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, config.rowHeight),
+		BackgroundTransparency = 1,
+	}, {
+		Padding = e("UIPadding", {
+			PaddingLeft = UDim.new(0, pad),
+			PaddingRight = UDim.new(0, pad),
+			PaddingBottom = UDim.new(0, Theme.spacing.sm),
+		}),
+		Label = e("TextLabel", {
+			Size = UDim2.new(0, config.labelWidth, 1, 0),
+			BackgroundTransparency = 1,
+			FontFace = Theme.fonts.medium,
+			Text = config.labels[kind] or kind,
+			TextColor3 = colors.textDim,
+			TextSize = Controls.hud.smallTextSize,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+		Bar = e("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, config.labelWidth, 0.5, 0),
+			Size = UDim2.new(1, -(config.labelWidth + valueWidth), 0, config.barHeight),
+			BackgroundColor3 = colors.track,
+			BorderSizePixel = 0,
+		}, {
+			Corner = e("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+			Fill = e("Frame", {
+				Size = UDim2.fromScale(fill, 1),
+				-- Until Phase 5 the bar only marks where energy will show, so it stays quiet.
+				BackgroundColor3 = if known then colors.accent else colors.textDim,
+				BorderSizePixel = 0,
+			}, {
+				Corner = e("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+			}),
+		}),
+		Value = if level ~= nil
+			then e("TextLabel", {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.fromScale(1, 0),
+				Size = UDim2.new(0, config.valueWidth, 1, 0),
+				BackgroundTransparency = 1,
+				FontFace = Theme.fonts.bold,
+				Text = string.format(config.percentFormat, math.round(fill * 100)),
+				TextColor3 = colors.text,
+				TextSize = Controls.hud.smallTextSize,
+				TextXAlignment = Enum.TextXAlignment.Right,
+			})
+			else nil,
+	})
+end
+
+-- Speed, gear, drive mode and energy, bottom centre, with the key hints under them.
 local function Driving(props: DrivingProps)
-	local theme = Controls.theme
+	local colors = Theme.colors
 	local layout = Controls.hud
 	local pad = layout.clusterPadding
 	local hints = props.hints
 	local showHints = hints ~= nil and #hints > 0
-
-	-- The speed panel sits above the hint row when there is one.
-	local clusterBottom = layout.margin
-	if showHints then
-		clusterBottom += layout.hintHeight + layout.gap
-	end
+	local size = Layout.clusterSize()
+	local top = layout.clusterSize.Y -- the gear / speed / mode part; the energy row is under it
 
 	local cluster = e("Frame", {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -clusterBottom),
-		Size = UDim2.fromOffset(layout.clusterSize.X, layout.clusterSize.Y),
-		BackgroundColor3 = theme.panel,
-		BackgroundTransparency = theme.panelTransparency,
+		Position = UDim2.new(0.5, 0, 1, -Layout.clusterBottom(showHints)),
+		Size = UDim2.fromOffset(size.X, size.Y),
+		BackgroundColor3 = colors.panel,
+		BackgroundTransparency = colors.panelTransparency,
 		BorderSizePixel = 0,
 	}, {
 		Corner = e("UICorner", { CornerRadius = UDim.new(0, layout.cornerRadius) }),
 		Gear = e("TextLabel", {
 			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, pad, 0.5, 0),
+			Position = UDim2.fromOffset(pad, top / 2),
 			Size = UDim2.fromOffset(layout.gearSize, layout.gearSize),
-			BackgroundColor3 = theme.panelRaised,
+			BackgroundColor3 = colors.panelRaised,
 			BorderSizePixel = 0,
-			FontFace = theme.fonts.bold,
+			FontFace = Theme.fonts.bold,
 			Text = props.gear,
-			TextColor3 = theme.text,
+			TextColor3 = colors.text,
 			TextSize = layout.gearTextSize,
 		}, {
 			Corner = e("UICorner", { CornerRadius = UDim.new(0, layout.gearCornerRadius) }),
@@ -144,17 +217,17 @@ local function Driving(props: DrivingProps)
 			items = {
 				Value = e(line, {
 					order = 1,
-					text = tostring(props.mph),
-					font = theme.fonts.bold,
+					text = tostring(props.speed),
+					font = Theme.fonts.bold,
 					size = layout.speedTextSize,
-					color = theme.text,
+					color = colors.text,
 				}),
 				Unit = e(line, {
 					order = 2,
-					text = layout.unitLabel,
-					font = theme.fonts.medium,
+					text = props.unitLabel,
+					font = Theme.fonts.medium,
 					size = layout.unitTextSize,
-					color = theme.textDim,
+					color = colors.textDim,
 				}),
 			},
 		}),
@@ -167,21 +240,22 @@ local function Driving(props: DrivingProps)
 				Drive = e(line, {
 					order = 1,
 					text = layout.modeLabels[props.mode] or props.mode,
-					font = theme.fonts.bold,
+					font = Theme.fonts.bold,
 					size = layout.modeTextSize,
-					color = theme.accent,
+					color = colors.accent,
 					align = Enum.TextXAlignment.Right,
 				}),
 				Regen = e(line, {
 					order = 2,
 					text = layout.regenLabels[props.regen] or props.regen,
-					font = theme.fonts.regular,
+					font = Theme.fonts.regular,
 					size = layout.smallTextSize,
-					color = theme.textDim,
+					color = colors.textDim,
 					align = Enum.TextXAlignment.Right,
 				}),
 			},
 		}),
+		Energy = e(EnergyRow, { energy = props.energy }),
 	})
 
 	local hintRow = if showHints and hints
@@ -190,13 +264,13 @@ local function Driving(props: DrivingProps)
 			Position = UDim2.new(0.5, 0, 1, -layout.margin),
 			Size = UDim2.fromOffset(0, layout.hintHeight),
 			AutomaticSize = Enum.AutomaticSize.X,
-			BackgroundColor3 = theme.panel,
-			BackgroundTransparency = theme.panelTransparency,
+			BackgroundColor3 = colors.panel,
+			BackgroundTransparency = colors.panelTransparency,
 			BorderSizePixel = 0,
-			FontFace = theme.fonts.regular,
+			FontFace = Theme.fonts.regular,
 			RichText = true,
 			Text = hintText(hints),
-			TextColor3 = theme.textDim,
+			TextColor3 = colors.textDim,
 			TextSize = layout.hintTextSize,
 		}, {
 			Corner = e("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
@@ -224,23 +298,69 @@ local function cashText(cash: number): string
 	if at == nil then
 		return formatted
 	end
-	local accent = Controls.theme.accent:ToHex()
+	local accent = Theme.colors.accent:ToHex()
 	return string.sub(formatted, 1, at - 1)
 		.. `<font color="#{accent}">{symbol}</font>`
 		.. string.sub(formatted, at + #symbol)
 end
 
--- The player's cash, top left (lined up with the touch steering zones), with the Codes button under it.
-local function Wallet(props: { cash: number?, codesOpen: boolean, onToggleCodes: () -> () })
-	local theme = Controls.theme
+-- The job in progress: its title and one line of detail, on a panel under the cash.
+local function JobSlot(props: { job: ActiveJob, order: number })
+	local slot = PhoneConfig.hud.jobSlot
+	local colors = Theme.colors
+	local job = props.job
+	return e("Frame", {
+		LayoutOrder = props.order,
+		Size = UDim2.fromOffset(slot.size.X, slot.size.Y),
+		BackgroundColor3 = colors.panel,
+		BackgroundTransparency = colors.panelTransparency,
+		BorderSizePixel = 0,
+	}, {
+		Corner = e("UICorner", { CornerRadius = UDim.new(0, Controls.hud.cornerRadius) }),
+		Padding = e("UIPadding", {
+			PaddingLeft = UDim.new(0, slot.padding),
+			PaddingRight = UDim.new(0, slot.padding),
+		}),
+		Layout = e("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}),
+		Title = e(line, {
+			order = 1,
+			text = job.title,
+			font = Theme.fonts.bold,
+			size = slot.titleTextSize,
+			color = colors.text,
+			align = Enum.TextXAlignment.Left,
+		}),
+		Detail = if job.detail
+			then e(line, {
+				order = 2,
+				text = job.detail,
+				font = Theme.fonts.regular,
+				size = slot.detailTextSize,
+				color = colors.textDim,
+				align = Enum.TextXAlignment.Left,
+			})
+			else nil,
+	})
+end
+
+-- The player's cash, top left (lined up with the touch steering zones), with the active job under it.
+local function Wallet(props: { cash: number?, job: ActiveJob? })
+	local colors = Theme.colors
 	local hud = Economy.hud
 	local margin = Controls.touch.margin
 	local cash = props.cash
-	local open = props.codesOpen
+	local job = props.job
 
 	return e("Frame", {
 		Position = UDim2.fromOffset(margin, margin),
-		Size = UDim2.fromOffset(hud.cashMaxWidth, 2 * hud.rowHeight + hud.gap),
+		Size = UDim2.fromOffset(
+			math.max(hud.cashMaxWidth, PhoneConfig.hud.jobSlot.size.X),
+			hud.rowHeight + hud.gap + PhoneConfig.hud.jobSlot.size.Y
+		),
 		BackgroundTransparency = 1,
 	}, {
 		Layout = e("UIListLayout", {
@@ -254,13 +374,13 @@ local function Wallet(props: { cash: number?, codesOpen: boolean, onToggleCodes:
 			LayoutOrder = 1,
 			Size = UDim2.fromOffset(0, hud.rowHeight),
 			AutomaticSize = Enum.AutomaticSize.X,
-			BackgroundColor3 = theme.panel,
-			BackgroundTransparency = theme.panelTransparency,
+			BackgroundColor3 = colors.panel,
+			BackgroundTransparency = colors.panelTransparency,
 			BorderSizePixel = 0,
-			FontFace = theme.fonts.bold,
+			FontFace = Theme.fonts.bold,
 			RichText = cash ~= nil,
 			Text = if cash ~= nil then cashText(cash) else hud.loadingText,
-			TextColor3 = if cash ~= nil then theme.text else theme.textDim,
+			TextColor3 = if cash ~= nil then colors.text else colors.textDim,
 			TextSize = hud.cashTextSize,
 		}, {
 			Corner = e("UICorner", { CornerRadius = UDim.new(0, hud.cornerRadius) }),
@@ -273,134 +393,7 @@ local function Wallet(props: { cash: number?, codesOpen: boolean, onToggleCodes:
 				MaxSize = Vector2.new(hud.cashMaxWidth, hud.rowHeight),
 			}),
 		}),
-		-- Opens and closes the code sheet; filled with the accent while it's open, like the GPS button.
-		Codes = e("TextButton", {
-			LayoutOrder = 2,
-			Size = UDim2.fromOffset(hud.codesButtonWidth, hud.rowHeight),
-			BackgroundColor3 = if open then theme.accent else theme.panel,
-			BackgroundTransparency = if open then 0 else theme.panelTransparency,
-			BorderSizePixel = 0,
-			AutoButtonColor = true,
-			FontFace = theme.fonts.bold,
-			Text = hud.codesLabel,
-			TextColor3 = if open then theme.onAccent else theme.text,
-			TextSize = hud.buttonTextSize,
-			[React.Event.Activated] = function()
-				props.onToggleCodes()
-			end,
-		}, {
-			Corner = e("UICorner", { CornerRadius = UDim.new(0, hud.cornerRadius) }),
-		}),
-	})
-end
-
--- The code sheet: a title with a Close button, a text box, and Redeem (Enter in the box works too). The typed
--- text stays in the box itself; HudController closes the sheet when a code works and leaves it open to fix a
--- typo when it doesn't.
-local function CodeSheet(props: { redeeming: boolean, onRedeem: (text: string) -> (), onClose: () -> () })
-	local theme = Controls.theme
-	local panel = Economy.hud.panel
-	local box = React.useRef(nil :: TextBox?)
-
-	-- Put the cursor in the box when the sheet opens (on phones this brings up the keyboard).
-	React.useEffect(function()
-		local current = box.current
-		if current ~= nil then
-			current:CaptureFocus()
-		end
-	end, {})
-
-	local function submit()
-		local current = box.current
-		if current ~= nil and not props.redeeming then
-			props.onRedeem(current.Text)
-		end
-	end
-
-	local pad = panel.padding
-	local innerWidth = panel.width - 2 * pad
-	local buttonTop = panel.headerHeight + panel.inputHeight + pad
-	local height = buttonTop + panel.buttonHeight + pad
-
-	return e("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(panel.width, height),
-		BackgroundColor3 = theme.panel,
-		BackgroundTransparency = theme.panelTransparency,
-		BorderSizePixel = 0,
-		Active = true, -- taps on the sheet don't fall through to the controls or the world
-	}, {
-		Corner = e("UICorner", { CornerRadius = UDim.new(0, panel.cornerRadius) }),
-		Title = e("TextLabel", {
-			Position = UDim2.fromOffset(pad, 0),
-			Size = UDim2.fromOffset(innerWidth - panel.closeButtonWidth, panel.headerHeight),
-			BackgroundTransparency = 1,
-			FontFace = theme.fonts.bold,
-			Text = panel.title,
-			TextColor3 = theme.text,
-			TextSize = panel.titleTextSize,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}),
-		Close = e("TextButton", {
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -pad, 0, panel.headerHeight / 2),
-			Size = UDim2.fromOffset(panel.closeButtonWidth, panel.buttonHeight),
-			BackgroundColor3 = theme.panelRaised,
-			BorderSizePixel = 0,
-			AutoButtonColor = true,
-			FontFace = theme.fonts.bold,
-			Text = panel.closeLabel,
-			TextColor3 = theme.text,
-			TextSize = panel.textSize,
-			[React.Event.Activated] = function()
-				props.onClose()
-			end,
-		}, {
-			Corner = e("UICorner", { CornerRadius = UDim.new(0, panel.innerCornerRadius) }),
-		}),
-		Input = e("TextBox", {
-			Position = UDim2.fromOffset(pad, panel.headerHeight),
-			Size = UDim2.fromOffset(innerWidth, panel.inputHeight),
-			BackgroundColor3 = theme.panelRaised,
-			BorderSizePixel = 0,
-			ClearTextOnFocus = false,
-			TextEditable = not props.redeeming,
-			FontFace = theme.fonts.medium,
-			PlaceholderText = panel.placeholder,
-			PlaceholderColor3 = theme.textDim,
-			Text = "",
-			TextColor3 = theme.text,
-			TextSize = panel.textSize,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			ref = box,
-			[React.Event.FocusLost] = function(_rbx: TextBox, enterPressed: boolean)
-				if enterPressed then
-					submit()
-				end
-			end,
-		}, {
-			Corner = e("UICorner", { CornerRadius = UDim.new(0, panel.innerCornerRadius) }),
-			Padding = e("UIPadding", {
-				PaddingLeft = UDim.new(0, pad),
-				PaddingRight = UDim.new(0, pad),
-			}),
-		}),
-		Redeem = e("TextButton", {
-			Position = UDim2.fromOffset(pad, buttonTop),
-			Size = UDim2.fromOffset(innerWidth, panel.buttonHeight),
-			BackgroundColor3 = if props.redeeming then theme.panelRaised else theme.accent,
-			BorderSizePixel = 0,
-			AutoButtonColor = not props.redeeming,
-			FontFace = theme.fonts.bold,
-			Text = if props.redeeming then panel.redeemingLabel else panel.redeemLabel,
-			TextColor3 = if props.redeeming then theme.textDim else theme.onAccent,
-			TextSize = panel.textSize,
-			[React.Event.Activated] = submit,
-		}, {
-			Corner = e("UICorner", { CornerRadius = UDim.new(0, panel.innerCornerRadius) }),
-		}),
+		Job = if job then e(JobSlot, { job = job, order = 2 }) else nil,
 	})
 end
 
@@ -408,30 +401,21 @@ local function Hud(props: Props)
 	return e("Frame", {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
-		-- Drawn above the touch controls (a sibling in HudController's tree), so the open code sheet covers them.
+		-- Drawn above the touch controls (a sibling in HudController's tree).
 		ZIndex = 2,
 	}, {
 		Driving = if props.driving
 			then e(Driving, {
-				mph = props.mph,
+				speed = props.speed,
+				unitLabel = props.unitLabel,
 				gear = props.gear,
 				mode = props.mode,
 				regen = props.regen,
+				energy = props.energy,
 				hints = props.hints,
 			})
 			else nil,
-		Wallet = e(Wallet, {
-			cash = props.cash,
-			codesOpen = props.codesOpen,
-			onToggleCodes = props.onToggleCodes,
-		}),
-		CodeSheet = if props.codesOpen
-			then e(CodeSheet, {
-				redeeming = props.redeeming,
-				onRedeem = props.onRedeem,
-				onClose = props.onCloseCodes,
-			})
-			else nil,
+		Wallet = e(Wallet, { cash = props.cash, job = props.job }),
 	})
 end
 

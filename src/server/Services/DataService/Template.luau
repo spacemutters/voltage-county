@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
+local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Types = require(ReplicatedStorage.Shared.Types)
 
 local Template = {}
@@ -47,6 +48,32 @@ function Template.new(now: number?): Types.PlayerData
 		settings = { units = settings.units, camera = settings.camera, musicVolume = settings.musicVolume },
 		firstJoinAt = stamp,
 		boosts = {},
+	}
+end
+
+-- A newly bought or claimed car (Types.OwnedVehicle) with the default look from Config/Garage. `uid` comes from
+-- HttpService:GenerateGUID(false) (GarageService makes it, keeping this module pure), `paid` is whole dollars
+-- (0 for the free starter) and `now` is os.time() seconds.
+function Template.ownedVehicle(
+	uid: string,
+	vehicleId: string,
+	trim: string,
+	paid: number,
+	now: number
+): Types.OwnedVehicle
+	local look = Garage.defaults
+	return {
+		uid = uid,
+		vehicleId = vehicleId,
+		trim = trim,
+		paint = look.paint,
+		finish = look.finish,
+		wheels = look.wheels,
+		rideHeight = look.rideHeight,
+		tint = look.tint,
+		acquiredAt = now,
+		favorite = false,
+		paid = paid,
 	}
 end
 

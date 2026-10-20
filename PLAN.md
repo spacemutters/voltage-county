@@ -512,23 +512,23 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 4 — Dealership, used lot, garage, phone UI
 
 **Tasks**
-- [ ] react-lua UI shell, mobile-first and scaling for phone, tablet and desktop:
+- [x] react-lua UI shell, mobile-first and scaling for phone, tablet and desktop:
   - HUD: speed, energy placeholder, cash, active job.
   - **Phone** with apps: GPS, Garage, Jobs, Fleet, Wallet, Codes, Settings.
-- [ ] Dealership:
+- [x] Dealership:
   - A section per brand, with one display pad per vehicle.
   - A ProximityPrompt opens the shop: brand, trims, stat bars, price.
   - Purchases are server-validated.
   - 2-minute test drives (no earnings).
-- [ ] Used lot:
+- [x] Used lot:
   - Free starter claim (once).
   - Daily rotating classic stock, seeded from the UTC date so every server agrees.
   - Global supply caps via DataStore `UpdateAsync`; price rises as supply sells.
-- [ ] Garage: list, spawn at the nearest spawn pad, despawn, favorite, sell back at 60%.
+- [x] Garage: list, spawn at the nearest spawn pad, despawn, favorite, sell back at 60%.
 
 **Acceptance**
-- [ ] Buying with exact cash leaves a balance of 0, saves the vehicle, and spawns it. A forged purchase remote with too little cash is rejected and logged.
-- [ ] Two simulated servers on the same UTC day show identical used-lot stock.
+- [x] Buying with exact cash leaves a balance of 0, saves the vehicle, and spawns it. A forged purchase remote with too little cash is rejected and logged.
+- [x] Two simulated servers on the same UTC day show identical used-lot stock.
 - [ ] Phone and shops are usable at phone resolution (device simulation + `screen_capture`).
 
 **Stop.**

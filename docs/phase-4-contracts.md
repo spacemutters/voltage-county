@@ -105,9 +105,12 @@ supply), capped), the DataStore name (`UsedLotSupply`, `UsedLotSupply_Studio` in
   pure and deterministic from the UTC date (`os.date("!%Y-%m-%d")`), so every server agrees. Puts display
   copies on the used-lot pads with a "View" prompt (`Slot` attribute).
 - `GetUsedLot` (function): today's stock with current price and remaining supply.
-- `BuyUsed { slot }` (function): global supply via `DataStore:UpdateAsync` on key `<date>:<slot>` (atomic
-  increment only while sold < supply); charge the current price; refund if anything after the charge fails.
-  In-memory fallback when DataStores aren't reachable.
+- `BuyUsed { slot, date, maxPrice }` (function): global supply via `DataStore:UpdateAsync` on key
+  `<date>:<slot>` (atomic increment only while sold < supply); charge the current price; refund if anything
+  after the charge fails. `date` and `maxPrice` are the lot day and the price the player's confirm showed: a
+  different day or a higher current price is refused with `priceChanged = true` and the new price, never
+  charged (fixer change: the client confirm could be out of date). In-memory fallback only when the store
+  can't be used at all (Studio without API access); on a live server any other store error refuses the sale.
 - Pure helpers for specs: `UsedLotService.price(base, sold, supply)`.
 
 ## Client UI (owners: phone helper, shop helper)

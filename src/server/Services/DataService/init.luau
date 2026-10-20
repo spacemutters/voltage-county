@@ -11,6 +11,7 @@
 --            message (their saved data is never touched in that case).
 --   play     other services read with `get` and change data only through `update`, which refuses whenever the
 --            session isn't active (so nothing is ever written to a profile this server no longer owns).
+--            onChanged listeners hear about every successful update (and every load), e.g. ProfileSyncService.
 --   leave    end the session; ProfileStore saves and releases the lock.
 --   elsewhere if another server takes the session (the player joined somewhere else), we kick them here.
 --   shutdown game:BindToClose ends every open session; ProfileStore holds the server open until they've saved.
@@ -65,6 +66,7 @@ local loading: { [Player]: boolean } = {} -- players whose session is starting
 local departed: { [Player]: boolean } = {} -- players who left while their session was starting
 local waiters: { [Player]: { Waiter } } = {}
 local listeners: { LoadedListener } = {}
+local changedListeners: { LoadedListener } = {} -- onChanged: after every successful update, and on load
 local closing = false -- set by game:BindToClose
 
 -- Helpers ---------------------------------------------------------------------------------------------------
@@ -100,6 +102,24 @@ local function releaseWaiters(player: Player, data: Types.PlayerData?)
 			task.cancel(waiter.timer)
 		end
 		task.spawn(waiter.thread, data)
+	end
+end
+
+-- Runs one onChanged listener in its own thread, so one that errors (reported here) or yields never stops the
+-- others or the update that triggered it.
+local function runChangedListener(listener: LoadedListener, player: Player, data: Types.PlayerData)
+	task.spawn(function()
+		local ok, err = xpcall(listener, debug.traceback, player, data)
+		if not ok then
+			warn(`{LOG} an onChanged listener failed for {player.Name}: {err}`)
+		end
+	end)
+end
+
+-- Tells every onChanged listener that `player`'s data changed (or loaded).
+local function fireChanged(player: Player, data: Types.PlayerData)
+	for _, listener in changedListeners do
+		runChangedListener(listener, player, data)
 	end
 end
 
@@ -239,6 +259,7 @@ local function loadPlayer(player: Player)
 	for _, listener in listeners do
 		task.spawn(listener, player, data)
 	end
+	fireChanged(player, data)
 end
 
 local function onPlayerRemoving(player: Player)
@@ -286,6 +307,7 @@ function DataService.update(player: Player, fn: (data: Types.PlayerData) -> ()):
 		warn(`{LOG} update for {player.Name} failed: {err}`)
 		return false
 	end
+	fireChanged(player, profile.Data)
 	return true
 end
 
@@ -324,6 +346,17 @@ function DataService.onLoaded(fn: LoadedListener)
 	table.insert(listeners, fn)
 	for player, profile in profiles do
 		task.spawn(fn, player, profile.Data)
+	end
+end
+
+-- Calls `fn(player, data)` after every successful `update` and whenever a player's data loads, starting with
+-- everyone already loaded (like onLoaded), so a listener never misses a player's current data. `data` is the
+-- live table: read it, don't change it. Listeners run in their own threads (an error is reported and the rest
+-- still run) and must not call `update` every time they're told about a change, or they'd loop forever.
+function DataService.onChanged(fn: LoadedListener)
+	table.insert(changedListeners, fn)
+	for player, profile in profiles do
+		runChangedListener(fn, player, profile.Data)
 	end
 end
 

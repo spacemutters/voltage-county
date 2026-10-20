@@ -17,6 +17,8 @@ export type OwnedVehicle = {
 	mods: { [string]: any }?, -- validated AI mod spec (Phase 11)
 	serial: number?, -- limited serial number
 	acquiredAt: number, -- os.time()
+	favorite: boolean, -- v3: starred in the phone's Garage app (favorites sort first)
+	paid: number, -- v3: whole $ the player paid (0 for the free starter); selling back pays Config/Garage share
 }
 
 export type CustomDesign = {
@@ -32,7 +34,10 @@ export type CreditReservation = { id: string, amount: number, at: number }
 -- Added in schema version 2.
 export type Boost = { id: string, factor: number, endsAt: number } -- endsAt = os.time() seconds
 
--- Schema version 2 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
+-- Player settings, set from the phone's Settings app (Net UpdateSettings, validated by GarageService).
+export type Settings = { units: "mph" | "kph", camera: string, musicVolume: number }
+
+-- Schema version 3 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
 export type PlayerData = {
 	version: number,
 	cash: number,
@@ -53,9 +58,34 @@ export type PlayerData = {
 	club: { lastGrantMonth: string? }, -- Voltage Club monthly credit grant (once per billing month)
 	receipts: { string }, -- last 100 processed PurchaseIds (ProcessReceipt idempotency)
 	pendingGrants: { { kind: string, ref: string } },
-	settings: { units: "mph" | "kph", camera: string, musicVolume: number },
+	settings: Settings,
 	firstJoinAt: number,
 	boosts: { Boost }, -- v2: timed earnings boosts
+}
+
+-- What a player's client knows about their own profile: the Net ProfileSnapshot payload, sent by
+-- Services/ProfileSyncService on load and after every change (docs/phase-4-contracts.md). Copies of sanitized
+-- fields only; never anyone else's data.
+export type SnapshotVehicle = {
+	uid: string,
+	vehicleId: string,
+	trim: string,
+	favorite: boolean,
+	paid: number,
+	paint: string,
+	finish: string,
+	wheels: string,
+	acquiredAt: number,
+}
+
+export type ProfileSnapshot = {
+	cash: number,
+	garageSlots: number,
+	customSlots: number,
+	starterClaimed: boolean,
+	vehicles: { SnapshotVehicle }, -- favorites first, then the newest (Config/Garage.sortVehicles)
+	settings: Settings,
+	credits: { balance: number },
 }
 
 -- Driving -------------------------------------------------------------------------------------------------

@@ -7,6 +7,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
+local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local Template = require(ServerScriptService.Server.Services.DataService.Template)
 
@@ -36,6 +37,22 @@ local SHAPE: { [string]: any } = {
 	settings = { units = "string", camera = "string", musicVolume = "number" },
 	firstJoinAt = "number",
 	boosts = "table",
+}
+
+-- Every field a new owned car (Types.OwnedVehicle, schema version 3) starts with. The optional fields (designUid,
+-- wrap, plateText, mods, serial) start unset.
+local OWNED_VEHICLE_SHAPE: { [string]: any } = {
+	uid = "string",
+	vehicleId = "string",
+	trim = "string",
+	paint = "string",
+	finish = "string",
+	wheels = "string",
+	rideHeight = "number",
+	tint = "number",
+	acquiredAt = "number",
+	favorite = "boolean",
+	paid = "number",
 }
 
 -- Checks `value` against `shape`, adding one line per mismatch (with its path) to `problems`.
@@ -124,6 +141,28 @@ return function(t: Harness.Api)
 			t.expect(fresh.fleet.lastCollectedAt).toBe(JOIN_TIME)
 			t.expect(Template.stamp(fresh, JOIN_TIME + 60)).toBe(false)
 			t.expect(fresh.firstJoinAt).toBe(JOIN_TIME)
+		end)
+
+		t.it("makes a new owned car with every field and the default look", function()
+			local car = Template.ownedVehicle("car-1", "ohm_spark", "standard", 35000, JOIN_TIME)
+			local problems = {}
+			shapeProblems(car, OWNED_VEHICLE_SHAPE, "car", problems)
+			t.expect(table.concat(problems, "; ")).toBe("")
+			t.expect(car.uid).toBe("car-1")
+			t.expect(car.vehicleId).toBe("ohm_spark")
+			t.expect(car.trim).toBe("standard")
+			t.expect(car.paid).toBe(35000)
+			t.expect(car.acquiredAt).toBe(JOIN_TIME)
+			t.expect(car.favorite).toBe(false)
+			t.expect(car.paint).toBe(Garage.defaults.paint)
+			t.expect(car.finish).toBe(Garage.defaults.finish)
+			t.expect(car.wheels).toBe(Garage.defaults.wheels)
+			t.expect(car.rideHeight).toBe(0)
+			t.expect(car.tint).toBe(0)
+		end)
+
+		t.it("records a free car as paid 0", function()
+			t.expect(Template.ownedVehicle("car-2", "ohm_spark", "used", 0, JOIN_TIME).paid).toBe(0)
 		end)
 
 		t.it("never shares a table between two templates or with Config", function()

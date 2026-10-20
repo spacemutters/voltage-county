@@ -30,6 +30,91 @@ return function(t: Harness.Api)
 			end
 		end
 
+		-- The Ohm vehicles have bespoke silhouettes, so their own bodyStyles (semi, pod, hypercar...) are only
+		-- exercised here: build each Ohm vehicle's generic body too.
+		for _, vehicleId in Catalog.vehicleIds() do
+			local vehicle = Catalog.getVehicle(vehicleId)
+			if vehicle == nil or vehicle.brandId ~= "ohm" then
+				continue
+			end
+			local trim = vehicle.trims[1]
+			t.it(`builds the generic {vehicle.bodyStyle} body for {vehicleId}/{trim.id}`, function()
+				local model = VehicleBuilder.assembleGeneric(vehicleId, trim.id)
+				local problems = VehicleBuilder.check(model)
+				model:Destroy()
+				for _, message in problems do
+					print(`  contract: {message}`)
+				end
+				t.expect(#problems).toBe(0)
+			end)
+		end
+
+		t.it("has a generic body for every bodyStyle in the catalog", function()
+			local known: { [string]: boolean } = {}
+			for _, style in VehicleBuilder.bodyStyles() do
+				known[style] = true
+			end
+			local missing: { string } = {}
+			for _, vehicleId in Catalog.vehicleIds() do
+				local vehicle = Catalog.getVehicle(vehicleId)
+				if vehicle and not known[vehicle.bodyStyle] then
+					table.insert(missing, `{vehicleId}: {vehicle.bodyStyle}`)
+				end
+			end
+			t.expect(missing).toEqual({})
+		end)
+
+		t.it("gives tow trucks a boom and a TowHitch, pickups an open bed, vans a tall box", function()
+			local tow = VehicleBuilder.assemble("northline_grapple", "standard") :: any
+			local pickup = VehicleBuilder.assemble("ironwood_brakken", "standard") :: any
+			local van = VehicleBuilder.assemble("northline_longbox", "standard") :: any
+			local vanGeometry = Catalog.geometry("northline_longbox", "standard")
+			assert(vanGeometry, "van geometry")
+			local boom = tow.Body:FindFirstChild("Boom")
+			local towHitch = tow.Chassis:FindFirstChild("TowHitch")
+			local bed = pickup.Body:FindFirstChild("BedFloor")
+			local pickupHitch = pickup.Chassis:FindFirstChild("TowHitch")
+			local cargo = van.Body:FindFirstChild("CargoBox")
+			-- Height above the ground point the model is built on (its pivot).
+			local cargoTop = if cargo then cargo.CFrame.Y + cargo.Size.Y / 2 - van:GetPivot().Y else 0
+			local cargoHeight = if cargo then cargo.Size.Y else 0
+			tow:Destroy()
+			pickup:Destroy()
+			van:Destroy()
+			t.expect(boom ~= nil and towHitch ~= nil).toBe(true)
+			t.expect(bed ~= nil and pickupHitch ~= nil).toBe(true)
+			t.expect(cargoTop).toBeGreaterThan(vanGeometry.height * 0.9)
+			t.expect(cargoHeight).toBeGreaterThan(vanGeometry.height * 0.4)
+		end)
+
+		t.it("tints each brand's default paint differently", function()
+			local colors: { [string]: string } = {}
+			local seen: { [string]: string } = {}
+			local clashes: { string } = {}
+			for _, vehicleId in Catalog.vehicleIds() do
+				local vehicle = Catalog.getVehicle(vehicleId)
+				if vehicle == nil or colors[vehicle.brandId] ~= nil then
+					continue
+				end
+				local model = VehicleBuilder.assemble(vehicleId, vehicle.trims[1].id)
+				local color: string? = nil
+				for _, part in model:GetDescendants() do
+					if part:IsA("BasePart") and part:HasTag("Paint") then
+						color = tostring(part.Color)
+						break
+					end
+				end
+				model:Destroy()
+				assert(color, `{vehicleId} has a Paint part`)
+				colors[vehicle.brandId] = color
+				if seen[color] then
+					table.insert(clashes, `{vehicle.brandId} = {seen[color]}`)
+				end
+				seen[color] = vehicle.brandId
+			end
+			t.expect(clashes).toEqual({})
+		end)
+
 		t.it("builds the same instances every time", function()
 			local first = VehicleBuilder.assemble("ohm_summit", "standard")
 			local second = VehicleBuilder.assemble("ohm_summit", "standard")

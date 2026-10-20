@@ -42,6 +42,8 @@ local ID_LENGTH = 40
 local UID_LENGTH = 64 -- HttpService:GenerateGUID(false) is 36 characters
 local MAX_LOT_SLOTS = 64
 local MAX_DEV_CASH = 100000000
+local MAX_PRICE = 100000000 -- the dearest car in the catalog is far below this
+local DATE_LENGTH = 10 -- "YYYY-MM-DD"
 
 local REMOTES: { [string]: Spec } = {
 	-- Studio only: spawn a car next to the player for testing (VehicleService refuses it outside Studio).
@@ -116,7 +118,13 @@ local REMOTES: { [string]: Spec } = {
 	BuyUsed = {
 		kind = "function",
 		direction = "toServer",
-		validate = Check.shape({ slot = Check.integer(1, MAX_LOT_SLOTS) }),
+		-- date and maxPrice are the lot day and the price the player's confirm showed: the server refuses (and
+		-- says the new price) when the day has changed or the price has risen past it.
+		validate = Check.shape({
+			slot = Check.integer(1, MAX_LOT_SLOTS),
+			date = Check.string(DATE_LENGTH),
+			maxPrice = Check.integer(0, MAX_PRICE),
+		}),
 		burst = 3,
 		perSecond = 0.5,
 	},

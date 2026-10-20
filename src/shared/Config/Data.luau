@@ -17,7 +17,9 @@ local Data = {
 
 	-- The PlayerData version this code writes. Saves at a lower version are migrated on load; a save at a
 	-- higher version (written by a newer server) is refused rather than downgraded.
-	schemaVersion = 2,
+	--   2  timed earnings boosts (Phase 3)
+	--   3  owned cars remember `favorite` and `paid` (Phase 4 garage)
+	schemaVersion = 3,
 	-- A save with no version field predates versioning and is treated as this version.
 	unversionedVersion = 1,
 
@@ -33,6 +35,11 @@ local Data = {
 
 	-- Player attribute set to true once the player's data has loaded (clients can wait on it).
 	loadedAttribute = "DataLoaded",
+
+	-- Services/ProfileSyncService sends each player a snapshot of their own profile on load and after changes.
+	-- A burst of changes (a purchase touches cash and the garage) is coalesced: at most one snapshot per
+	-- player every this many seconds.
+	snapshotMinInterval = 0.3,
 
 	-- Values a fresh profile starts with (cash and slots come from Config/Economy).
 	defaults = {

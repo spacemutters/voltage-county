@@ -46,6 +46,9 @@ export type Location = {
 	size: Vector3, -- the tagged part's size
 	attributes: { [string]: any }?,
 	gps: boolean?, -- true = listed as a GPS destination
+	-- Where the GPS leads instead of `position`, when the place players want is elsewhere on the site (the
+	-- dealership's cars stand in the auto mall, not at the showroom door).
+	gpsTarget: Vector3?,
 }
 
 -- A lake: a rectangle of water. The ground under it is the lake bed.
@@ -91,6 +94,26 @@ export type Landmark = {
 	size: Vector3,
 }
 
+-- Display pads (Phase 4; docs/phase-4-contracts.md "Map: dealership pads and used-lot pads"). A pad's CFrame is
+-- the centre of its footprint on the ground (y = the ground top), turned to face the way a car standing on it
+-- points its nose. Every pad of a layout is `padSize` (X across, Y the platform's height, Z front to back), so a
+-- display car's pivot goes at pad * CFrame.new(0, padSize.Y, 0). MapBuilder builds the platforms (and keeps
+-- buildings, lots and props off them); Services/DealershipService and Services/UsedLotService put the cars on.
+export type DealershipSection = {
+	brandId: string, -- a Config/Brands id; the section's sign shows its displayName
+	pads: { CFrame }, -- display order: the cheapest car of the brand stands on pad 1
+}
+
+export type DealershipLayout = {
+	padSize: Vector3,
+	sections: { DealershipSection },
+}
+
+export type UsedLotLayout = {
+	padSize: Vector3,
+	pads: { CFrame }, -- numbered spaces; space N shows the day's used-lot slot N (Config/UsedLot)
+}
+
 export type MapLayout = {
 	seed: number,
 	zones: { [string]: Zone },
@@ -101,6 +124,8 @@ export type MapLayout = {
 	mesas: { Mesa },
 	jumpRamps: { JumpRamp },
 	landmarks: { Landmark },
+	dealership: DealershipLayout,
+	usedLot: UsedLotLayout,
 	reservedWestOfX: number,
 	padClearance: number,
 	groundHeight: (x: number, z: number) -> number,
@@ -134,6 +159,12 @@ local function placer(zone: string): Place
 			gps = gps,
 		}
 	end
+end
+
+-- A location whose GPS route ends at `target` instead of its own position (Location.gpsTarget).
+local function withGpsTarget(location: Location, target: Vector3): Location
+	location.gpsTarget = target
+	return location
 end
 
 local cedarBend = placer("cedar_bend")
@@ -266,7 +297,12 @@ local locations: { Location } = {
 	cedarBend("used_lot_pad_1", "SpawnPad", "Used Lot", v3(344, 0, 337), 0, SPAWN_PAD),
 	cedarBend("used_lot_pad_2", "SpawnPad", "Used Lot", v3(364, 0, 337), 0, SPAWN_PAD),
 	cedarBend("used_lot_pad_3", "SpawnPad", "Used Lot", v3(384, 0, 337), 0, SPAWN_PAD),
-	cedarBend("dealership", "Dealership", "Cedar Bend Motors", v3(750, 0, 345), 0, v3(100, 1, 40), nil, true),
+	withGpsTarget(
+		cedarBend("dealership", "Dealership", "Cedar Bend Motors", v3(750, 0, 345), 0, v3(100, 1, 40), nil, true),
+		-- The street between the showroom's back (Ohm's pads) and the auto mall's rows (row 6, z = 600), so the
+		-- GPS arrives among the display cars rather than 185+ studs from them at the showroom door.
+		v3(750, 0, 600)
+	),
 	cedarBend("dealership_pad", "SpawnPad", "Cedar Bend Motors", v3(860, 0, 337), 0, SPAWN_PAD),
 	cedarBend("cb_charger_1", "ChargerStall", "Charging Plaza", v3(335, 0, 265), 180, STALL, CEDAR_PLAZA_250KW, true),
 	cedarBend("cb_charger_2", "ChargerStall", "Charging Plaza", v3(349, 0, 265), 180, STALL, CEDAR_PLAZA_250KW),
@@ -492,6 +528,56 @@ local mesas: { Mesa } = {
 	},
 }
 
+-- Display pads. The dealership is an auto mall on both sides of the street south of Cedar Bend Motors (row 6,
+-- z = 600, between columns f and g): Ohm Motors in one row behind the showroom facing that street, and the other
+-- seven brands across it, filling the block between x = 600..900 and z = 600..900 (MapBuilder clears its
+-- buildings), in four rows facing north. The used lot's numbered spaces stand in a row behind its office, facing
+-- it. Every pad sits inside its block, clear of the streets' sidewalks (a street's sidewalk reaches 23 studs from
+-- its centre line).
+local DISPLAY_PAD = v3(16, 0.4, 28) -- room for the longest catalog body (a semi tractor) with space round it
+local PAD_PITCH = 19 -- studs between neighbouring pad centres in a row (a 3-stud gap)
+
+-- `count` pads in a row along X, centred on (centreX, z), every one facing `yaw`. Pad 1 is the westmost.
+local function padRow(count: number, centreX: number, z: number, yaw: number): { CFrame }
+	local pads: { CFrame } = {}
+	local first = centreX - PAD_PITCH * (count - 1) / 2
+	for i = 1, count do
+		table.insert(pads, CFrame.new(first + PAD_PITCH * (i - 1), 0, z) * CFrame.Angles(0, math.rad(yaw), 0))
+	end
+	return pads
+end
+
+local function section(brandId: string, count: number, centreX: number, z: number, yaw: number): DealershipSection
+	return { brandId = brandId, pads = padRow(count, centreX, z, yaw) }
+end
+
+-- The mall block's two sections per row: six pads each (a 111-stud row), 20 studs apart, together centred on
+-- x = 750. Rows run 60 studs apart, leaving a 32-stud aisle between them.
+local MALL_WEST, MALL_EAST, MALL_CENTRE = 684.5, 815.5, 750
+local MALL_ROWS = { 652, 712, 772, 832 }
+
+local dealership: DealershipLayout = {
+	padSize = DISPLAY_PAD,
+	sections = {
+		-- Ohm Motors, the hero brand: eight pads behind the showroom (its back wall is at z = 480), facing south.
+		section("ohm", 8, MALL_CENTRE, 530, 180),
+		-- Across the street: the everyday and tuner brands nearest the showroom, the work fleet at the back.
+		section("halden", 6, MALL_WEST, MALL_ROWS[1], 0),
+		section("kaze", 6, MALL_EAST, MALL_ROWS[1], 0),
+		section("ironwood", 6, MALL_WEST, MALL_ROWS[2], 0),
+		section("aldermoor", 6, MALL_EAST, MALL_ROWS[2], 0),
+		section("brannock", 6, MALL_WEST, MALL_ROWS[3], 0),
+		section("montevale", 6, MALL_EAST, MALL_ROWS[3], 0),
+		section("northline", 6, MALL_CENTRE, MALL_ROWS[4], 0),
+	},
+}
+
+-- Ten numbered spaces behind the used-lot office (its back wall is at z = 415), facing north toward it.
+local usedLot: UsedLotLayout = {
+	padSize = DISPLAY_PAD,
+	pads = padRow(10, 450, 454, 0),
+}
+
 -- Top of the ground at (x, z): the lake bed in a lake, the mesa surface on a mesa, 0 elsewhere.
 local function groundHeight(x: number, z: number): number
 	for _, lake in lakes do
@@ -595,6 +681,8 @@ local MapLayout: MapLayout = {
 			size = v3(300, 24, 80),
 		},
 	},
+	dealership = dealership,
+	usedLot = usedLot,
 	-- The dev test track's ground (Config/DevTrack): nothing of the county but the County Loop west of this x.
 	reservedWestOfX = -3700,
 	-- Pads stay at least this many studs clear of every road and its sidewalks.

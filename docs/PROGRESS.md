@@ -2,6 +2,57 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-20 — Phase 4: dealership, used lot, garage, phone UI (+ catalog to 32 cars)
+
+**Shipped**
+- **Catalog:** 24 new original cars across Halden, Ironwood, Aldermoor, Kaze, Brannock, Montevale and
+  Northline, 32 in total.
+  - 80 trims; every class is used and every trim sits inside its class band.
+  - Mostly electric: 23 battery, 9 fuel.
+  - 8 used-lot classics (Grand, Summit, Fernlow, Aurelin, Rinto, Calder, Parlow, Tessaro).
+  - Every vehicle has a `bodyStyle`, and VehicleBuilder makes a greybox body for each of the 15 styles,
+    with a front face and default paint per brand. The Ohm silhouettes are unchanged.
+- **Data v3:** owned cars gain `favorite` and `paid` (migration 2 → 3). `DataService.onChanged`;
+  `ProfileSyncService` sends each player their own profile snapshot.
+- **Garage:** spawn at the nearest spawn pad, put away, favorite, sell back at 60%. The free starter can't
+  be sold, and a car can't be sold twice.
+- **Dealership:** 23 cars on display across brand sections in Cedar Bend. "View" opens the shop: brand,
+  trims, stat bars, price, Buy with a confirm, a 2-minute test drive (earns nothing), and upgrades (Arc Boost
+  needs an owned Arc).
+- **Used lot:** today's 10 cars are picked from the UTC date, so every server shows the same stock. Supply is
+  shared globally through DataStore `UpdateAsync`, prices rise as copies sell, and a buy refuses if the price
+  rose past what the player confirmed. The free-starter claim is real now: a saved used Spark.
+- **Phone:** GPS, Garage, Jobs and Fleet ("arriving soon"), Wallet, Codes and Settings (mph/kph, default
+  camera, music volume).
+- **HUD:** speed in the player's units, an energy-bar placeholder, cash, an active-job slot.
+- **Theme:** one shared look (`UI/Theme`) for every screen.
+- **Phones forced to landscape** (`StarterGui.ScreenOrientation = LandscapeSensor`). In portrait the touch
+  pedals and steering zones overlapped.
+- Built by 5 helpers, then 2 reviewers. They found 14 issues (5 serious, 9 minor), and all were fixed.
+
+**Checked in Studio:**
+- Rebuilt 80 car models and the map: 6,693 instances, 60 dealership and used-lot pads, MapCheck clean.
+- Tests: `TESTS: passed=537 failed=0` (fresh playtest). The server booted 11 services and the client 10
+  controllers, with no errors.
+- Showroom: 23 dealership cars and 10 used-lot cars on their pads.
+- **Exact-cash buy:** with exactly $35,000 a Spark purchase leaves **$0**, is in the saved garage
+  (paid 35,000), and spawned at the spawn pad. Selling it back returned $21,000.
+- **Forged buy:** the Arc with $1 too little is **refused** ("You need $1 more for that."), cash untouched,
+  and the server logs it. Buying an upgrade without the base car, a limited-only trim and an unknown car are
+  all refused too.
+- **Used lot on two servers:** today's stock (2026-10-20, 10 spaces) is computed identically twice and matches
+  what the server answers.
+
+**Not checked:** how the phone and shop screens look at phone size. Claude's screen capture can't see this
+Studio session. Davis checks with Studio's device emulator or a phone.
+
+**Open issues**
+- The dealership's GPS entry points at the showroom's north entrance; brand rows sit behind it and across the
+  street. A second GPS entry may help.
+- Northline's tow truck and utility truck are class `service` (tier 2). Phase 6 job eligibility uses class,
+  so check they get towing and service work.
+- Tuning: the used lot has 10 spaces, 5 copies each per day, and prices rise up to 1.4× as copies sell.
+
 ## 2026-10-20 — Phase 3: data, economy, drive-to-earn
 
 **Shipped**
