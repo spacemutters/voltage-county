@@ -25,6 +25,15 @@
 -- (delivery drops use it too). A location with gps = true is listed as a GPS destination. One location per
 -- group of pads (a plaza's first stall, a station's first pump) carries the group's GPS entry.
 --
+-- Phase 8 (docs/phase-8-contracts.md, "Map"): three freight depots (JobDepot jobType "freight": The Plant, the
+-- Loop Stop and the west interchange, across the County Loop from the other two), each with TrailerSpawn
+-- spots { depot: its depot's id, trailer: a ServerStorage.TrailerModels name } where an idle trailer waits
+-- (Services/HitchService puts one on each, nose to the road, at Start); TowDrop spots { yard } at the County Tow
+-- Yard where a towed car is let go; and Breakdown spots on road shoulders in every zone, where the towing job
+-- leaves a broken-down car. Services/HitchService only lets a trailer or towed car go inside a freight depot,
+-- the tow yard or a TowDrop footprint. A TrailerSpawn is long enough for a trailer standing on it nose to the
+-- road; a Breakdown spot runs along its road with room for the broken-down car and a tow truck.
+--
 -- tests/RoadGraph.spec checks the locations, lake, mesas, ramps and landmarks against the road graph.
 
 export type Zone = {
@@ -184,6 +193,11 @@ local TRUCK_STALL = v3(24, 1, 40) -- one truck charging bay
 local HOTSPOT = v3(30, 1, 16) -- a kerbside pickup spot
 local HOUSE = v3(50, 1, 40) -- a house plot
 local CUSTOM_SHOP = v3(24, 1, 32) -- a Wrap & Tint shop's bay: one car with room to walk round it
+-- Phase 8: freight and towing.
+local FREIGHT_DEPOT = v3(80, 1, 36) -- a freight depot's yard in front of its trailer spots
+local TRAILER_SPOT = v3(64, 1, 18) -- one idle trailer standing along the road (see the header)
+local TOW_DROP = v3(20, 1, 32) -- one towed car let go at the tow yard
+local BREAKDOWN = v3(32, 1, 24) -- a shoulder spot: a broken-down car and a tow truck pulled in ahead of it
 
 -- Attributes shared by a group of locations (frozen: one table serves them all).
 local CEDAR_PLAZA_250KW = table.freeze({ kW = 250, plaza = "cedar_bend_plaza" })
@@ -195,6 +209,13 @@ local STUDIO_250KW = table.freeze({ kW = 250, plaza = "design_studio" })
 local TRUCK_CHARGER_750KW = table.freeze({ kW = 750 })
 local MESA_CONTROL_250KW = table.freeze({ kW = 250, plaza = "mesa_control" })
 local LOOP_STOP_350KW = table.freeze({ kW = 350, plaza = "loop_stop" })
+local FREIGHT = table.freeze({ jobType = "freight" })
+local TOW_YARD = table.freeze({ yard = "pl_tow_yard" })
+
+-- A TrailerSpawn's attributes: the depot it belongs to and the trailer model that waits on it.
+local function trailerSpot(depot: string, trailer: string): { [string]: any }
+	return table.freeze({ depot = depot, trailer = trailer })
+end
 
 local zones: { [string]: Zone } = {
 	-- Downtown: a 300-stud street grid, the used lot (player spawn), dealership, charging plaza, fuel.
@@ -333,6 +354,9 @@ local locations: { Location } = {
 	cedarBend("cb_hotspot_courthouse", "RideshareHotspot", "Courthouse", v3(-48, 0, 450), -90, HOTSPOT),
 	-- Phase 7: the Wrap & Tint shop, a short drive west of the used lot along the same street, facing it.
 	cedarBend("cb_custom_shop", "CustomShop", "Cedar Bend Wrap & Tint", v3(150, 0, 342), 0, CUSTOM_SHOP, nil, true),
+	-- Phase 8: breakdown spots on the outer streets of the grid (west edge, south edge).
+	cedarBend("cb_breakdown_west", "Breakdown", "West Street shoulder", v3(-936.5, 0, -150), -90, BREAKDOWN),
+	cedarBend("cb_breakdown_south", "Breakdown", "South Street shoulder", v3(450, 0, 936.5), 0, BREAKDOWN),
 	-- Riverside: the fuel station, a rideshare hotspot, and house plots round the cul-de-sacs and along
 	-- Sycamore Lane and Elm Street (delivery drops and, later, claimable homes).
 	riverside("rv_fuel_1", "FuelPump", "Riverside Fuel", v3(-2430, 0, 52), 0, PUMP, FUEL_PUMP, true),
@@ -367,25 +391,50 @@ local locations: { Location } = {
 	riverside("rv_elm_st_1", "HousePlot", "1 Elm Street", v3(-1950, 0, 355), 180, HOUSE),
 	riverside("rv_elm_st_2", "HousePlot", "3 Elm Street", v3(-1800, 0, 355), 180, HOUSE),
 	riverside("rv_elm_st_3", "HousePlot", "5 Elm Street", v3(-1650, 0, 355), 180, HOUSE),
+	-- Phase 8: breakdown spots on Main Street south of the avenue and on the west road to Sycamore Lane.
+	riverside("rv_breakdown_main", "Breakdown", "Main Street shoulder", v3(-2063.5, 0, 200), 90, BREAKDOWN),
+	riverside("rv_breakdown_west", "Breakdown", "Sycamore Road shoulder", v3(-2736.5, 0, 300), -90, BREAKDOWN),
 	-- Lakefront: the Lakeview Overlook meet spot with chargers, and Lakefront Park.
 	lakefront("lk_overlook", "MeetSpot", "Lakeview Overlook", v3(1100, 0, 2175), -90, v3(80, 1, 50), nil, true),
 	lakefront("lk_charger_1", "ChargerStall", "Lakeview Overlook", v3(1115, 0, 2075), -90, STALL, OVERLOOK_150KW),
 	lakefront("lk_charger_2", "ChargerStall", "Lakeview Overlook", v3(1115, 0, 2089), -90, STALL, OVERLOOK_150KW),
 	lakefront("lk_charger_3", "ChargerStall", "Lakeview Overlook", v3(1115, 0, 2103), -90, STALL, OVERLOOK_150KW),
 	lakefront("lk_hotspot_park", "RideshareHotspot", "Lakefront Park", v3(-500, 0, 1533), 0, HOTSPOT, nil, true),
+	-- Phase 8: breakdown spots on the lake's west road and its south shore road.
+	lakefront("lk_breakdown_west", "Breakdown", "Lake West Road shoulder", v3(-1186.5, 0, 2050), -90, BREAKDOWN),
+	lakefront("lk_breakdown_south", "Breakdown", "South Shore Road shoulder", v3(450, 0, 2886.5), 0, BREAKDOWN),
 	-- The Plant: the Design Studio, freight depot, truck chargers, tow yard and the gate hotspot.
 	thePlant("pl_design_studio", "DesignStudio", "Design Studio", v3(1900, 0, 60), 0, v3(60, 1, 40), nil, true),
 	thePlant("pl_charger_1", "ChargerStall", "Design Studio", v3(1990, 0, 50), 0, STALL, STUDIO_250KW),
 	thePlant("pl_charger_2", "ChargerStall", "Design Studio", v3(2004, 0, 50), 0, STALL, STUDIO_250KW),
+	thePlant("pl_freight_depot", "JobDepot", "Plant Freight Depot", v3(2258, 0, 350), 90, FREIGHT_DEPOT, FREIGHT, true),
+	-- Phase 8: the Plant depot's trailer spots, beside its yard along the depot road, noses to the road.
 	thePlant(
-		"pl_freight_depot",
-		"JobDepot",
-		"Freight Depot",
-		v3(2258, 0, 350),
+		"pl_trailer_1",
+		"TrailerSpawn",
+		"Plant Freight Depot",
+		v3(2248.5, 0, 425),
 		90,
-		v3(80, 1, 36),
-		{ jobType = "freight" },
-		true
+		TRAILER_SPOT,
+		trailerSpot("pl_freight_depot", "box_trailer")
+	),
+	thePlant(
+		"pl_trailer_2",
+		"TrailerSpawn",
+		"Plant Freight Depot",
+		v3(2248.5, 0, 491),
+		90,
+		TRAILER_SPOT,
+		trailerSpot("pl_freight_depot", "flatbed_trailer")
+	),
+	thePlant(
+		"pl_trailer_3",
+		"TrailerSpawn",
+		"Plant Freight Depot",
+		v3(2248.5, 0, 557),
+		90,
+		TRAILER_SPOT,
+		trailerSpot("pl_freight_depot", "tanker_trailer")
 	),
 	thePlant(
 		"pl_truck_charger_1",
@@ -425,6 +474,12 @@ local locations: { Location } = {
 		{ jobType = "towing" },
 		true
 	),
+	-- Phase 8: where towed cars are let go, just south of the tow yard's gate.
+	thePlant("pl_tow_drop_1", "TowDrop", "County Tow Yard", v3(2855.5, 0, -452), 90, TOW_DROP, TOW_YARD),
+	thePlant("pl_tow_drop_2", "TowDrop", "County Tow Yard", v3(2855.5, 0, -474), 90, TOW_DROP, TOW_YARD),
+	-- Phase 8: breakdown spots on the north and south works roads.
+	thePlant("pl_breakdown_north", "Breakdown", "North Works Road shoulder", v3(1960, 0, -751.5), 180, BREAKDOWN),
+	thePlant("pl_breakdown_south", "Breakdown", "South Works Road shoulder", v3(1900, 0, 751.5), 0, BREAKDOWN),
 	thePlant("pl_hotspot_gate", "RideshareHotspot", "Plant Gate", v3(1750, 0, -48), 180, HOTSPOT),
 	-- Phase 7: the Plant's Wrap & Tint shop, on the works road east of the Design Studio, facing it.
 	thePlant("pl_custom_shop", "CustomShop", "Plant Wrap & Tint", v3(2500, 0, 56), 0, CUSTOM_SHOP, nil, true),
@@ -472,6 +527,9 @@ local locations: { Location } = {
 	mesaTestSite("ms_charger_1", "ChargerStall", "Mesa Control", v3(-250, 0, -1465), 0, STALL, MESA_CONTROL_250KW),
 	mesaTestSite("ms_charger_2", "ChargerStall", "Mesa Control", v3(-264, 0, -1465), 0, STALL, MESA_CONTROL_250KW),
 	mesaTestSite("ms_summit", "MeetSpot", "Mesa Summit", v3(1100, 30, -2443), 180, v3(80, 1, 50), nil, true),
+	-- Phase 8: breakdown spots on the Ridge Road and the strip's return road.
+	mesaTestSite("ms_breakdown_ridge", "Breakdown", "Ridge Road shoulder", v3(51.5, 0, -1950), 90, BREAKDOWN),
+	mesaTestSite("ms_breakdown_return", "Breakdown", "Return Road shoulder", v3(610, 0, -1676.5), 180, BREAKDOWN),
 	-- County Loop: the Loop Stop (fuel, chargers, a truck charger) on its service road.
 	countyLoop("loop_fuel_1", "FuelPump", "Loop Stop", v3(3170, 0, 1660), -90, PUMP, FUEL_PUMP, true),
 	countyLoop("loop_fuel_2", "FuelPump", "Loop Stop", v3(3170, 0, 1680), -90, PUMP, FUEL_PUMP),
@@ -490,6 +548,86 @@ local locations: { Location } = {
 		TRUCK_STALL,
 		TRUCK_CHARGER_750KW
 	),
+	-- Phase 8: the Loop Stop's freight depot and trailer spots, across its service road from the pumps.
+	countyLoop(
+		"loop_freight_depot",
+		"JobDepot",
+		"Loop Stop Freight",
+		v3(3235.5, 0, 1780),
+		90,
+		FREIGHT_DEPOT,
+		FREIGHT,
+		true
+	),
+	countyLoop(
+		"loop_trailer_1",
+		"TrailerSpawn",
+		"Loop Stop Freight",
+		v3(3226.5, 0, 1854),
+		90,
+		TRAILER_SPOT,
+		trailerSpot("loop_freight_depot", "box_trailer")
+	),
+	countyLoop(
+		"loop_trailer_2",
+		"TrailerSpawn",
+		"Loop Stop Freight",
+		v3(3226.5, 0, 1920),
+		90,
+		TRAILER_SPOT,
+		trailerSpot("loop_freight_depot", "tanker_trailer")
+	),
+	countyLoop(
+		"loop_trailer_3",
+		"TrailerSpawn",
+		"Loop Stop Freight",
+		v3(3226.5, 0, 1986),
+		90,
+		TRAILER_SPOT,
+		trailerSpot("loop_freight_depot", "flatbed_trailer")
+	),
+	-- Phase 8: the West Loop freight yard on the far side of the ring, inside the west interchange beside its
+	-- north ramp (facing it, so it turns with the ramp: yaw -43.2).
+	countyLoop(
+		"west_freight_depot",
+		"JobDepot",
+		"West Loop Freight Yard",
+		v3(-3323.5, 0, -179.6),
+		-43.2,
+		FREIGHT_DEPOT,
+		FREIGHT,
+		true
+	),
+	countyLoop(
+		"west_trailer_1",
+		"TrailerSpawn",
+		"West Loop Freight Yard",
+		v3(-3167.1, 0, -45.3),
+		-43.2,
+		TRAILER_SPOT,
+		trailerSpot("west_freight_depot", "box_trailer")
+	),
+	countyLoop(
+		"west_trailer_2",
+		"TrailerSpawn",
+		"West Loop Freight Yard",
+		v3(-3215.2, 0, -90.4),
+		-43.2,
+		TRAILER_SPOT,
+		trailerSpot("west_freight_depot", "flatbed_trailer")
+	),
+	countyLoop(
+		"west_trailer_3",
+		"TrailerSpawn",
+		"West Loop Freight Yard",
+		v3(-3263.4, 0, -135.6),
+		-43.2,
+		TRAILER_SPOT,
+		trailerSpot("west_freight_depot", "tanker_trailer")
+	),
+	-- Phase 8: breakdown spots on the inside shoulders of the ring's south and west sides.
+	countyLoop("loop_breakdown_south", "Breakdown", "County Loop south shoulder", v3(-2100, 0, 3354.5), 180, BREAKDOWN),
+	countyLoop("loop_breakdown_west", "Breakdown", "County Loop west shoulder", v3(-3354.5, 0, -900), 90, BREAKDOWN),
 }
 
 -- Lake bed and mesa shapes, for groundHeight below and for MapBuilder.

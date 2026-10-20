@@ -25,7 +25,8 @@
 --   Streetlights                 posts along streets and arterials; only some of them emit light
 --   Locations                    one part per MapLayout location (tag, attributes, DisplayName, Zone), with
 --                                small props parented to it (charger posts, pumps, signs, gate gantries, the
---                                Wrap & Tint shops' garage doors...)
+--                                Wrap & Tint shops' garage doors...); Phase 8's TrailerSpawn, TowDrop and
+--                                Breakdown spots get a painted bay only (trailers and cars stand on them)
 --   Dealership/<brandId>         Phase 4: a low platform per MapLayout.dealership pad (tag DealershipPad,
 --                                attributes BrandId and Index) and the section's brand sign behind its pads
 --   UsedLot                      Phase 4: a numbered platform per MapLayout.usedLot pad (tag UsedLotPad,
@@ -342,6 +343,10 @@ local TUNING = {
 		NoFlyZone = Color3.fromRGB(240, 90, 90),
 		DragStripGate = Color3.fromRGB(240, 240, 240),
 		CustomShop = Color3.fromRGB(150, 110, 230),
+		-- Phase 8: freight trailer spots, tow drops and breakdown shoulders.
+		TrailerSpawn = Color3.fromRGB(200, 120, 70),
+		TowDrop = Color3.fromRGB(230, 190, 60),
+		Breakdown = Color3.fromRGB(240, 120, 40),
 	} :: { [string]: Color3 },
 	defaultTagColor = Color3.fromRGB(200, 200, 200),
 	markingInset = 0.6, -- painted outline inset inside a pad's footprint
@@ -2438,7 +2443,9 @@ local function addProps(ctx: Ctx, location: LocationData, frame: CFrame)
 	end
 
 	local tag = location.tag
-	if tag == "SpawnPad" then
+	if tag == "SpawnPad" or tag == "TrailerSpawn" or tag == "TowDrop" or tag == "Breakdown" then
+		-- A painted bay only. Cars (and Phase 8's trailers and broken-down cars) stand on these, so nothing is
+		-- built there that they could hit.
 		marking()
 	elseif tag == "ChargerStall" then
 		marking()

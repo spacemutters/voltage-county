@@ -320,7 +320,7 @@ return function(t: Harness.Api)
 		end)
 
 		t.it("has words for every kind of stop", function()
-			for _, kind in { "pickup", "dropoff", "load", "drop" } do
+			for _, kind in { "pickup", "dropoff", "load", "drop", "couple", "decouple", "waypoint" } do
 				t.expect(JobController.text.stops[kind] ~= nil).toBe(true)
 				t.expect(JobController.text.near[kind] ~= nil).toBe(true)
 			end

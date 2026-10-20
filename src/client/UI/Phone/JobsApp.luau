@@ -15,9 +15,18 @@
 --                  Config/Classes names).
 --   refresh      "Find new offers" asks the server again. Opening the app, and changing cars while it's open,
 --                ask on their own (quietly; JobController limits how often).
+--   towing and   (Phase 8, docs/phase-8-contracts.md "Client UI") the same sections, each with a line on how the job
+--   freight      works (back up, tap Couple, haul it to the yard or the next depot). A job that needs a license
+--                (Config/Jobs JobDef.license: freight) shows the license card under its header: owned, or its price,
+--                the XP gate (a level in delivery or towing, Config/Jobs freightLicense) with the player's best XP
+--                toward it, and Buy license, which asks first ("Buy the freight license?") and then sends Net
+--                BuyLicense through Controllers/HitchInputController. Whether the player holds it: what that
+--                controller knows (bought this session, or the profile snapshot once it carries licenses), or what
+--                the server's JobUpdate implies (offers of that type, or it being open to them).
 --
 -- While a request is with the server every button is disabled and the one that was tapped says what it's doing,
--- so nothing can be tapped twice. PhoneController draws this with no props; its state comes from JobController.
+-- so nothing can be tapped twice. PhoneController draws this with no props; its state comes from JobController
+-- (and, for the license, HitchInputController and ProfileController).
 
 local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -32,7 +41,9 @@ local Theme = require(script.Parent.Parent.Theme)
 
 local Controllers = script.Parent.Parent.Parent.Controllers
 local GpsController = require(Controllers.GpsController)
+local HitchInputController = require(Controllers.HitchInputController)
 local JobController = require(Controllers.JobController)
+local ProfileController = require(Controllers.ProfileController)
 
 local e = React.createElement
 local colors = Theme.colors
@@ -95,7 +106,34 @@ local TEXT = {
 	stops = "%d stops",
 	meta = "%s · %s", -- distance, stops
 	xl = "XL",
+	-- How a job type works, under its name (Phase 8 types; others have none).
+	about = {
+		towing = "Back your pickup or tow truck up to a broken-down car, tap Couple, and tow it to the County Tow Yard.",
+		freight = "Back your semi up to the trailer at a depot, tap Couple, and haul it to the next depot. Long hauls "
+			.. "round the County Loop pay the most.",
+	} :: { [string]: string },
+	-- A job license (Config/Jobs licenses).
+	licenseName = "Freight license", -- when Config/Jobs has no display name for it
+	licenseAbout = "Freight jobs need it. Buy it once and it's yours for good.",
+	licenseOwned = "It's yours: freight jobs show up whenever you drive a semi.",
+	owned = "Owned",
+	gateLevel = "Reach level %d in %s (%s XP).", -- level, job names, XP
+	gateXp = "Earn %s XP in %s.", -- XP, job names
+	gateBest = "Your best: %s XP.", -- XP
+	gateMet = "You've earned the XP for it.",
+	cashShort = "You need %s more.", -- cash
+	buyLicense = "Buy license",
+	buying = "Buying...",
+	confirmBuyTitle = "Buy the %s?", -- license name, lower case
+	confirmBuyBody = "It costs %s and it's yours for good.", -- price
+	notNow = "Not now",
+	confirmBuy = "Buy for %s", -- price
+	namesOr = " or ", -- between job names: "Delivery or Towing"
 }
+
+-- The license a job needs when Config/Jobs names none (docs/phase-8-contracts.md: freight needs `freight`), and
+-- the job types whose XP counts toward it when Config/Jobs lists none (delivery or towing).
+local DEFAULT_LICENSE = { job = "freight", id = "freight", jobTypes = { "delivery", "towing" } }
 
 -- Small helpers -------------------------------------------------------------------------------------------------
 
@@ -288,28 +326,32 @@ local function ActiveJob(props: { view: View, order: number, onAskCancel: () -> 
 	})
 end
 
--- "Cancel this job?" over the app, like the garage's sell confirm. Tapping outside is the same as Keep going.
-local function CancelConfirm(props: { view: View, onKeep: () -> (), onCancel: () -> () })
-	local view = props.view
-	local job = view.job :: JobController.Job
-	local info = JobController.jobType(job.type)
-	local busy = view.busy ~= nil
-	local cancelling = view.busy ~= nil and (view.busy :: JobController.Busy).action == "cancel"
+-- A question over the app, like the garage's sell confirm: a title, a line about it, the safe choice on the left
+-- and the action on the right. Tapping outside is the same as the safe choice. While `busy` both wait.
+local function ConfirmSheet(props: {
+	title: string,
+	body: string?,
+	keepLabel: string,
+	confirmLabel: string,
+	confirmStyle: Kit.ButtonStyle,
+	busy: boolean,
+	onKeep: () -> (),
+	onConfirm: () -> (),
+})
+	local busy = props.busy
 	local fade = Kit.useAppear(false)
 	local keepRef = React.useRef(nil :: GuiObject?)
 	local scrimTransparency = colors.scrimTransparency
 	local sheet = PhoneConfig.sheet
 
-	-- A gamepad (the only input that has a selected object) moves to Keep going, the safe choice.
+	-- A gamepad (the only input that has a selected object) moves to the safe choice.
 	React.useEffect(function()
 		if GuiService.SelectedObject ~= nil and keepRef.current then
 			GuiService.SelectedObject = keepRef.current
 		end
 	end, {})
 
-	local body = if info
-		then string.format(TEXT.confirmBody, waitText(info.cooldownSec), string.lower(info.name))
-		else nil
+	local body = props.body
 	return e("Frame", {
 		ZIndex = 5,
 		Size = UDim2.fromScale(1, 1),
@@ -344,7 +386,7 @@ local function CancelConfirm(props: { view: View, onKeep: () -> (), onCancel: ()
 		}, {
 			Card = Kit.Card({ gap = Theme.spacing.md, padding = Theme.spacing.lg }, {
 				Title = Kit.Text({
-					text = TEXT.confirmTitle,
+					text = props.title,
 					order = 1,
 					size = Theme.text.heading,
 					font = Theme.fonts.bold,
@@ -355,25 +397,46 @@ local function CancelConfirm(props: { view: View, onKeep: () -> (), onCancel: ()
 					count = 2,
 					buttons = {
 						Keep = e(Kit.Button, {
-							label = TEXT.keep,
+							label = props.keepLabel,
 							disabled = busy,
 							order = 1,
 							size = UDim2.fromScale(1, 1),
 							buttonRef = keepRef,
 							onTap = props.onKeep,
 						}),
-						Cancel = e(Kit.Button, {
-							label = if cancelling then TEXT.cancelling else TEXT.confirmCancel,
-							style = "danger",
+						Confirm = e(Kit.Button, {
+							label = props.confirmLabel,
+							style = props.confirmStyle,
 							disabled = busy,
 							order = 2,
 							size = UDim2.fromScale(1, 1),
-							onTap = props.onCancel,
+							onTap = props.onConfirm,
 						}),
 					},
 				}),
 			}),
 		}),
+	})
+end
+
+-- "Cancel this job?": no pay, and a wait before the next job of its type. Keep going is the safe choice.
+local function CancelConfirm(props: { view: View, onKeep: () -> (), onCancel: () -> () })
+	local view = props.view
+	local job = view.job :: JobController.Job
+	local info = JobController.jobType(job.type)
+	local busy = view.busy
+	local cancelling = busy ~= nil and busy.action == "cancel"
+	return e(ConfirmSheet, {
+		title = TEXT.confirmTitle,
+		body = if info
+			then string.format(TEXT.confirmBody, waitText(info.cooldownSec), string.lower(info.name))
+			else nil,
+		keepLabel = TEXT.keep,
+		confirmLabel = if cancelling then TEXT.cancelling else TEXT.confirmCancel,
+		confirmStyle = "danger",
+		busy = busy ~= nil,
+		onKeep = props.onKeep,
+		onConfirm = props.onCancel,
 	})
 end
 
@@ -576,6 +639,233 @@ local function typeBody(info: JobType, view: View, shared: string?, order: numbe
 	return children
 end
 
+-- Licenses (Phase 8) ----------------------------------------------------------------------------------------------
+
+-- A job license as the app shows it (Config/Jobs licenses / freightLicense, read loosely so a missing field never
+-- breaks the phone).
+type License = {
+	id: string, -- PlayerData.jobs.licenses key, and Net BuyLicense's `license`
+	name: string, -- "Freight license"
+	xpRequired: number?, -- XP in any one of jobTypes; nil: no gate known
+	level: number?, -- the job level that XP is
+	jobTypes: { string },
+	price: number,
+}
+
+-- What the app knows about the player and a license right now.
+type LicenseState = {
+	known: boolean, -- HitchInputController knows they hold it (bought this session, or in their profile)
+	busy: boolean, -- a BuyLicense is with the server
+	cash: number?, -- the player's cash (ProfileController), nil until it loads
+}
+
+local function finite(value: any): boolean
+	return type(value) == "number" and value == value and math.abs(value) ~= math.huge
+end
+
+-- The license job type `jobType` needs, or nil: Config/Jobs JobDef.license with its Config/Jobs licenses entry
+-- (DEFAULT_LICENSE when Config/Jobs has none yet).
+local function licenseFor(jobType: string): License?
+	local jobs = Jobs :: any
+	local def = if type(jobs.types) == "table" then jobs.types[jobType] else nil
+	local id: string? = if type(def) == "table" and type(def.license) == "string" then def.license else nil
+	if id == nil and jobType == DEFAULT_LICENSE.job then
+		id = DEFAULT_LICENSE.id
+	end
+	if id == nil then
+		return nil
+	end
+	local rule = if type(jobs.licenses) == "table" then jobs.licenses[id] else nil
+	if type(rule) ~= "table" and id == DEFAULT_LICENSE.id then
+		rule = jobs.freightLicense
+	end
+	if type(rule) ~= "table" then
+		rule = {}
+	end
+	local jobTypes: { string } = {}
+	if type(rule.jobTypes) == "table" then
+		for _, value in rule.jobTypes do
+			if type(value) == "string" then
+				table.insert(jobTypes, value)
+			end
+		end
+	end
+	if #jobTypes == 0 then
+		jobTypes = table.clone(DEFAULT_LICENSE.jobTypes)
+	end
+	return {
+		id = id,
+		name = if type(rule.displayName) == "string" then rule.displayName else TEXT.licenseName,
+		xpRequired = if finite(rule.xpRequired) then rule.xpRequired else nil,
+		level = if finite(rule.level) then rule.level else nil,
+		jobTypes = jobTypes,
+		price = if finite(rule.price) then rule.price else Economy.freightLicensePrice,
+	}
+end
+
+-- Whether the player holds license `licenseId`, which `jobType` needs: what the server's JobUpdate says
+-- (`licenses`, sent with every update) or a purchase that just worked; before the server has said,
+-- HitchInputController's knowledge (bought this session, or in the profile) or what JobUpdate implies (offers of
+-- that type, the type open to them, or such a job running: the server only offers and starts them with it).
+local function holdsLicense(view: View, state: LicenseState, jobType: string, licenseId: string): boolean
+	local held = view.licenses[licenseId]
+	if held ~= nil then
+		return held or state.known
+	end
+	if state.known then
+		return true
+	end
+	local availability = view.availability[jobType]
+	if availability ~= nil and availability.ok then
+		return true
+	end
+	for _, offer in view.offers do
+		if offer.type == jobType then
+			return true
+		end
+	end
+	local job = view.job
+	return job ~= nil and job.type == jobType
+end
+
+-- The player's most XP in any job type that counts toward the license, or nil before their levels arrive.
+local function bestXp(view: View, license: License): number?
+	local best: number? = nil
+	for _, jobType in license.jobTypes do
+		local level = view.levels[jobType]
+		if level ~= nil then
+			best = math.max(best or 0, level.xp)
+		end
+	end
+	return best
+end
+
+-- "Delivery or Towing": the job types' names (Config/Jobs), in order.
+local function jobNames(jobTypes: { string }): string
+	local names: { string } = {}
+	for _, id in jobTypes do
+		local info = JobController.jobType(id)
+		table.insert(names, if info then info.name else id)
+	end
+	return table.concat(names, TEXT.namesOr)
+end
+
+-- The license card under a job type's name: owned, or its price, what it takes (the XP gate, with the player's
+-- best XP toward it and a bar), and Buy license (waiting while the XP or the cash is short, as far as the client
+-- knows; the server checks both again).
+local function LicenseCard(props: {
+	view: View,
+	license: License,
+	state: LicenseState,
+	owned: boolean,
+	order: number,
+	onAskBuy: () -> (),
+})
+	local license = props.license
+	local state = props.state
+	if props.owned then
+		return Kit.Card({ order = props.order, gap = Theme.spacing.sm }, {
+			Title = e(TitleRow, { order = 1, title = license.name, subtitle = TEXT.licenseOwned }),
+			Owned = Kit.Pill({ text = TEXT.owned, order = 2, color = colors.success }),
+		})
+	end
+
+	local required = license.xpRequired
+	local best = bestXp(props.view, license)
+	-- Short of the XP, as far as the client knows (before the levels arrive the server decides alone).
+	local xpShort = required ~= nil and best ~= nil and best < required
+	local gateLine: string? = nil
+	if required ~= nil then
+		local names = jobNames(license.jobTypes)
+		gateLine = if license.level ~= nil
+			then string.format(TEXT.gateLevel, license.level, names, grouped(required))
+			else string.format(TEXT.gateXp, grouped(required), names)
+	end
+	local cash = state.cash
+	local short = if cash ~= nil then license.price - cash else 0
+	local busy = state.busy
+	return Kit.Card({ order = props.order, gap = Theme.spacing.sm }, {
+		Title = e(TitleRow, { order = 1, title = license.name, subtitle = TEXT.licenseAbout, pay = license.price }),
+		Gate = if gateLine
+			then Kit.Text({ text = gateLine, order = 2, size = Theme.text.small, color = colors.textDim })
+			else nil,
+		Progress = if required ~= nil
+				and best ~= nil
+				and xpShort
+			then e(Bar, { order = 3, fill = best / math.max(required, 1) })
+			else nil,
+		Best = if required ~= nil and best ~= nil
+			then Kit.Text({
+				text = if xpShort then string.format(TEXT.gateBest, grouped(best)) else TEXT.gateMet,
+				order = 4,
+				size = Theme.text.small,
+				font = Theme.fonts.medium,
+				color = if xpShort then colors.textDim else colors.success,
+			})
+			else nil,
+		Short = if not xpShort and short > 0
+			then Kit.Text({
+				text = string.format(TEXT.cashShort, Economy.formatCash(short)),
+				order = 5,
+				size = Theme.text.small,
+				font = Theme.fonts.medium,
+				color = colors.warning,
+			})
+			else nil,
+		Buy = e(Kit.Button, {
+			label = if busy then TEXT.buying else TEXT.buyLicense,
+			style = "primary",
+			disabled = busy or xpShort or short > 0,
+			order = 6,
+			onTap = props.onAskBuy,
+		}),
+	})
+end
+
+-- "Buy the freight license?": the price, then Buy for $25,000. Not now is the safe choice.
+local function LicenseConfirm(props: { license: License, busy: boolean, onKeep: () -> (), onBuy: () -> () })
+	local license = props.license
+	local price = Economy.formatCash(license.price)
+	return e(ConfirmSheet, {
+		title = string.format(TEXT.confirmBuyTitle, string.lower(license.name)),
+		body = string.format(TEXT.confirmBuyBody, price),
+		keepLabel = TEXT.notNow,
+		confirmLabel = if props.busy then TEXT.buying else string.format(TEXT.confirmBuy, price),
+		confirmStyle = "primary",
+		busy = props.busy,
+		onKeep = props.onKeep,
+		onConfirm = props.onBuy,
+	})
+end
+
+-- What the app knows about `id` and the player's cash, redrawn whenever HitchInputController says it may have
+-- changed (a purchase, or a new profile snapshot).
+local function useLicense(id: string?): LicenseState
+	local function read(): LicenseState
+		local profile = ProfileController.get()
+		return {
+			known = id ~= nil and HitchInputController.licenseKnown(id),
+			busy = HitchInputController.licenseBusy() ~= nil,
+			cash = if profile then profile.cash else nil,
+		}
+	end
+	local state, setState = React.useState(read)
+	React.useEffect(function()
+		local live = true
+		local connection = HitchInputController.onLicenseChanged:Connect(function()
+			if live then
+				setState(read())
+			end
+		end)
+		setState(read())
+		return function()
+			live = false
+			connection:Disconnect()
+		end
+	end, { id } :: { any })
+	return state
+end
+
 -- The app ----------------------------------------------------------------------------------------------------------
 
 -- The latest JobController view, redrawn whenever it changes.
@@ -602,7 +892,20 @@ local ORDER_STEP = 1000
 
 local function JobsApp(_props: {})
 	local view = useJobs()
+	local types = JobController.jobTypes()
+	-- The license some job type needs (Config/Jobs: today only freight's), and what the app knows about it.
+	local licensed: { [string]: License } = {}
+	local licenseId: string? = nil
+	for _, info in types do
+		local license = licenseFor(info.id)
+		if license ~= nil then
+			licensed[info.id] = license
+			licenseId = licenseId or license.id
+		end
+	end
+	local licenseState = useLicense(licenseId)
 	local confirming, setConfirming = React.useState(false)
+	local buying, setBuying = React.useState(nil :: License?) -- the license whose buy confirm is showing
 	local live = React.useRef(true)
 	React.useEffect(function()
 		live.current = true
@@ -628,8 +931,14 @@ local function JobsApp(_props: {})
 		setConfirming(false)
 	end, { jobId } :: { any })
 
+	-- A job starting puts the buy confirm away (the license cards hide while a job runs).
+	React.useEffect(function()
+		if jobId ~= nil then
+			setBuying(nil)
+		end
+	end, { jobId } :: { any })
+
 	local showConfirm = confirming and job ~= nil
-	local types = JobController.jobTypes()
 	local shared = if job == nil then sharedReason(view, types) else nil
 	local anyOpen = false -- some job type has offers for the player (the server says so)
 	for _, availability in view.availability do
@@ -662,7 +971,34 @@ local function JobsApp(_props: {})
 		local base = index * ORDER_STEP
 		children[`Header_{info.id}`] = TypeHeader({ info = info, level = view.levels[info.id], order = base })
 		if job == nil and view.loaded then
-			for key, child in typeBody(info, view, shared, base + 1) do
+			local order = base + 1
+			-- How the job works (towing, freight).
+			local about = TEXT.about[info.id]
+			if about ~= nil then
+				children[`About_{info.id}`] = Kit.Text({
+					text = about,
+					order = order,
+					size = Theme.text.small,
+					color = colors.textDim,
+				})
+				order += 1
+			end
+			-- The license it needs: owned, or how to get it.
+			local license = licensed[info.id]
+			if license ~= nil then
+				children[`License_{info.id}`] = LicenseCard({
+					view = view,
+					license = license,
+					state = licenseState,
+					owned = holdsLicense(view, licenseState, info.id, license.id),
+					order = order,
+					onAskBuy = function()
+						setBuying(license)
+					end,
+				})
+				order += 1
+			end
+			for key, child in typeBody(info, view, shared, order) do
 				children[key] = child
 			end
 		end
@@ -680,11 +1016,30 @@ local function JobsApp(_props: {})
 		})
 	end
 
+	local buyingLicense = if job == nil and view.loaded then buying else nil
 	return e("Frame", {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 	}, {
 		Page = Kit.Page({}, children),
+		Buy = if buyingLicense ~= nil
+			then e(LicenseConfirm, {
+				license = buyingLicense,
+				busy = licenseState.busy,
+				onKeep = function()
+					setBuying(nil)
+				end,
+				onBuy = function()
+					local id = (buyingLicense :: License).id
+					task.spawn(function()
+						HitchInputController.buyLicense(id)
+						if live.current then
+							setBuying(nil)
+						end
+					end)
+				end,
+			})
+			else nil,
 		Confirm = if showConfirm
 			then e(CancelConfirm, {
 				view = view,

@@ -291,7 +291,7 @@ local REMOTES: { [string]: Spec } = {
 	DevJob = {
 		kind = "function",
 		direction = "toServer",
-		validate = Check.shape({ action = Check.oneOf({ "teleportToStop" }) }),
+		validate = Check.shape({ action = Check.oneOf({ "teleportToStop", "grantLicenseXp" }) }),
 		burst = 3,
 		perSecond = 1,
 	},

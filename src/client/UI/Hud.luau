@@ -18,6 +18,12 @@
 --                   their right. The slot keeps PhoneConfig.hud.jobSlot's size, which HudController keeps the
 --                   charging card and the dev menu clear of; it sits below the notices band and above the touch
 --                   steering zones on every landscape phone (tests/JobClient.spec checks it).
+--   hitch row       under the job slot's place, only while driving a car with a hitch (Phase 8, Controllers/
+--                   HitchInputController): while a trailer or towed car is coupled, a small indicator ("Hauling Box
+--                   trailer", "Towing <car>") with an Uncouple button; while one is close enough to couple,
+--                   "Nearby <name>" with a Couple button. On keyboard and gamepad the button wears its key cap (T,
+--                   RB), like the phone button. As wide as the job slot and a button tall, so it stays above the
+--                   touch steering zones and left of the light-show button on the smallest landscape phone.
 --
 -- Codes moved to the phone's Codes app, and the phone button is drawn by the phone itself (UI/Phone), placed
 -- beside this speed panel by UI/Phone/Layout, which shares the panel's size and position with this file.
@@ -68,6 +74,17 @@ export type Energy = {
 	limp: boolean, -- out of energy: the car is held to the limp speed
 }
 
+-- What the hitch row's button asks the server for (Net TrailerAction).
+export type HitchAction = "couple" | "decouple"
+
+-- The driven car's hitch, as the HUD shows it (Controllers/HitchInputController works it out).
+export type Hitch = {
+	state: "coupled" | "near", -- coupled now, or something to couple is close enough
+	kind: "trailer" | "car", -- what is (or would be) on the hitch
+	name: string, -- "Box trailer", or the towed car's catalog name
+	busy: boolean, -- a TrailerAction is with the server: the button waits
+}
+
 -- The car is charging or fueling right now.
 export type Charging = {
 	kind: "battery" | "fuel",
@@ -89,6 +106,9 @@ export type Props = {
 	hints: { HintItem }?, -- nil or empty hides the hint row (touch devices)
 	cash: number?, -- from the player's Cash attribute; nil until their data has loaded
 	job: ActiveJob?, -- nil: no job, the slot stays empty
+	hitch: Hitch?, -- nil: nothing coupled and nothing near, no hitch row
+	hitchKey: string?, -- the key cap on the hitch button ("T", "RB"); nil on touch
+	onHitch: ((action: HitchAction) -> ())?, -- the hitch button was tapped
 }
 
 type DrivingProps = {
@@ -126,6 +146,38 @@ local JOB = {
 	lineHeight = 16, -- the stop and the status lines, at slot.detailTextSize
 	payWidth = 48, -- room kept for the pay at the end of the status line ("$1,240")
 	payGap = 6, -- between the status and the pay
+}
+
+-- The hitch row (px at UI scale 1): an indicator on the left and the Couple / Uncouple button on its right, as
+-- wide as the job slot and a button tall, one Economy.hud.gap under the job slot's place (HudController.hitchRect
+-- mirrors these numbers). Inside the indicator: a little trailer or car drawing with "Hauling" / "Towing" /
+-- "Nearby", and under it the name, shrunk to the slot's smallest text before it is cut short.
+-- 14 + 18 = 32 px of the row's 48, centred.
+local HITCH = {
+	width = PhoneConfig.hud.jobSlot.size.X,
+	height = Theme.size.buttonHeight,
+	gap = Controls.hud.gap, -- between the indicator and the button
+	buttonWidth = 84, -- "Uncouple" at Theme.text.small with Theme.spacing.sm each side, and room to spare
+	padding = 10, -- inside the indicator
+	eyebrowHeight = 14,
+	nameHeight = 18,
+	glyphSize = Vector2.new(16, 10), -- the little trailer or car
+	glyphGap = 5, -- between the drawing and the eyebrow text
+	glyphStroke = 1.5,
+	wheelSize = 4,
+	-- Wheel centres across the drawing (0 = left, 1 = right): a trailer's sit at its back, a car's at its ends.
+	wheelsAt = {
+		trailer = { 0.6, 0.85 },
+		car = { 0.25, 0.75 },
+	},
+	-- What the driver reads.
+	text = {
+		hauling = "Hauling", -- a trailer is coupled
+		towing = "Towing", -- a car is on the hitch
+		nearby = "Nearby", -- something to couple is close enough
+		couple = "Couple",
+		uncouple = "Uncouple",
+	},
 }
 
 -- "W/S Drive    A/D Steer ..." with the keys in bold white and the labels in the dim text color.
@@ -764,19 +816,230 @@ local function JobSlot(props: { job: ActiveJob, order: number })
 	})
 end
 
--- The player's cash, top left (lined up with the touch steering zones), with the active job under it.
-local function Wallet(props: { cash: number?, job: ActiveJob? })
+-- The little trailer (a tall box on two wheels with its kingpin tongue) or car (a low body under a cabin, on two
+-- wheels) beside the hitch row's eyebrow, drawn from frames so no image assets are needed. Anchored at its left
+-- middle.
+local function HitchGlyph(props: { kind: "trailer" | "car", color: Color3 })
+	local size = HITCH.glyphSize
+	local stroke = HITCH.glyphStroke
+	local wheel = HITCH.wheelSize
+	local bodyHeight = size.Y - wheel / 2
+	local children: { [string]: any }
+	if props.kind == "car" then
+		local cabinWidth = math.floor(size.X / 2)
+		local cabinHeight = math.floor(bodyHeight / 2)
+		children = {
+			Cabin = box({
+				position = UDim2.fromOffset(math.floor((size.X - cabinWidth) / 2), 0),
+				size = UDim2.fromOffset(cabinWidth, cabinHeight + stroke),
+				color = props.color,
+				stroke = stroke,
+			}),
+			Body = box({
+				position = UDim2.fromOffset(0, cabinHeight),
+				size = UDim2.fromOffset(size.X, bodyHeight - cabinHeight),
+				color = props.color,
+			}),
+		}
+	else
+		local tongue = math.floor(size.X / 4)
+		children = {
+			Body = box({
+				position = UDim2.fromOffset(tongue, 0),
+				size = UDim2.fromOffset(size.X - tongue, bodyHeight),
+				color = props.color,
+				stroke = stroke,
+			}),
+			Tongue = box({
+				position = UDim2.fromOffset(0, bodyHeight - stroke),
+				size = UDim2.fromOffset(tongue, stroke),
+				color = props.color,
+			}),
+		}
+	end
+	local wheelsAt = (HITCH.wheelsAt :: { [string]: { number } })[props.kind] or HITCH.wheelsAt.trailer
+	for index, at in wheelsAt do
+		children[`Wheel{index}`] = box({
+			anchor = Vector2.new(0.5, 1),
+			position = UDim2.fromScale(at, 1),
+			size = UDim2.fromOffset(wheel, wheel),
+			color = props.color,
+			radius = wheel,
+			order = 2,
+		})
+	end
+	return e("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		Size = UDim2.fromOffset(size.X, size.Y),
+		BackgroundTransparency = 1,
+	}, children)
+end
+
+-- The driven car's hitch, under the job slot's place: what is coupled (or near enough to couple) on the left, and
+-- the Uncouple (or Couple) button on its right, with its key cap on keyboard and gamepad. The button waits while
+-- a request is with the server.
+local function HitchRow(props: {
+	hitch: Hitch,
+	keyText: string?,
+	order: number,
+	onHitch: ((action: HitchAction) -> ())?,
+})
+	local colors = Theme.colors
+	local slot = PhoneConfig.hud.jobSlot
+	local badge = PhoneConfig.button
+	local hitch = props.hitch
+	local coupled = hitch.state == "coupled"
+	local eyebrow = if not coupled
+		then HITCH.text.nearby
+		elseif hitch.kind == "car" then HITCH.text.towing
+		else HITCH.text.hauling
+	-- Coupled reads in the accent (something is on the hitch); nearby is quieter until it is.
+	local ink = if coupled then colors.accent else colors.textDim
+	local action: HitchAction = if coupled then "decouple" else "couple"
+	-- Couple is the one filled (accent) action; Uncouple a panel button; both dim while a request waits.
+	local busy = hitch.busy
+	local fill = if coupled or busy then colors.panelRaised else colors.accent
+	local textColor = if busy then colors.textDim elseif coupled then colors.text else colors.onAccent
+	local labelLeft = HITCH.glyphSize.X + HITCH.glyphGap
+	local keyText = props.keyText
+	return e("Frame", {
+		LayoutOrder = props.order,
+		Size = UDim2.fromOffset(HITCH.width, HITCH.height),
+		BackgroundTransparency = 1,
+	}, {
+		Info = e("Frame", {
+			Size = UDim2.fromOffset(HITCH.width - HITCH.gap - HITCH.buttonWidth, HITCH.height),
+			BackgroundColor3 = colors.panel,
+			BackgroundTransparency = colors.panelTransparency,
+			BorderSizePixel = 0,
+		}, {
+			Corner = e("UICorner", { CornerRadius = UDim.new(0, Controls.hud.cornerRadius) }),
+			Padding = e("UIPadding", {
+				PaddingLeft = UDim.new(0, HITCH.padding),
+				PaddingRight = UDim.new(0, HITCH.padding),
+			}),
+			Layout = e("UIListLayout", {
+				FillDirection = Enum.FillDirection.Vertical,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+			Top = e("Frame", {
+				LayoutOrder = 1,
+				Size = UDim2.new(1, 0, 0, HITCH.eyebrowHeight),
+				BackgroundTransparency = 1,
+			}, {
+				Glyph = e(HitchGlyph, { kind = hitch.kind, color = ink }),
+				Label = e("TextLabel", {
+					Position = UDim2.fromOffset(labelLeft, 0),
+					Size = UDim2.new(1, -labelLeft, 1, 0),
+					BackgroundTransparency = 1,
+					FontFace = Theme.fonts.bold,
+					Text = eyebrow,
+					TextColor3 = ink,
+					TextSize = Controls.hud.smallTextSize,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					TextXAlignment = Enum.TextXAlignment.Left,
+				}),
+			}),
+			Name = e(jobText, {
+				order = 2,
+				text = hitch.name,
+				font = Theme.fonts.bold,
+				size = slot.detailTextSize,
+				color = colors.text,
+				height = HITCH.nameHeight,
+				minSize = slot.minTextSize,
+			}),
+		}),
+		Action = e("Frame", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.fromScale(1, 0),
+			Size = UDim2.fromOffset(HITCH.buttonWidth, HITCH.height),
+			BackgroundTransparency = 1,
+		}, {
+			-- Never a gamepad selection target (like the touch controls and the phone button): gamepads use RB.
+			Button = e("TextButton", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = fill,
+				BorderSizePixel = 0,
+				AutoButtonColor = not busy,
+				Active = not busy,
+				Selectable = false,
+				FontFace = Theme.fonts.bold,
+				Text = if coupled then HITCH.text.uncouple else HITCH.text.couple,
+				TextColor3 = textColor,
+				TextSize = Theme.text.small,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				[React.Event.Activated] = function()
+					local onHitch = props.onHitch
+					if onHitch and not busy then
+						onHitch(action)
+					end
+				end,
+			}, {
+				Corner = e("UICorner", { CornerRadius = UDim.new(0, Theme.radius.button) }),
+				-- A filled panel button reads as a button by its outline (textDim on panelRaised is over 3:1).
+				Outline = if fill == colors.panelRaised
+					then e("UIStroke", {
+						ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+						Color = colors.textDim,
+						Thickness = 1,
+					})
+					else nil,
+				Padding = e("UIPadding", {
+					PaddingLeft = UDim.new(0, Theme.spacing.sm),
+					PaddingRight = UDim.new(0, Theme.spacing.sm),
+				}),
+			}),
+			-- The key cap pokes out above the button's top-right corner, like the phone button's, but not past its
+			-- right edge: on a small window the speed panel can start just right of this column.
+			Key = if keyText
+				then e("TextLabel", {
+					ZIndex = 2,
+					AnchorPoint = Vector2.new(1, 0),
+					Position = UDim2.new(1, 0, 0, badge.badgeInset),
+					Size = UDim2.fromOffset(badge.badgeSize, badge.badgeSize),
+					AutomaticSize = Enum.AutomaticSize.X,
+					BackgroundColor3 = colors.panelRaised,
+					BorderSizePixel = 0,
+					FontFace = Theme.fonts.bold,
+					Text = keyText,
+					TextColor3 = colors.text,
+					TextSize = badge.badgeTextSize,
+				}, {
+					Corner = e("UICorner", { CornerRadius = UDim.new(0, Theme.spacing.xs) }),
+					Padding = e("UIPadding", {
+						PaddingLeft = UDim.new(0, Theme.spacing.xs),
+						PaddingRight = UDim.new(0, Theme.spacing.xs),
+					}),
+				})
+				else nil,
+		}),
+	})
+end
+
+-- The player's cash, top left (lined up with the touch steering zones), with the active job under it and the
+-- hitch row under that.
+local function Wallet(props: {
+	cash: number?,
+	job: ActiveJob?,
+	hitch: Hitch?,
+	hitchKey: string?,
+	onHitch: ((action: HitchAction) -> ())?,
+})
 	local colors = Theme.colors
 	local hud = Economy.hud
 	local margin = Controls.touch.margin
 	local cash = props.cash
 	local job = props.job
+	local hitch = props.hitch
 
 	return e("Frame", {
 		Position = UDim2.fromOffset(margin, margin),
 		Size = UDim2.fromOffset(
-			math.max(hud.cashMaxWidth, PhoneConfig.hud.jobSlot.size.X),
-			hud.rowHeight + hud.gap + PhoneConfig.hud.jobSlot.size.Y
+			math.max(hud.cashMaxWidth, PhoneConfig.hud.jobSlot.size.X, HITCH.width),
+			hud.rowHeight + hud.gap + PhoneConfig.hud.jobSlot.size.Y + hud.gap + HITCH.height
 		),
 		BackgroundTransparency = 1,
 	}, {
@@ -811,6 +1074,9 @@ local function Wallet(props: { cash: number?, job: ActiveJob? })
 			}),
 		}),
 		Job = if job then e(JobSlot, { job = job, order = 2 }) else nil,
+		Hitch = if hitch
+			then e(HitchRow, { hitch = hitch, keyText = props.hitchKey, order = 3, onHitch = props.onHitch })
+			else nil,
 	})
 end
 
@@ -834,7 +1100,14 @@ local function Hud(props: Props)
 				hints = props.hints,
 			})
 			else nil,
-		Wallet = e(Wallet, { cash = props.cash, job = props.job }),
+		Wallet = e(Wallet, {
+			cash = props.cash,
+			job = props.job,
+			-- The hitch belongs to the car being driven: never on foot.
+			hitch = if props.driving then props.hitch else nil,
+			hitchKey = props.hitchKey,
+			onHitch = props.onHitch,
+		}),
 	})
 end
 

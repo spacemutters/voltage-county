@@ -1,7 +1,7 @@
 --!strict
 -- The shared shapes of the jobs framework (docs/phase-6-contracts.md "Server"). JobService (init) runs the jobs;
--- each job type module (Rideshare, Delivery) plugs in through the JobType interface below. Keep these stable:
--- both job type modules are written against them.
+-- each job type module (Rideshare, Delivery, Towing, Freight) plugs in through the JobType interface below. Keep
+-- these stable: every job type module is written against them.
 --
 -- Life of a job:
 --   offers    JobService asks every type module for a few Offers for the player's current car (Context says
@@ -24,11 +24,14 @@ local Jobs = require(Shared.Config.Jobs)
 local MapLayout = require(Shared.Config.MapLayout)
 local Pathfind = require(Shared.Road.Pathfind)
 
--- A Config/Jobs JobType id: "rideshare" | "delivery". Typed as a plain string so ids read from config tables
+-- A Config/Jobs JobType id: "rideshare" | "delivery" | "towing" | "freight". Typed as a plain string so ids read from config tables
 -- and remotes need no casts; Config/Jobs.types lists the valid ones.
 export type JobKind = string
 
-export type StopKind = "pickup" | "dropoff" | "load" | "drop"
+-- couple / decouple (Phase 8, towing and freight): the stop is done when the server sees the job's car couple the
+-- job's trailer or towed car (Job.towTarget), and when it uncouples it at the drop, rather than by stopping there.
+-- waypoint (freight long hauls): done by passing within the type's waypointRadius, at any speed.
+export type StopKind = "pickup" | "dropoff" | "load" | "drop" | "couple" | "decouple" | "waypoint"
 
 export type Stop = {
 	position: Vector3, -- where the stop is (the kerbside spot; the client stands its figure or parcel here)
@@ -89,6 +92,10 @@ export type Job = {
 	state: JobState,
 	smooth: Smoothness,
 	data: any, -- the module's own
+	-- Towing and freight: the trailer or broken-down car the job hitches (the module spawns it in start). JobService
+	-- watches its coupling at couple / decouple stops, fails the job when it comes off anywhere else, and uncouples
+	-- it when the job ends.
+	towTarget: Model?,
 }
 
 export type Lengths = { routeLength: number, paidLength: number }
@@ -110,6 +117,8 @@ export type Context = {
 	levelMultiplier: number, -- pay multiplier of that level
 	unlocks: { [string]: boolean }, -- every unlock id reached at that level or below (Config/Jobs levels)
 	offerCount: number, -- how many offers to make (Config/Jobs offers.perType, plus "extraOffer")
+	-- The job licenses the player holds (PlayerData.jobs.licenses; Config/Jobs JobDef.license). nil: not loaded.
+	licenses: { [string]: boolean }?,
 	random: Random,
 	newId: () -> string, -- a fresh id for an offer
 	-- Studs of road on the fastest route, or nil when there is none. `heading` (a LookVector) makes it start
@@ -152,5 +161,10 @@ export type JobType = {
 	onArrive: (job: Job, stopIndex: number, context: Context) -> StepResult,
 	pay: (job: Job, context: Context) -> PayBreakdown,
 }
+
+-- What a job type module may also have (towing, freight): `finish(job, outcome)`, called once when a job of its
+-- type ends however it ends ("complete" or "failed", cancels included), after JobService has uncoupled the job's
+-- towTarget. The module removes what it put in the world.
+export type Finish = (job: Job, outcome: JobState) -> ()
 
 return {}

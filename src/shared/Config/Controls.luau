@@ -20,6 +20,7 @@ export type KeyboardBindings = {
 	mode: { Enum.KeyCode },
 	camera: { Enum.KeyCode },
 	regen: { Enum.KeyCode },
+	hitch: { Enum.KeyCode }, -- couple / uncouple a trailer or towed car (Controllers/HitchInputController)
 }
 
 export type GamepadBindings = {
@@ -31,6 +32,7 @@ export type GamepadBindings = {
 	mode: { Enum.KeyCode },
 	camera: { Enum.KeyCode },
 	regen: { Enum.KeyCode },
+	hitch: { Enum.KeyCode }, -- couple / uncouple (Controllers/HitchInputController)
 	-- Swallowed while driving and otherwise ignored: the default gamepad jump would stand the driver up.
 	sink: { Enum.KeyCode },
 }
@@ -56,6 +58,9 @@ local Controls = {
 		mode = { Enum.KeyCode.M },
 		camera = { Enum.KeyCode.C },
 		regen = { Enum.KeyCode.R },
+		-- Phase 8: bound by HitchInputController (not InputController) and only while driving a car with a hitch
+		-- (a Kingpin or TowHitch attachment), so T stays free on foot.
+		hitch = { Enum.KeyCode.T },
 	} :: KeyboardBindings,
 
 	gamepad = {
@@ -67,6 +72,9 @@ local Controls = {
 		mode = { Enum.KeyCode.ButtonY },
 		camera = { Enum.KeyCode.ButtonR3 },
 		regen = { Enum.KeyCode.DPadUp },
+		-- Phase 8, bound like the keyboard's T. ButtonR1 was free: the triggers, X, Y, B, R3, D-pad up and A drive,
+		-- and the phone has ButtonL1 (UI/Phone/PhoneConfig keys).
+		hitch = { Enum.KeyCode.ButtonR1 },
 		sink = { Enum.KeyCode.ButtonA },
 	} :: GamepadBindings,
 
@@ -80,6 +88,7 @@ local Controls = {
 		ButtonB = "B",
 		ButtonR3 = "R3",
 		DPadUp = "D-pad up",
+		ButtonR1 = "RB",
 	} :: { [string]: string },
 
 	-- Analog input below these magnitudes reads as zero; the rest is rescaled to the full 0..1 range.

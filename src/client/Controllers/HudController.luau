@@ -2,9 +2,11 @@
 -- Owns the one HUD ScreenGui (docs/phase-1-contracts.md "Client") and renders it with react-lua: the HUD
 -- (UI/Hud: the player's cash at all times with the active job under it while one runs (Phase 6: JobController
 -- calls setActiveJob), the speed panel with its energy row while they drive, and the charging card while
--- their car charges or fuels), on touch screens the touch controls
--- (UI/TouchControls) while the player drives, and the dev spawn menu (UI/DevSpawnMenu) in Studio. Since Phase 4
--- codes live in the phone (PhoneController), which draws its own button beside the speed panel.
+-- their car charges or fuels, and the hitch row under the job slot while they drive a car with a hitch (Phase 8:
+-- HitchInputController calls setHitch, and listens to onHitch for the row's Couple / Uncouple button)), on touch
+-- screens the touch controls (UI/TouchControls) while the player drives, and the dev spawn menu (UI/DevSpawnMenu)
+-- in Studio. Since Phase 4 codes live in the phone (PhoneController), which draws its own button beside the
+-- speed panel.
 --
 -- Telemetry is read from DriveController about 10 times a second (Heartbeat plus an accumulator, connected
 -- only while driving), and the tree re-renders only when a shown value changes. Speed shows in the player's
@@ -27,6 +29,7 @@ local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
 local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Gps = require(ReplicatedStorage.Shared.Config.Gps)
+local LightShows = require(ReplicatedStorage.Shared.Config.LightShows)
 local Types = require(ReplicatedStorage.Shared.Types)
 local Units = require(ReplicatedStorage.Shared.Util.Units)
 local DriveController = require(script.Parent.DriveController)
@@ -43,12 +46,21 @@ local TouchControls = require(UI.TouchControls)
 
 local GUI_NAME = "DrivingHud"
 
--- The Studio spawn menu (which places itself in the top-left corner) is pushed down below the cash readout
--- and the active-job slot.
+-- The hitch row (UI/Hud's HitchRow, px at UI scale 1): as wide as the job slot and a button tall, one
+-- Economy.hud.gap under the job slot's place in the cash column. Mirrors UI/Hud's HITCH sizes.
+local HITCH_ROW = {
+	size = Vector2.new(PhoneConfig.hud.jobSlot.size.X, Theme.size.buttonHeight),
+	gap = Economy.hud.gap,
+}
+
+-- The Studio spawn menu (which places itself in the top-left corner) is pushed down below the cash readout,
+-- the active-job slot and the hitch row.
 local DEV_MENU_TOP = Controls.touch.margin
 	+ Economy.hud.rowHeight
 	+ Economy.hud.gap
 	+ PhoneConfig.hud.jobSlot.size.Y
+	+ HITCH_ROW.gap
+	+ HITCH_ROW.size.Y
 	+ Economy.hud.gap
 
 -- The charging card (PhoneConfig.hud.chargingCard, px at UI scale 1) and where it may go. It sits above the
@@ -65,6 +77,8 @@ export type InputKind = "keyboard" | "gamepad" | "touch"
 export type ActiveJob = Hud.ActiveJob
 export type Energy = Hud.Energy
 export type Charging = Hud.Charging
+export type Hitch = Hud.Hitch
+export type HitchAction = Hud.HitchAction
 
 -- Everything the tree shows. render() hands a copy to the App component.
 type View = {
@@ -83,6 +97,7 @@ type View = {
 	showDevMenu: boolean,
 	cash: number?, -- nil until the player's data has loaded
 	job: ActiveJob?,
+	hitch: Hitch?, -- nil: no hitch row
 }
 
 local e = React.createElement
@@ -91,6 +106,10 @@ local HudController = {}
 
 -- Fires (kind: InputKind) when the player switches between keyboard, gamepad and touch.
 HudController.onInputKindChanged = InputController.newSignal()
+
+-- Fires (action: HitchAction) when the player taps the hitch row's Couple or Uncouple button
+-- (HitchInputController sends it to the server).
+HudController.onHitch = InputController.newSignal()
 
 local view: View = {
 	driving = false,
@@ -108,26 +127,34 @@ local view: View = {
 	showDevMenu = false,
 	cash = nil,
 	job = nil,
+	hitch = nil,
 }
 
 local root: any = nil
 local ticker: RBXScriptConnection? = nil
 local lastMph = 0 -- the latest telemetry speed, so a units switch redraws at once
 
--- Declared with the pure helpers below; App places the charging card with it.
-local chargingCardRect: (screen: Vector2, context: Layout.Context) -> Layout.Rect
+-- Declared with the pure helpers below; App places the charging card and labels the hitch button with them.
+local chargingCardRect: (screen: Vector2, context: Layout.Context, hitch: boolean?) -> Layout.Rect
+local hitchKeyFor: (kind: InputKind) -> string?
+
+-- The hitch row's button was tapped: HitchInputController takes it from here.
+local function onHitchTapped(action: HitchAction)
+	HudController.onHitch:Fire(action)
+end
 
 -- The whole tree. The root frame is sized 1/scale so that, after the UIScale, it exactly fills the screen
 -- and every child can be laid out in unscaled (phone) pixels.
 local function App(props: View)
 	local showHints = props.hints ~= nil and #props.hints > 0
 	local charging = if props.driving then props.charging else nil
+	local hitch = if props.driving then props.hitch else nil
 	local chargingRect = if charging
 		then chargingCardRect(props.screen, {
 			driving = true,
 			touch = props.inputKind == "touch",
 			hints = showHints,
-		})
+		}, hitch ~= nil)
 		else nil
 	return e("Frame", {
 		Size = UDim2.fromScale(1 / props.scale, 1 / props.scale),
@@ -147,6 +174,9 @@ local function App(props: View)
 			hints = props.hints,
 			cash = props.cash,
 			job = props.job,
+			hitch = hitch,
+			hitchKey = hitchKeyFor(props.inputKind),
+			onHitch = onHitchTapped,
 		}),
 		TouchControls = if props.driving and props.inputKind == "touch" then e(TouchControls, {}) else nil,
 		DevSpawnMenu = if props.showDevMenu
@@ -239,10 +269,54 @@ function HudController.jobSlotBlockers(screen: Vector2, context: Layout.Context)
 	return list
 end
 
+-- The hitch row (UI/Hud's HitchRow) at its lowest: one gap under the job slot's place, which it takes when a job
+-- is running (with no job it rises into the slot's place, which is clear of the same things). The rect is the
+-- row itself; its key cap pokes out PhoneConfig.button.badgeInset above the top-right corner (never past the right
+-- edge: on a small keyboard window the speed panel starts a few pixels right of this column).
+function HudController.hitchRect(screen: Vector2): Layout.Rect
+	local slot = HudController.jobSlotRect(screen)
+	return Layout.rect(slot.left, slot.bottom + HITCH_ROW.gap, HITCH_ROW.size.X, HITCH_ROW.size.Y)
+end
+
+-- What the hitch row must stay clear of while driving on `screen` (UI-scale-1 pixels): everything the job slot
+-- keeps clear of (the notices band, the GPS route chip, the phone button, the speed panel, and on touch the
+-- steering zones, pedals and touch buttons), the job slot itself, and the light-show button under the notices
+-- (Controllers/LightShowController, Config/LightShows button).
+function HudController.hitchBlockers(screen: Vector2, context: Layout.Context): { Layout.Rect }
+	local list = HudController.jobSlotBlockers(screen, context)
+	table.insert(list, HudController.jobSlotRect(screen))
+	local lightShowWidth = LightShows.button.width
+	table.insert(
+		list,
+		Layout.rect(
+			(screen.X - lightShowWidth) / 2,
+			HudController.noticesRect(screen).bottom + LightShows.button.gap,
+			lightShowWidth,
+			Theme.size.buttonHeight
+		)
+	)
+	return list
+end
+
+-- The key cap the hitch button wears for keyboard and gamepad players: the first hitch key in Config/Controls
+-- ("T"), or its gamepad glyph ("RB"). nil on touch, where the button is the control.
+function HudController.hitchKeyFor(kind: InputKind): string?
+	if kind == "touch" then
+		return nil
+	end
+	local keys: { Enum.KeyCode } = if kind == "gamepad" then Controls.gamepad.hitch else Controls.keyboard.hitch
+	local key = keys[1]
+	if key == nil then
+		return nil
+	end
+	return if kind == "gamepad" then Controls.gamepadGlyphs[key.Name] or key.Name else key.Name
+end
+hitchKeyFor = HudController.hitchKeyFor
+
 -- What the charging card must stay clear of while driving on `screen` (UI-scale-1 pixels): the speed panel, the
 -- phone button, the cash readout with its job slot, the GPS route chip (top right), the notices band (top
--- centre) and, on touch, the steering zones, pedals and touch buttons.
-function HudController.chargingCardBlockers(screen: Vector2, context: Layout.Context): { Layout.Rect }
+-- centre), the hitch row while it shows (`hitch`) and, on touch, the steering zones, pedals and touch buttons.
+function HudController.chargingCardBlockers(screen: Vector2, context: Layout.Context, hitch: boolean?): { Layout.Rect }
 	local hud = Economy.hud
 	local jobSlot = PhoneConfig.hud.jobSlot.size
 	local margin = Controls.touch.margin
@@ -253,6 +327,9 @@ function HudController.chargingCardBlockers(screen: Vector2, context: Layout.Con
 		HudController.gpsChipRect(screen),
 		HudController.noticesRect(screen),
 	}
+	if hitch then
+		table.insert(list, HudController.hitchRect(screen))
+	end
 	if context.touch then
 		local zones = Layout.touchZones(screen)
 		table.insert(list, zones.steering)
@@ -265,8 +342,8 @@ end
 -- Where the charging card goes while driving on `screen` (UI-scale-1 pixels). The first spot that is on screen
 -- and clear of everything in chargingCardBlockers: centred just above the speed panel; centred above the speed
 -- panel and the phone button (when the phone button sits above the panel); then left, then right of the phone
--- button. If none is clear (a very small screen), just above the speed panel.
-function HudController.chargingCardRect(screen: Vector2, context: Layout.Context): Layout.Rect
+-- button. If none is clear (a very small screen), just above the speed panel. `hitch`: the hitch row shows.
+function HudController.chargingCardRect(screen: Vector2, context: Layout.Context, hitch: boolean?): Layout.Rect
 	local size = CHARGING_CARD.size
 	local gap = CHARGING_CARD.gap
 	local cluster = Layout.cluster(screen, context.hints)
@@ -279,7 +356,7 @@ function HudController.chargingCardRect(screen: Vector2, context: Layout.Context
 		Layout.rect(phone.left - gap - size.X, phone.bottom - size.Y, size.X, size.Y),
 		Layout.rect(phone.right + gap, phone.bottom - size.Y, size.X, size.Y),
 	}
-	local blockers = HudController.chargingCardBlockers(screen, context)
+	local blockers = HudController.chargingCardBlockers(screen, context, hitch)
 	local whole = Layout.screen(screen)
 	for _, candidate in candidates do
 		local clear = Layout.contains(whole, candidate)
@@ -359,6 +436,30 @@ function HudController.setActiveJob(job: ActiveJob?)
 		return
 	end
 	view.job = if job then table.clone(job) else nil
+	render()
+end
+
+-- Hitch (Phase 8) ------------------------------------------------------------------------------------------------
+
+-- Shows the driven car's hitch in the row under the job slot (what is coupled, or near enough to couple, and the
+-- Uncouple or Couple button), or hides the row (nil). HitchInputController calls it whenever that changes; an
+-- unchanged hitch doesn't redraw.
+function HudController.setHitch(hitch: Hitch?)
+	local current = view.hitch
+	if current == nil and hitch == nil then
+		return
+	end
+	if
+		current ~= nil
+		and hitch ~= nil
+		and current.state == hitch.state
+		and current.kind == hitch.kind
+		and current.name == hitch.name
+		and current.busy == hitch.busy
+	then
+		return
+	end
+	view.hitch = if hitch then table.clone(hitch) else nil
 	render()
 end
 

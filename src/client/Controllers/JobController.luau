@@ -76,6 +76,9 @@ local TEXT = {
 		dropoff = "Drop off at %s",
 		load = "Load up at %s",
 		drop = "Deliver to %s",
+		couple = "Hitch up at %s",
+		decouple = "Uncouple at %s",
+		waypoint = "Pass %s",
 	} :: { [string]: string },
 	-- Shown in place of the distance once the car is close enough for the stop to count.
 	near = {
@@ -83,6 +86,10 @@ local TEXT = {
 		dropoff = "Stop here to drop off",
 		load = "Stop here to load up",
 		drop = "Stop here to deliver",
+		-- Couple and uncouple stops are done with the hitch button, not by stopping; a waypoint counts at speed.
+		couple = "Tap Couple",
+		decouple = "Stop and tap Uncouple",
+		waypoint = "Keep going",
 	} :: { [string]: string },
 	nearFallback = "Stop here",
 	status = "%s · %s left", -- distance, time left
@@ -95,7 +102,7 @@ local TEXT = {
 	listLast = " or ",
 }
 
-export type StopKind = "pickup" | "dropoff" | "load" | "drop"
+export type StopKind = "pickup" | "dropoff" | "load" | "drop" | "couple" | "decouple" | "waypoint"
 export type Action = "accept" | "arrive" | "cancel" | "refresh"
 export type TimeAlert = "normal" | "low" | "critical"
 
@@ -163,6 +170,7 @@ export type JobType = {
 	xlMinSeats: number?,
 	cooldownSec: number,
 	arriveRadius: number,
+	waypointRadius: number?, -- studs from a waypoint stop that count as passing it (freight long hauls)
 }
 
 -- A checked JobUpdate. A field that is nil was not sent, so the last one stands (offers, availability and
@@ -172,6 +180,7 @@ export type Update = {
 	offers: { Offer }?,
 	availability: { [string]: Availability }?,
 	levels: { [string]: Level }?,
+	licenses: { [string]: boolean }?, -- the job licenses the player holds, by license id
 }
 
 -- Everything the Jobs app and the job visuals read.
@@ -181,6 +190,7 @@ export type View = {
 	offers: { Offer },
 	availability: { [string]: Availability }, -- by job type; empty until the server sends some
 	levels: { [string]: Level }, -- by job type; empty until the server sends some
+	licenses: { [string]: boolean }, -- by license id, from the server; empty until it sends them
 	car: Car?,
 	units: string, -- "mph" | "kph" (distances show in miles or kilometres)
 	busy: Busy?,
@@ -211,6 +221,7 @@ local view: View = {
 	offers = {},
 	availability = {},
 	levels = {},
+	licenses = {},
 	car = nil,
 	units = ProfileController.defaultSettings().units,
 	busy = nil,
@@ -269,6 +280,7 @@ local function readTypes(): { JobType }
 				xlMinSeats = def.xlMinSeats,
 				cooldownSec = def.cooldownSec,
 				arriveRadius = def.arriveRadius,
+				waypointRadius = def.waypointRadius,
 			})
 		end
 	end
@@ -549,11 +561,22 @@ function JobController.normalize(payload: any, clockNow: number, serverNow: numb
 		end
 		levels = byType
 	end
+	local licenses: { [string]: boolean }? = nil
+	if type(payload.licenses) == "table" then
+		local byId: { [string]: boolean } = {}
+		for id, held in payload.licenses do
+			if type(id) == "string" then
+				byId[id] = held == true
+			end
+		end
+		licenses = byId
+	end
 	return {
 		job = normalizeJob(payload.job, clockNow, serverNow),
 		offers = offers,
 		availability = availability,
 		levels = levels,
+		licenses = licenses,
 	}
 end
 
@@ -653,6 +676,7 @@ local function snapshot(): View
 	copy.offers = table.clone(view.offers)
 	copy.availability = table.clone(view.availability)
 	copy.levels = table.clone(view.levels)
+	copy.licenses = table.clone(view.licenses)
 	return copy
 end
 
@@ -728,7 +752,12 @@ local function measure(): boolean
 	if stop ~= nil and position ~= nil then
 		distanceText = GpsController.distanceText(studsLeft(stop, position), view.units)
 		local info = JobController.jobType(job.type)
-		near = info ~= nil and JobController.distanceTo(stop, position) <= info.arriveRadius
+		-- A waypoint counts within its own (wider) radius, at any speed; every other stop within arriveRadius.
+		local radius = if info == nil
+			then nil
+			elseif stop.kind == "waypoint" then info.waypointRadius or info.arriveRadius
+			else info.arriveRadius
+		near = radius ~= nil and JobController.distanceTo(stop, position) <= radius
 	end
 	if secondsLeft == view.secondsLeft and distanceText == view.distanceText and near == view.near then
 		return false
@@ -799,6 +828,9 @@ local function apply(update: Update)
 	end
 	if update.availability then
 		view.availability = update.availability
+	end
+	if update.licenses then
+		view.licenses = update.licenses
 	end
 	if update.levels then
 		-- Types the update leaves out keep what we had (a partial update never wipes a level).

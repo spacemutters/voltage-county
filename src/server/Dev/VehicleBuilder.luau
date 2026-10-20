@@ -37,6 +37,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Driving = require(ReplicatedStorage.Shared.Config.Driving)
+local Trailers = require(ReplicatedStorage.Shared.Config.Trailers)
 local Vehicles = require(ReplicatedStorage.Shared.Config.Vehicles)
 
 local MODELS_FOLDER = "VehicleModels"
@@ -245,7 +246,10 @@ local FACINGS: { [Facing]: CFrame } = {
 	down = CFrame.Angles(-math.pi / 2, 0, 0),
 }
 
--- Attachments every model has, plus the ones a vehicle feature adds (model contract).
+-- Attachments every model has, plus the ones a vehicle feature adds (model contract). TowPoint (Phase 8,
+-- docs/phase-8-contracts.md) is where a pickup's or tow truck's TowHitch lifts the car when it is towed; the
+-- shapes don't place it, towPointOf does, the same way for every car.
+local TOW_POINT = "TowPoint"
 local REQUIRED_POINTS = {
 	"PlateFront",
 	"PlateRear",
@@ -257,6 +261,7 @@ local REQUIRED_POINTS = {
 	"Mount_RearBumper",
 	"Mount_SideL",
 	"Mount_SideR",
+	TOW_POINT,
 }
 local FEATURE_POINTS: { [string]: { string } } = {
 	towHitch = { "TowHitch" },
@@ -2522,6 +2527,14 @@ local function pointNames(vehicle: Vehicles.Vehicle): { string }
 	return names
 end
 
+-- Every car can be towed (Phase 8): its TowPoint sits Config/Trailers.towed.towPointAhead in front of the
+-- Chassis' front face and towPointHeight above the ground, facing back like the TowHitch it mates with (so the
+-- hitch's limits read zero with the two in line). Every TowHitch is higher, so coupling lifts the front wheels.
+local function towPointOf(g: Vehicles.Geometry): Point
+	local towed = Trailers.towed
+	return at(0, towed.towPointHeight, -g.length / 2 - towed.towPointAhead, "back")
+end
+
 local function addPoints(ctx: Ctx, points: { [string]: Point })
 	local lift = Vector3.new(0, ctx.chassisY, 0) -- ground space to chassis space
 	for _, name in pointNames(ctx.vehicle) do
@@ -2703,6 +2716,16 @@ function VehicleBuilder.check(model: Model): { string }
 			problem(`missing attachment {name} on Chassis`)
 		end
 	end
+	-- The towed car's hitch point (Phase 8): at the front, facing back like a TowHitch.
+	local towPoint = chassis:FindFirstChild(TOW_POINT)
+	if towPoint and towPoint:IsA("Attachment") then
+		if towPoint.Position.Z > -g.length / 2 + TOLERANCE then
+			problem(`{TOW_POINT} must sit at or ahead of the Chassis' front face`)
+		end
+		if not nearVector(towPoint.CFrame.LookVector, Vector3.zAxis) then
+			problem(`{TOW_POINT} must face back, like the TowHitch it mates with`)
+		end
+	end
 
 	local partCount, paintCount, glassCount = 0, 0, 0
 	for _, descendant in model:GetDescendants() do
@@ -2829,6 +2852,9 @@ local function assembleModel(vehicleId: string, trimId: string, generic: boolean
 
 	local ok, err = pcall(function()
 		local shape = shapeOf(ctx)
+		if shape.points[TOW_POINT] == nil then
+			shape.points[TOW_POINT] = towPointOf(g)
+		end
 		addWheels(ctx)
 		addSeats(ctx, shape.seating)
 		addPoints(ctx, shape.points)

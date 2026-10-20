@@ -15,6 +15,8 @@ where this document says so.
   at the front (mates with the semi's `Kingpin` attachment), landing-gear legs (visual) and `Lights`.
 - A **towed car** is any catalog car model with the attribute `Towed = true`: the tow point is a new
   `TowPoint` attachment at the front of its Chassis (add it in `Dev/VehicleBuilder` for every model; rebuild all).
+  A job's towed car also carries the CollectionService tag `Config/Trailers.towedTag` ("TowedCar"; it is no
+  player's car, so it has no `Vehicle` tag), which `TrailerController` watches to pose its wheels for everyone.
 
 ### `Config/Trailers.luau`
 Trailer specs (mass/density, length, wheel radius, axle positions, suspension frequency and damping, lateral
@@ -27,7 +29,10 @@ Raycast suspension and lateral grip for a trailer (or a towed car's wheels that 
 client that owns the tractor (the same assembly once coupled), `RunService.PreSimulation`, mass-independent and
 frame-rate stable like `Vehicle/Chassis` (read it and reuse its approach and clamps). Rolling resistance and
 braking follow the tractor's brake input (passed in). Yaw damping about the hitch resists jackknifing.
-`Trailer.new(model, spec)`, `:step(dt, brake: number)`, `:destroy()`.
+`Trailer.new(model, spec)`, `:step(dt, brake: number)`, `:destroy()`. The trailer brakes at
+`Trailer.brakeDecelFor(spec, tractorBrakeDecel)` (at least `Config/Trailers.brakeRatio` x the tractor's own,
+`:setBrakeDecel`), and off the throttle at the tractor's own lift-off (`Trailer.liftOffDecel(energy, mode, regen)`)
+plus `coastMargin`: `Trailer.brakeInput(controls, telemetry, brakeDecel, liftOffDecel)`.
 
 ### `src/client/Controllers/TrailerController.luau`
 When the local player drives a car that has a coupled trailer or towed car (server sets the attribute
@@ -39,13 +44,18 @@ PreSimulation with the driver's brake input; stops when uncoupled.
 ### `src/server/Services/HitchService.luau`
 - `couple(player, tractor, target): (boolean, string)` — the target is a trailer (semi only, `Kingpin` within
   `Config/Trailers.coupleDistance` and the semi nearly still) or a towed car (pickup / tow truck `TowHitch`
-  within distance). Creates a `BallSocketConstraint` between the two attachments with the configured limits,
+  within distance), lined up within `Config/Trailers.coupleMaxAngle` of the tractor. Creates a `BallSocketConstraint` between the two attachments with the configured limits,
   unanchors the trailer, sets network ownership of both to the driver, sets the `TowingModel` attribute and
   `Towing` ObjectValue, tells AntiExploit the combination's top speed (`setTopSpeed`).
 - `decouple(player, tractor): (boolean, string)` — allowed only inside a depot or yard footprint
-  (`JobDepot` with `jobType = "freight"`, the `County Tow Yard`, or a `TowDrop` location); outside one it **fails
+  (`JobDepot` with `jobType = "freight"`, the `County Tow Yard`, a `TowDrop` or a `TrailerSpawn` location),
+  judged by the **tractor's** hitch (the joint's `Attachment0`; the load is client-simulated and never trusted),
+  and only while the load's hitch point is still within `coupleDistance` of it; outside one it **fails
   gracefully** with a clear message and nothing changes. On success: removes the constraint, parks the trailer
-  (anchored on its legs at its current spot) or hands the towed car to the job.
+  (anchored on its legs at its current spot) or hands the towed car to the job. `droppedAt(target)` then names
+  the drop's site (`siteOf(locationId)`: a depot's id for the depot and its `TrailerSpawn`s, the tow yard's for its
+  `TowDrop`s); JobService counts a decouple stop by that site (or the job car at the stop), never by the load's
+  position.
 - Net `TrailerAction { action = "couple" | "decouple" }` (function): uses the nearest valid target / current
   coupling.
 - Licenses: Net `BuyLicense { license = "freight" }` (function): needs delivery or towing XP above

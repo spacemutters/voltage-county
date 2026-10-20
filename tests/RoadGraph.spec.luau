@@ -45,6 +45,10 @@ local TAG_ATTRIBUTES: { [string]: { string } } = {
 	NoFlyZone = {},
 	DragStripGate = { "index" },
 	CustomShop = {},
+	-- Phase 8: freight depots' trailer spots, the tow yard's drops and the towing job's breakdown spots.
+	TrailerSpawn = { "depot", "trailer" },
+	TowDrop = { "yard" },
+	Breakdown = {},
 }
 -- Volumes and timing gates may span roads; every other location is a pad beside one.
 local SPANS_ROADS: { [string]: boolean } = { FlightZone = true, NoFlyZone = true, DragStripGate = true }
