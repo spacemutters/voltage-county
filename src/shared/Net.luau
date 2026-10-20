@@ -57,6 +57,22 @@ local REMOTES: { [string]: Spec } = {
 		burst = 0,
 		perSecond = 0,
 	},
+	-- Redeem a code (Phase 3). Payload: the code as typed. Returns { ok: boolean, message: string }.
+	RedeemCode = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.string(32),
+		burst = 3,
+		perSecond = 0.2,
+	},
+	-- Server tells one player something short and friendly (a toast); payload { text: string, kind: string? }.
+	Notify = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
 }
 
 local FOLDER_NAME = "Remotes"
