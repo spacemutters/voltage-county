@@ -602,13 +602,13 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 8 — Pickup towing and semi freight
 
 **Tasks**
-- [ ] Tow hitch on the pickup (constraint to trailers and props). Towing jobs: haul broken-down NPC cars to the shop.
-- [ ] Semi: tractor + trailer coupled at the kingpin (BallSocketConstraint), with raycast trailer wheels. Couple and decouple at depots.
-- [ ] Freight contracts (short runs and long hauls around the County Loop) pay the most per minute. The freight license purchase is gated by job XP.
+- [x] Tow hitch on the pickup (constraint to trailers and props). Towing jobs: haul broken-down NPC cars to the shop.
+- [x] Semi: tractor + trailer coupled at the kingpin (BallSocketConstraint), with raycast trailer wheels. Couple and decouple at depots.
+- [x] Freight contracts (short runs and long hauls around the County Loop) pay the most per minute. The freight license purchase is gated by job XP.
 
 **Acceptance**
-- [ ] The semi + trailer completes the County Loop at normal speeds without jackknifing (AutoDriver).
-- [ ] Decoupling outside a depot fails gracefully, and freight payouts land in the §4 band.
+- [x] The semi + trailer completes the County Loop at normal speeds without jackknifing (AutoDriver).
+- [x] Decoupling outside a depot fails gracefully, and freight payouts land in the §4 band.
 
 **Stop.**
 

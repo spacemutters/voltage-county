@@ -2,6 +2,50 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-20 — Phase 8: pickup towing and semi freight
+
+**Shipped**
+- **Trailers:** three original greybox trailers (box, flatbed, tanker) built by `Dev/TrailerBuilder` into
+  `ServerStorage.TrailerModels`. Each has a `Kingpin`, four wheels and landing legs. `Vehicle/Trailer` runs their
+  raycast suspension, grip, braking and anti-jackknife yaw damping on the driver's client, like the car chassis.
+  Every catalog car now has a `TowPoint` (all 80 models rebuilt).
+- **HitchService** (server-authoritative):
+  - couples a semi to a trailer at the kingpin, or a pickup / tow truck to a broken-down car, with a
+    ball-socket joint; distance, angle, stillness and class are all checked
+  - uncoupling works only inside a freight depot, a trailer bay or the County Tow Yard; anywhere else it says why
+    and nothing changes
+  - `T` on keyboard, RB on gamepad, and Couple / Uncouple buttons on touch
+- **Towing jobs** (pickups and service trucks with a hitch): a broken-down car waits on a road shoulder; hook it
+  up and tow it to the County Tow Yard.
+- **Freight jobs** (semi plus the freight license): short runs between 5 depots, or long hauls round the County
+  Loop. The license costs $25,000 and needs level 3 in delivery or towing.
+- **Map:** 5 job depots, 9 trailer bays, 2 tow drops and 12 breakdown spots across every zone (MapCheck clean).
+- **Phone and HUD:** towing and freight offers, license status with a Buy button, a hitch indicator while coupled.
+- Built by 5 helpers, then 2 reviewers. Then I fixed three things from the Studio runs:
+  - a test helper that couldn't remove a field
+  - the drive to a load was paid by a road route that loops round the block when the truck is already parked
+    by it. It is now capped at 1.6× the straight-line distance (`Config/Jobs.approachDetourFactor`).
+  - the tow to the yard was measured ignoring which way the truck faces, so a yard behind the truck paid for
+    1,085 studs while the drive was 2,890. It is now measured the way the truck leaves the shoulder.
+
+**Checked in Studio:**
+- Tests: `TESTS: passed=989 failed=0`.
+- **Semi + box trailer, once round the whole County Loop** (25,931 studs) with the AutoDriver: 257 s, 63 mph
+  average, 67 mph top. **No jackknife:** the trailer swung at most 2.5° on the highway and 67° turning onto it
+  at 25 mph (limit 75°). The hitch never separated, and nothing was reset.
+- **Uncoupling on an open road** (380 studs from a depot): refused with "You can only uncouple at a freight
+  depot or the County Tow Yard."; still hitched. Uncoupling inside the depot then worked.
+- **One freight job end to end:** West Loop Freight Yard to Loop Stop Freight, 11,614 studs, paid $14,621.
+- **One tow end to end:** a broken-down car on South Works Road to the County Tow Yard, paid $4,010.
+- **Pay rates** (6–8 minutes of back-to-back jobs each, level 1):
+  - towing **$1,633/min** vs the §4 target of $1,600 (×1.02)
+  - freight **$3,195/min** vs the §4 target of $3,000 (×1.065), over a short run and two hauls of 12,500 studs
+
+**Open issues**
+- Turning onto the loop at 25 mph swung the trailer to 67°, close to the 75° jackknife line. Fine at
+  highway speed; a sharper player turn could cross it. Phase 14 can look at more yaw damping at low speed.
+- Phone screens at phone resolution are still unchecked (carried over from Phase 4).
+
 ## 2026-10-20 — Phase 7: customization and light shows
 
 ![Six looks each on the Ohm Spark (back) and Ohm Mesa (front)](images/looks-grid-2026-10-20.jpg)

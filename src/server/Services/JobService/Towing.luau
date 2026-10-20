@@ -300,6 +300,9 @@ Towing.props = { spawn = spawnCar, despawn = despawn } :: Props
 type LegCache = { [string]: number | false }
 local legCaches: { [any]: LegCache } = setmetatable({}, { __mode = "k" }) :: any
 
+-- The tow leg from a breakdown to a drop, by road the way the truck faces when it leaves (Towing.poseAt: along
+-- the shoulder). A truck can't turn round on the spot with a car in tow, so a drop behind it is a drive round the
+-- block, and the pay counts that drive.
 local function legBetween(context: Context, from: Location, to: Location): number?
 	local cache = legCaches[context.routeLength]
 	if cache == nil then
@@ -309,7 +312,8 @@ local function legBetween(context: Context, from: Location, to: Location): numbe
 	local key = from.id .. ">" .. to.id
 	local cached = cache[key]
 	if cached == nil then
-		local length = context.routeLength(stopPoint(from), stopPoint(to))
+		local heading = Towing.poseAt(from, context.graph).LookVector
+		local length = context.routeLength(stopPoint(from), stopPoint(to), heading)
 		local entry: number | false = if length ~= nil then length else false
 		cache[key] = entry
 		cached = entry
