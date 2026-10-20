@@ -28,6 +28,11 @@ export type CustomDesign = {
 
 export type CreditReservation = { id: string, amount: number, at: number }
 
+-- A timed earnings boost (from a code). Active while os.time() < endsAt; EconomyService drops expired ones.
+-- Added in schema version 2.
+export type Boost = { id: string, factor: number, endsAt: number } -- endsAt = os.time() seconds
+
+-- Schema version 2 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
 export type PlayerData = {
 	version: number,
 	cash: number,
@@ -50,6 +55,7 @@ export type PlayerData = {
 	pendingGrants: { { kind: string, ref: string } },
 	settings: { units: "mph" | "kph", camera: string, musicVolume: number },
 	firstJoinAt: number,
+	boosts: { Boost }, -- v2: timed earnings boosts
 }
 
 -- Driving -------------------------------------------------------------------------------------------------

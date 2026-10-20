@@ -212,16 +212,73 @@ local function hidePrompts(hide: boolean)
 	end
 end
 
+local WHEEL_NAMES = { "FL", "FR", "RL", "RR" }
+
+-- True once every part the chassis needs has reached this client: the Chassis and the four wheels with their
+-- motors (model contract). With streaming on, the Driver seat can arrive a moment before the rest of the car.
+local function carIsReady(car: Model): boolean
+	if car:FindFirstChild("Chassis") == nil then
+		return false
+	end
+	local wheels = car:FindFirstChild("Wheels")
+	if wheels == nil then
+		return false
+	end
+	for _, name in WHEEL_NAMES do
+		local wheel = wheels:FindFirstChild(name)
+		if wheel == nil or wheel:FindFirstChild("Motor") == nil then
+			return false
+		end
+	end
+	return true
+end
+
+-- Bumped on every seat change, so a wait for an older seat gives up once the player has moved on.
+local seatGeneration = 0
+
 local function onSeatChanged(humanoid: Humanoid)
 	hidePrompts(humanoid.SeatPart ~= nil)
 	local car = carForSeat(humanoid.SeatPart)
 	if session and session.car == car then
 		return
 	end
+	seatGeneration += 1
 	stopDriving()
-	if car then
-		startDriving(car)
+	if car == nil then
+		return
 	end
+	if carIsReady(car) then
+		startDriving(car)
+		return
+	end
+	-- Wait (event-driven) for the rest of the car, then start if the player is still in this seat.
+	local generation = seatGeneration
+	local seat = humanoid.SeatPart
+	local done = false
+	local connection: RBXScriptConnection
+	local function finish(ready: boolean)
+		if done then
+			return
+		end
+		done = true
+		connection:Disconnect()
+		if generation ~= seatGeneration or humanoid.SeatPart ~= seat then
+			return
+		end
+		if ready then
+			startDriving(car)
+		else
+			warn(`[DriveController] {car.Name} didn't finish arriving within {Controls.carReadyTimeout} s`)
+		end
+	end
+	connection = car.DescendantAdded:Connect(function()
+		if carIsReady(car) then
+			finish(true)
+		end
+	end)
+	task.delay(Controls.carReadyTimeout, function()
+		finish(carIsReady(car))
+	end)
 end
 
 local seatConnection: RBXScriptConnection? = nil

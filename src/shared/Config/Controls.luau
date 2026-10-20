@@ -104,6 +104,10 @@ local Controls = {
 	defaultMode = "standard" :: Types.DriveMode,
 	defaultRegen = "standard" :: Types.RegenLevel,
 
+	-- With streaming on, the Driver seat can reach this client a moment before the rest of the car. Driving
+	-- starts once the car's Chassis and four wheels have arrived, waiting at most this many seconds.
+	carReadyTimeout = 5,
+
 	-- The local car's own brake and reverse lamps (Lights/Brake and Lights/Reverse in the model contract).
 	lamps = {
 		pedalThreshold = 0.1, -- pedal travel (0..1) that counts as braking

@@ -36,7 +36,7 @@ return function(t: Harness.Api)
 		end)
 
 		t.it("prices an upgrade trim as base plus upgrade", function()
-			t.expect(Catalog.totalPrice("ohm_arc", "boost")).toBe(4000000)
+			t.expect(Catalog.totalPrice("ohm_arc", "boost")).toBe(7000000)
 			t.expect(Catalog.totalPrice("ohm_arc", "flight")).toBe(nil)
 		end)
 

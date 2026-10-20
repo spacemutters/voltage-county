@@ -2,6 +2,70 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-20 — Phase 3: data, economy, drive-to-earn
+
+**Shipped**
+- **DataService** (ProfileStore, vendored):
+  - session locking, autosave, `get` / `update` / `waitFor` / `onLoaded`
+  - schema **version 2** (timed `boosts`) with ordered migrations that never drop a field
+  - kicks with a plain message if a save can't load or opens on another server
+  - Studio uses a separate store (`PlayerData_Studio`), so playtests never touch live player data; an
+    in-memory mock takes over when DataStores aren't reachable
+- **EconomyService:** `add` / `trySpend` (whole dollars, never below zero, capped), earnings multiplier from
+  boosts, every change logged to Roblox economy analytics, cash mirrored to the `Cash` attribute.
+- **Codes:** `VOLTAGE` ($5,000) and `DOUBLEUP` (2× earnings for 30 minutes) are launch placeholders; `PREVIEW`
+  is already expired on purpose. Each code works once per player, is case-insensitive and rate-limited.
+- **Drive-to-earn:** the server samples each driven car once a second, pays every minute for distance
+  driven on roads (capped), and pays nothing when the car hasn't really moved in 2 minutes (AFK) or its
+  2-minute area is too small (circling in a lot). Each payout shows as a toast.
+- **HUD:** cash readout at all times, plus a small Codes button (moves into the phone in Phase 4).
+- **Dev tools:** `EarnTests` (drive / park / circle) and `EconSim` (below).
+- **Fix during testing:** with streaming on, the Driver seat can reach the client a moment before the rest
+  of the car. DriveController now waits (up to 5 s, event-driven) for the Chassis and wheels.
+- **Tuning:** the Arc is now $2.0M (plan said $1.5M) and the Arc Boost upgrade $5.0M (plan said $2.5M);
+  the hypercar band is $1.5M–$8M. Freight's $3,000/min otherwise gets a mid player to them far faster than
+  §4's targets.
+- Built by 3 helpers, then 2 reviewers. They found 6 issues (2 serious, 4 minor), and all were fixed.
+
+**Checked in Studio** (published place, connector):
+- Tests: `TESTS: passed=326 failed=0`.
+- Data loads in 0.7 s. **Cash survives stopping and restarting play** ($7,500 before and after).
+- Codes:
+  - `VOLTAGE` added $5,000; using it again → "You've already used that code".
+  - `PREVIEW` → "Sorry, that code has expired".
+  - A fourth try within seconds is refused by the rate limit.
+- Drive 2 minutes with the AutoDriver: **$612, $306/min** (§4 target $300). Minute 1 was $294 over 3,762
+  studs; minute 2 was $318 over 4,062.
+- Parked 3 minutes: **$0** (AFK each minute).
+- Circles in a lot for 2 minutes: **$0** (the car only covered a 38-stud area, so the AFK rule caught it).
+- Tests after the price change, rerun in a fresh playtest: 326 passed, 0 failed. In Edit mode Studio keeps old
+  module copies between runs, so config changes need a playtest to show.
+
+**EconSim** (hours of play to each milestone, before the Arc price change; target in brackets):
+
+| Milestone | Target | Casual | Casual+VIP | Mid | Mid+VIP | Grinder | Grinder+VIP |
+|---|---|---|---|---|---|---|---|
+| New Ohm Spark | ~0.5 | 0.88 | 0.75 | 0.55 | 0.47 | 0.48 | 0.40 |
+| Crossover or pickup | 1–2 | 3.32 | 2.82 | 2.05 | 1.72 | 1.78 | 1.50 |
+| Semi | 4–5 | 7.97 | 6.72 | 4.83 | 4.02 | 4.20 | 3.50 |
+| Ohm Arc | 15–20 | 22.38 | 18.78 | 13.20 | 11.00 | 11.47 | 9.57 |
+| Arc Boost | 40–50 | 46.42 | 38.90 | 27.15 | 22.60 | 23.60 | 19.65 |
+
+Rerun with the new Arc prices ($2.0M, upgrade $5.0M); the first three rows are unchanged:
+
+| Milestone | Target | Casual | Casual+VIP | Mid | Mid+VIP | Grinder | Grinder+VIP |
+|---|---|---|---|---|---|---|---|
+| Ohm Arc | 15–20 | 27.18 | 22.82 | **15.98** | 13.32 | 13.90 | 11.58 |
+| Arc Boost | 40–50 | 75.25 | 63.05 | **43.88** | 36.53 | 38.13 | 31.77 |
+
+The mid player is on target everywhere except the crossover/pickup at 2.05 h (target 1–2 h, slightly over).
+
+**Open issues**
+- Launch code names and amounts are placeholders. Davis picks the real ones before launch.
+- Desktop chat sits in the top-left corner by default and can overlap the cash readout. Phase 4's HUD
+  redesign moves cash.
+- Drive-to-earn doesn't add to `stats.milesDriven` yet (no phase owns it). Add it with the Phase 4 garage stats.
+
 ## 2026-10-19 — Phase 2: greybox county, road graph, GPS
 
 ![Voltage County from above](images/county-topdown-2026-10-19.jpg)

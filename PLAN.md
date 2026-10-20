@@ -491,21 +491,21 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 3 — Data, economy, drive-to-earn
 
 **Tasks**
-- [ ] `DataService`:
+- [x] `DataService`:
   - ProfileStore with session locking and autosave.
   - `Get` / `Update`, schema `version`, and ordered migrations.
   - In-memory mock when API access is off.
-- [ ] `EconomyService`: `Add(player, amount, reason)` and `TrySpend(player, amount, reason)`. Every change is logged as an analytics economy event.
-- [ ] Drive-to-earn. The server samples each driven car once per second and pays per minute for distance driven on roads (checked with `Graph`). It pays nothing when:
+- [x] `EconomyService`: `Add(player, amount, reason)` and `TrySpend(player, amount, reason)`. Every change is logged as an analytics economy event.
+- [x] Drive-to-earn. The server samples each driven car once per second and pays per minute for distance driven on roads (checked with `Graph`). It pays nothing when:
   - the car has made no meaningful movement for 120 s (AFK)
   - the car's 2-minute bounding box is under a threshold (loop farming)
-- [ ] Codes: `Config/Codes.luau` with UTC expiry and an effect (cash, or a timed earnings multiplier); one redemption per player.
-- [ ] `Dev/EconSim.luau` per §4.
+- [x] Codes: `Config/Codes.luau` with UTC expiry and an effect (cash, or a timed earnings multiplier); one redemption per player.
+- [x] `Dev/EconSim.luau` per §4.
 
 **Acceptance**
-- [ ] Specs pass for economy math, code expiry, and migrations.
-- [ ] AutoDriver drives 2 minutes → payout lands in the §4 band. Parked 3 minutes → no payout. 2 minutes of circles in a lot → no payout.
-- [ ] Cash survives stopping and restarting play (with API access on).
+- [x] Specs pass for economy math, code expiry, and migrations.
+- [x] AutoDriver drives 2 minutes → payout lands in the §4 band. Parked 3 minutes → no payout. 2 minutes of circles in a lot → no payout.
+- [x] Cash survives stopping and restarting play (with API access on).
 
 **Stop.**
 
