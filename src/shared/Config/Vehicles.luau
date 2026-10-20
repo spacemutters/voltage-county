@@ -391,6 +391,8 @@ local Vehicles: { [string]: Vehicle } = {
 			chassisHeight = 1.9,
 		},
 		features = { "thrusters" },
+		-- Phase 10: every Arc trim has the quickest 0-60 and the most handling (grip) of any car in the game, and
+		-- beats the best any other class band allows, so no exotic design can match it (tests/Tuning.spec).
 		trims = {
 			{
 				id = "performance",
@@ -398,10 +400,10 @@ local Vehicles: { [string]: Vehicle } = {
 				acquisition = "dealership",
 				price = 2000000, -- PLAN §3.2 said 1.5M; raised so the Arc lands at ~16 h (EconSim, §4 target 15-20 h)
 				topSpeedMph = 220,
-				zeroToSixtySec = 1.9,
+				zeroToSixtySec = 1.8,
 				energyMinutes = 25,
 				seats = 2,
-				handling = 0.92,
+				handling = 0.96,
 				drive = "AWD",
 			},
 			{
@@ -414,7 +416,7 @@ local Vehicles: { [string]: Vehicle } = {
 				zeroToSixtySec = 1.4,
 				energyMinutes = 22,
 				seats = 2,
-				handling = 0.95,
+				handling = 0.98,
 				drive = "AWD",
 			},
 			{
@@ -426,7 +428,7 @@ local Vehicles: { [string]: Vehicle } = {
 				zeroToSixtySec = 1.2,
 				energyMinutes = 18,
 				seats = 1,
-				handling = 0.97,
+				handling = 1,
 				drive = "AWD",
 			},
 		},

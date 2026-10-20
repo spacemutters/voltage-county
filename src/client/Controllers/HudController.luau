@@ -15,6 +15,10 @@
 -- Controllers/HailController) the whole HUD hides and the touch controls unmount (letting go of anything held);
 -- both come back when it clears.
 --
+-- Phase 10: the ability chip in the hitch row's place while driving a car with a thruster ability
+-- (AbilityController calls setAbility), the ability key's entry in the hint row only then (hintsFor), and on touch
+-- the Boost / Fly button in UI/TouchControls, whose press fires onAbility (AbilityController asks the server).
+--
 -- Telemetry is read from DriveController about 10 times a second (Heartbeat plus an accumulator, connected
 -- only while driving), and the tree re-renders only when a shown value changes. Speed shows in the player's
 -- units (mph or km/h) from ProfileController. Cash comes from the player's `Cash` attribute, which the server
@@ -89,6 +93,7 @@ export type Charging = Hud.Charging
 export type Hitch = Hud.Hitch
 export type HitchAction = Hud.HitchAction
 export type FleetChipPlacement = Hud.FleetChipPlacement
+export type AbilityChip = Hud.AbilityChip
 
 -- Everything the tree shows. render() hands a copy to the App component.
 type View = {
@@ -108,6 +113,7 @@ type View = {
 	cash: number?, -- nil until the player's data has loaded
 	job: ActiveJob?,
 	hitch: Hitch?, -- nil: no hitch row
+	ability: AbilityChip?, -- nil: no ability chip, no Boost / Fly button, no ability hint
 	fleetReady: number?, -- the fleet's uncollected $ while the chip shows (nil: no chip)
 	cutscene: boolean, -- a pod ride's cutscene is playing: the HUD is hidden
 }
@@ -122,6 +128,9 @@ HudController.onInputKindChanged = InputController.newSignal()
 -- Fires (action: HitchAction) when the player taps the hitch row's Couple or Uncouple button
 -- (HitchInputController sends it to the server).
 HudController.onHitch = InputController.newSignal()
+
+-- Fires () when the player presses the touch Boost / Fly button (AbilityController asks the server).
+HudController.onAbility = InputController.newSignal()
 
 -- Fires () when the player taps the fleet chip (PhoneController opens the Fleet app; it can't be required here,
 -- since it requires this module).
@@ -144,6 +153,7 @@ local view: View = {
 	cash = nil,
 	job = nil,
 	hitch = nil,
+	ability = nil,
 	fleetReady = nil,
 	cutscene = false,
 }
@@ -156,11 +166,17 @@ local lastMph = 0 -- the latest telemetry speed, so a units switch redraws at on
 -- Declared with the pure helpers below; App places the charging card and labels the hitch button with them.
 local chargingCardRect: (screen: Vector2, context: Layout.Context, hitch: boolean?) -> Layout.Rect
 local hitchKeyFor: (kind: InputKind) -> string?
+local abilityKeyFor: (kind: InputKind) -> string?
 local fleetChipPlacement: (screen: Vector2, context: Layout.Context) -> FleetChipPlacement?
 
 -- The hitch row's button was tapped: HitchInputController takes it from here.
 local function onHitchTapped(action: HitchAction)
 	HudController.onHitch:Fire(action)
+end
+
+-- The touch Boost / Fly button was pressed: AbilityController takes it from here.
+local function onAbilityPressed()
+	HudController.onAbility:Fire()
 end
 
 -- The fleet chip was tapped: PhoneController opens the Fleet app.
@@ -175,12 +191,15 @@ local function App(props: View)
 	local touch = props.inputKind == "touch"
 	local charging = if props.driving then props.charging else nil
 	local hitch = if props.driving then props.hitch else nil
+	local ability = if props.driving then props.ability else nil
+	local showTouchControls = props.driving and touch and not props.cutscene
+	-- The ability chip takes the hitch row's place, so the charging card keeps clear of it the same way.
 	local chargingRect = if charging
 		then chargingCardRect(props.screen, {
 			driving = true,
 			touch = touch,
 			hints = showHints,
-		}, hitch ~= nil)
+		}, hitch ~= nil or ability ~= nil)
 		else nil
 	local fleetReady = props.fleetReady
 	local fleetPlacement = if fleetReady ~= nil
@@ -211,12 +230,16 @@ local function App(props: View)
 			hitch = hitch,
 			hitchKey = hitchKeyFor(props.inputKind),
 			onHitch = onHitchTapped,
+			ability = ability,
+			abilityKey = abilityKeyFor(props.inputKind),
 			fleetReady = if fleetPlacement ~= nil then fleetReady else nil,
 			fleetPlacement = fleetPlacement,
 			onFleetChip = onFleetChipTapped,
 		}),
 		-- Unmounted (not just hidden) during a cutscene, so a held pedal or steering zone lets go.
-		TouchControls = if props.driving and touch and not props.cutscene then e(TouchControls, {}) else nil,
+		TouchControls = if showTouchControls
+			then e(TouchControls, { ability = ability, onAbility = onAbilityPressed })
+			else nil,
 		DevSpawnMenu = if props.showDevMenu
 			then e("Frame", {
 				Position = UDim2.fromOffset(0, DEV_MENU_TOP),
@@ -256,9 +279,24 @@ function HudController.speedFor(mph: number, units: string): number
 	return math.round(absolute)
 end
 
--- The HUD hint row for keyboard or gamepad: the driving keys, then the phone key.
-function HudController.hintsFor(kind: "keyboard" | "gamepad"): { InputController.HintItem }
+-- The HUD hint row for keyboard or gamepad: the driving keys, then the phone key. With `withAbility` false the
+-- ability key's entry is left out (the player isn't driving a car with a thruster ability).
+function HudController.hintsFor(kind: "keyboard" | "gamepad", withAbility: boolean?): { InputController.HintItem }
 	local hints = InputController.getHints(kind)
+	if withAbility == false then
+		-- getHints writes the ability entry as its first key's cap and its label: drop exactly that one.
+		local abilityKey = HudController.abilityKeyFor(kind)
+		for _, hint in Controls.hints[kind] do
+			if table.find(hint.actions, "ability") == nil then
+				continue
+			end
+			for index = #hints, 1, -1 do
+				if hints[index].keys == abilityKey and hints[index].label == hint.label then
+					table.remove(hints, index)
+				end
+			end
+		end
+	end
 	table.insert(hints, { keys = PhoneConfig.keyGlyphs[kind], label = PhoneConfig.hud.phoneHint })
 	return hints
 end
@@ -350,6 +388,21 @@ function HudController.hitchKeyFor(kind: InputKind): string?
 	return if kind == "gamepad" then Controls.gamepadGlyphs[key.Name] or key.Name else key.Name
 end
 hitchKeyFor = HudController.hitchKeyFor
+
+-- The key cap the ability chip wears for keyboard and gamepad players: the first ability key in Config/Controls
+-- ("Q"), or its gamepad glyph ("L3"). nil on touch, where the Boost / Fly button is the control.
+function HudController.abilityKeyFor(kind: InputKind): string?
+	if kind == "touch" then
+		return nil
+	end
+	local keys: { Enum.KeyCode } = if kind == "gamepad" then Controls.gamepad.ability else Controls.keyboard.ability
+	local key = keys[1]
+	if key == nil then
+		return nil
+	end
+	return if kind == "gamepad" then Controls.gamepadGlyphs[key.Name] or key.Name else key.Name
+end
+abilityKeyFor = HudController.abilityKeyFor
 
 -- What the charging card must stay clear of while driving on `screen` (UI-scale-1 pixels): the speed panel, the
 -- phone button, the cash readout with its job slot, the GPS route chip (top right), the notices band (top
@@ -519,7 +572,7 @@ end
 
 local function setInputKind(kind: InputKind)
 	view.inputKind = kind
-	view.hints = if kind == "touch" then nil else HudController.hintsFor(kind)
+	view.hints = if kind == "touch" then nil else HudController.hintsFor(kind, view.ability ~= nil)
 end
 
 -- The controls the player is using right now ("keyboard", "gamepad" or "touch").
@@ -572,6 +625,35 @@ function HudController.setHitch(hitch: Hitch?)
 		return
 	end
 	view.hitch = if hitch then table.clone(hitch) else nil
+	render()
+end
+
+-- Ability (Phase 10) ----------------------------------------------------------------------------------------------
+
+-- Shows the ability chip (and on touch the Boost / Fly button) for the car being driven, or hides them (nil).
+-- AbilityController calls it whenever what they show changes; an unchanged chip doesn't redraw.
+function HudController.setAbility(ability: AbilityChip?)
+	local current = view.ability
+	if current == nil and ability == nil then
+		return
+	end
+	if
+		current ~= nil
+		and ability ~= nil
+		and current.label == ability.label
+		and current.status == ability.status
+		and current.state == ability.state
+		and current.fill == ability.fill
+		and current.seconds == ability.seconds
+		and current.busy == ability.busy
+	then
+		return
+	end
+	local toggled = (current == nil) ~= (ability == nil)
+	view.ability = if ability then table.clone(ability) else nil
+	if toggled then
+		setInputKind(view.inputKind) -- the hint row gains or loses the ability key
+	end
 	render()
 end
 

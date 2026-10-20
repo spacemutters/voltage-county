@@ -634,23 +634,23 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 10 — Hypercar and thrusters
 
 **Tasks**
-- [ ] Arc tuning: the best acceleration and grip in the game.
-- [ ] **Boost-hop** (Arc Boost):
+- [x] Arc tuning: the best acceleration and grip in the game.
+- [x] **Boost-hop** (Arc Boost):
   - Forward + upward impulse lasting about 2 s, with a 20 s cooldown; only above 20 mph.
   - White cold-gas plume VFX (not flames) plus SFX.
   - Blocked in `NoFlyZone`s.
-- [ ] **Flight** (Arc Flight, limited):
+- [x] **Flight** (Arc Flight, limited):
   - Hover up to 25 studs, with roll/flip input for up to 4 s, then a controlled landing.
   - 45 s cooldown.
   - Only inside `FlightZone`s (Mesa Test Site, open fields), to prevent roof-camping and griefing.
-- [ ] `AbilityService`: the client requests → the server validates ownership, trim, cooldown and zone → the owner client applies the impulses → the server checks the resulting velocity stays in bounds.
-- [ ] Unstuck routine after landing; a car is never left inside geometry.
-- [ ] Mesa Test Site: ramps, landing zones, and a drag strip with server-timed gates and a weekly leaderboard (OrderedDataStore keyed by week).
+- [x] `AbilityService`: the client requests → the server validates ownership, trim, cooldown and zone → the owner client applies the impulses → the server checks the resulting velocity stays in bounds.
+- [x] Unstuck routine after landing; a car is never left inside geometry.
+- [x] Mesa Test Site: ramps, landing zones, and a drag strip with server-timed gates and a weekly leaderboard (OrderedDataStore keyed by week).
 
 **Acceptance**
-- [ ] Forged ability requests can't beat the cooldown or work outside allowed zones.
-- [ ] 50 automated hops and flights all end with the car upright and unstuck.
-- [ ] Drag-strip timing is within ±0.05 s of the server clock.
+- [x] Forged ability requests can't beat the cooldown or work outside allowed zones.
+- [x] 50 automated hops and flights all end with the car upright and unstuck.
+- [x] Drag-strip timing is within ±0.05 s of the server clock.
 
 **Stop.**
 

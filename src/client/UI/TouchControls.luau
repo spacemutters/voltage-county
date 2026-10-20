@@ -5,8 +5,12 @@
 --   left side     two steering hold zones (left and right)
 --   right side    brake and gas pedals (press and hold), the handbrake above the brake
 --   top right     drive mode, camera and exit buttons
+--   above gas     Phase 10, only in a car with a thruster ability: the Boost / Fly button (what a press does now,
+--                 with "Ready" or the seconds left under it), and the gas pedal shortens to make room
+--                 (Config/Controls touch.abilityGasSize), so the pedal block keeps its size
 --
--- Held controls write InputController.setTouchState; the buttons call InputController.trigger. Every control
+-- Held controls write InputController.setTouchState; the buttons call InputController.trigger, and the Boost /
+-- Fly button calls `onAbility` the moment it is pressed (HudController hands it to AbilityController). Every control
 -- tracks its own touches, so steering and gas work at the same time (multi-touch), and a finger that slides
 -- off a pedal still releases it when it lifts. Sizes come from Config/Controls (all at least 44 px).
 
@@ -15,6 +19,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React = require(ReplicatedStorage.Packages.React)
 local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local InputController = require(script.Parent.Parent.Controllers.InputController)
+local Hud = require(script.Parent.Hud)
 
 local e = React.createElement
 
@@ -166,7 +171,66 @@ local function TapButton(props: Placement & { label: string, onTap: () -> () })
 	})
 end
 
-local function TouchControls(_props: {})
+-- The Boost / Fly button (Phase 10): fires `onPress` the moment a finger lands on it (a boost shouldn't wait for
+-- the finger to lift). Filled with the accent while ready; a panel with dim words while recharging or while a
+-- request is with the server; raised while the ability runs.
+local function AbilityButton(props: Placement & { ability: Hud.AbilityChip, onPress: () -> () })
+	local theme = Controls.theme
+	local touch = Controls.touch
+	local ability = props.ability
+	local ready = ability.state == "ready" and not ability.busy
+	local running = ability.state == "active"
+	local fill = if ready then theme.accent elseif running then theme.panelRaised else theme.panel
+	local ink = if ready then theme.onAccent elseif running then theme.text else theme.textDim
+	local seconds = ability.seconds
+	local status = if ability.state == "recharging" and seconds ~= nil
+		then string.format(Controls.hud.abilityChip.secondsFormat, seconds)
+		else ability.status
+	local onPress = React.useRef(props.onPress)
+	onPress.current = props.onPress
+	local onInputBegan = React.useCallback(function(_button: GuiObject, input: InputObject)
+		if isPress(input) and input.UserInputState == Enum.UserInputState.Begin then
+			onPress.current()
+		end
+	end, {})
+	local function line(order: number, text: string, font: Font, size: number)
+		return e("TextLabel", {
+			LayoutOrder = order,
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			FontFace = font,
+			Text = text,
+			TextColor3 = ink,
+			TextSize = size,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+		})
+	end
+	return e("TextButton", {
+		AnchorPoint = props.anchor,
+		Position = props.position,
+		Size = UDim2.fromOffset(props.size.X, props.size.Y),
+		BackgroundColor3 = fill,
+		BackgroundTransparency = if ready or running then 0 else theme.panelTransparency,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Selectable = false,
+		Text = "",
+		[React.Event.InputBegan] = onInputBegan,
+	}, {
+		Corner = e("UICorner", { CornerRadius = UDim.new(0, touch.cornerRadius) }),
+		Layout = e("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}),
+		Label = line(1, ability.label, theme.fonts.bold, touch.labelTextSize),
+		Status = line(2, status, theme.fonts.medium, touch.abilityStatusTextSize),
+	})
+end
+
+local function TouchControls(props: { ability: Hud.AbilityChip?, onAbility: (() -> ())? })
 	local touch = Controls.touch
 	local margin, gap = touch.margin, touch.gap
 	local labels = touch.labels
@@ -190,6 +254,10 @@ local function TouchControls(_props: {})
 
 	local pedalColumn = margin + touch.gasSize.X + gap -- right edge offset of the brake / handbrake column
 	local buttonStep = touch.buttonSize.X + gap
+	-- In a car with a thruster ability the gas pedal shortens and the Boost / Fly button sits above it.
+	local ability = props.ability
+	local gasSize = if ability then touch.abilityGasSize else touch.gasSize
+	local onAbility = props.onAbility
 
 	return e("Frame", {
 		Size = UDim2.fromScale(1, 1),
@@ -216,7 +284,7 @@ local function TouchControls(_props: {})
 		Gas = e(HoldButton, {
 			anchor = Vector2.new(1, 1),
 			position = UDim2.new(1, -margin, 1, -margin),
-			size = touch.gasSize,
+			size = gasSize,
 			label = labels.gas,
 			onHeldChanged = function(held: boolean)
 				InputController.setTouchState({ throttle = if held then 1 else 0 })
@@ -240,6 +308,19 @@ local function TouchControls(_props: {})
 				InputController.setTouchState({ handbrake = held })
 			end,
 		}),
+		Ability = if ability
+			then e(AbilityButton, {
+				anchor = Vector2.new(1, 1),
+				position = UDim2.new(1, -margin, 1, -(margin + gasSize.Y + gap)),
+				size = touch.abilitySize,
+				ability = ability,
+				onPress = function()
+					if onAbility then
+						onAbility()
+					end
+				end,
+			})
+			else nil,
 		Exit = e(TapButton, {
 			anchor = Vector2.new(1, 0),
 			position = UDim2.new(1, -margin, 0, margin),

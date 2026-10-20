@@ -2,6 +2,52 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-20 — Phase 10: hypercar thrusters and the drag strip
+
+**Shipped**
+- **Arc tuning:** every Arc trim now has the quickest 0–60 and the most grip in the game (Arc 1.8 s, Boost 1.4 s,
+  Flight 1.2 s; handling 0.96 / 0.98 / 1.0), above anything another class band allows (spec).
+- **Boost-hop** (Arc Boost and Arc Flight): `Q`, a gamepad button or the touch **Boost** button. About 2 s of
+  forward and upward push, 20 s recharge, only above 20 mph, never in a no-fly zone. White cold-gas plumes from
+  the thrusters, seen by every player, plus a hiss (silent until a sound is uploaded).
+- **Flight** (Arc Flight, limited drops only): over the Flight Field, hover up to 25 studs for 4 s; steer to roll,
+  throttle and brake to pitch and flip; then a controlled landing. 45 s recharge.
+- **AbilityService** (server-authoritative): checks driver, owner, trim, recharge, another ability running, zone
+  (by the car's server position) and speed (the server's own view). It opens a per-car speed allowance only for the
+  window and checks the car stayed within bounds. After landing it checks the car is upright and not inside the
+  map, and resets it to the road if not.
+- **Drag strip** at the Mesa Test Site: stop behind gate 1 to arm, then the server times the run. It interpolates
+  each gate crossing between frames, gives splits at gates 2 and 3, and faults on leaving the strip, a reset or
+  thrusters. **Weekly leaderboard** (a separate board per ISO week; Studio uses its own dev board) on an
+  in-world sign at the strip.
+- HUD chip with the recharge ring.
+- Built by 4 helpers, then 2 reviewers. They found 6 issues (2 serious), all fixed:
+  - the weekly board accepted impossibly fast times; each trim now has a physics floor and anything under 90 %
+    of it is refused
+  - the hop got weaker the higher a player's ping; it is now timed from the client's first push
+  - cooldowns reset on rejoin; they now follow the player
+  - an out-of-bounds car is put back at its last legal spot
+
+**Checked in Studio:**
+- Tests: `TESTS: passed=1191 failed=0`.
+- **Forged requests:** every one refused with the car unchanged:
+  - a hop standing still and at 10 mph
+  - a second hop mid-hop and while recharging
+  - flight in an Arc Boost; boost or flight in a plain Arc and an Ohm Spark
+  - flight outside the Flight Field
+  - boost and flight inside the No-Fly Zone
+- **50 boost-hops**, all upright on four wheels, none stuck, no resets (about 10.5 studs high).
+- **50 flights** with scripted rolls (up to 136° in the air) and throttle input, all landing level on four wheels,
+  none stuck (hover about 25.8 studs).
+- **Drag strip, two runs:** an Arc ran 8.353 s and 8.318 s. The server's time matched the client's own
+  measurement within 0.001 s and 0.035 s, and the splits within 0.022 s (limit ±0.05 s).
+- After the review fixes, a shorter rerun (the forged requests, 5 hops, 5 flights, the drag run) passed all
+  46 checks.
+
+**Open issues**
+- Thruster sound is silent until a sound asset is uploaded (same as the light-show music).
+- The leaderboard sign and the HUD chip haven't been looked at on screen.
+
 ## 2026-10-20 — Phase 9: robotaxi fleet, ambient traffic, hail a pod
 
 **Shipped**

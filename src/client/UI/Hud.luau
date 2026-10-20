@@ -24,6 +24,11 @@
 --                   "Nearby <name>" with a Couple button. On keyboard and gamepad the button wears its key cap (T,
 --                   RB), like the phone button. As wide as the job slot and a button tall, so it stays above the
 --                   touch steering zones and left of the light-show button on the smallest landscape phone.
+--   ability chip    in the hitch row's place while driving a car with a thruster ability (Phase 10, Controllers/
+--                   AbilityController; an Arc has no hitch, and a hitch row would win): a ring that fills as the
+--                   ability recharges (an up arrow inside when ready, the seconds left while recharging), what a
+--                   press does ("Boost", "Fly") and whether it is ready, with its key cap (Q, L3) on keyboard and
+--                   gamepad. Config/Controls hud.abilityChip.
 --   fleet chip      once the robotaxi fleet has PhoneConfig.hud.fleetChip.threshold or more waiting (Phase 9): a
 --                   small "$1,240 ready" chip with a little pod drawn on it. Right of the cash, or under the cash
 --                   column on a portrait phone driving on touch (HudController.fleetChipPlacement picks, and leaves
@@ -93,6 +98,17 @@ export type Hitch = {
 -- Where the fleet chip goes (HudController.fleetChipPlacement): right of the cash, or under the cash column.
 export type FleetChipPlacement = "beside" | "below"
 
+-- The ability chip (Phase 10), as Controllers/AbilityController works it out. The touch Boost / Fly button
+-- (UI/TouchControls) shows the same.
+export type AbilityChip = {
+	label: string, -- what a press does: "Boost" or "Fly" (the running ability while one runs)
+	status: string, -- "Ready", "Recharging", "Boosting", "Flying" or "Landing"
+	state: "ready" | "active" | "recharging",
+	fill: number, -- 0..1: how full the ring is (1 = ready)
+	seconds: number?, -- whole seconds until ready, while recharging
+	busy: boolean, -- a request is with the server
+}
+
 -- The car is charging or fueling right now.
 export type Charging = {
 	kind: "battery" | "fuel",
@@ -117,6 +133,8 @@ export type Props = {
 	hitch: Hitch?, -- nil: nothing coupled and nothing near, no hitch row
 	hitchKey: string?, -- the key cap on the hitch button ("T", "RB"); nil on touch
 	onHitch: ((action: HitchAction) -> ())?, -- the hitch button was tapped
+	ability: AbilityChip?, -- nil: not driving a car with a thruster ability, no chip
+	abilityKey: string?, -- the key cap on the ability chip ("Q", "L3"); nil on touch
 	fleetReady: number?, -- the fleet's uncollected $ for the fleet chip; nil: no chip
 	fleetPlacement: FleetChipPlacement?, -- where the chip goes (nil: no chip)
 	onFleetChip: (() -> ())?, -- the fleet chip was tapped
@@ -1030,6 +1048,187 @@ local function HitchRow(props: {
 	})
 end
 
+-- The ability chip (Phase 10) ---------------------------------------------------------------------------------
+
+-- A hard step half way along a UIGradient: opaque over its first half, clear over the second.
+local HALF_STEP = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0),
+	NumberSequenceKeypoint.new(0.5, 0),
+	NumberSequenceKeypoint.new(0.5001, 1),
+	NumberSequenceKeypoint.new(1, 1),
+})
+
+-- An up arrow ("^") from two rounded bars, centred in its parent, so it needs no image asset.
+local function UpArrow(props: { color: Color3 })
+	local chip = Controls.hud.abilityChip
+	local size = chip.chevronSize
+	local thickness = chip.chevronThickness
+	-- Each bar runs from an open end to the tip; the extra half thickness makes them overlap at the tip.
+	local length = size * math.sqrt(0.5) + thickness / 2
+	local quarter = size / 4
+	local function bar(offsetX: number, rotation: number)
+		return e("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, offsetX, 0.5, 0),
+			Size = UDim2.fromOffset(thickness, length),
+			Rotation = rotation,
+			BackgroundColor3 = props.color,
+			BorderSizePixel = 0,
+		}, {
+			Corner = e("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+		})
+	end
+	-- A vertical bar turned +45 degrees reads "/", -45 reads "\"; "^" is "/" then "\".
+	return e("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(size, size),
+		BackgroundTransparency = 1,
+	}, {
+		Rising = bar(-quarter, 45),
+		Falling = bar(quarter, -45),
+	})
+end
+
+-- A ring filled clockwise from the top to `fill` (0..1), drawn from frames: each half of a disc in `color` is
+-- clipped to its own side and swept round by a gradient with a hard step, over a full disc in the track color,
+-- and a hole in `hole` in the middle (holding `inside`) makes it a ring. No image assets.
+local function Ring(props: { fill: number, color: Color3, hole: Color3, inside: any? })
+	local chip = Controls.hud.abilityChip
+	local size = chip.ringSize
+	local half = size / 2
+	local fill = math.clamp(props.fill, 0, 1)
+	local holeSize = size - 2 * chip.ringThickness
+
+	-- The right half holds 0..50 % (the gradient turned 0..180 degrees), the left half 50..100 % (180..360).
+	local function side(left: boolean, rotation: number)
+		return e("Frame", {
+			Position = UDim2.fromOffset(if left then 0 else half, 0),
+			Size = UDim2.fromOffset(half, size),
+			BackgroundTransparency = 1,
+			ClipsDescendants = true,
+			ZIndex = 2,
+		}, {
+			Disc = e("Frame", {
+				Position = UDim2.fromOffset(if left then 0 else -half, 0),
+				Size = UDim2.fromOffset(size, size),
+				BackgroundColor3 = props.color,
+				BorderSizePixel = 0,
+			}, {
+				Corner = e("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+				Sweep = e("UIGradient", { Rotation = rotation, Transparency = HALF_STEP }),
+			}),
+		})
+	end
+
+	return e("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, chip.padding, 0.5, 0),
+		Size = UDim2.fromOffset(size, size),
+		BackgroundColor3 = Theme.colors.track,
+		BorderSizePixel = 0,
+	}, {
+		Corner = e("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+		Right = if fill > 0 then side(false, math.min(fill, 0.5) * 360) else nil,
+		Left = if fill > 0.5 then side(true, 180 + (fill - 0.5) * 360) else nil,
+		Hole = e("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(holeSize, holeSize),
+			BackgroundColor3 = props.hole,
+			BorderSizePixel = 0,
+			ZIndex = 3,
+		}, {
+			Corner = e("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+			Inside = props.inside,
+		}),
+	})
+end
+
+-- The ability chip: the ring (an up arrow inside when ready or running, the seconds left while recharging), then
+-- what a press does and whether it's ready, with its key cap poking out of the top-right corner like the hitch
+-- button's. Dim while a request is with the server. Display only: the key, L3 or the touch button press it.
+local function AbilityChipView(props: { ability: AbilityChip, keyText: string?, order: number })
+	local colors = Theme.colors
+	local chip = Controls.hud.abilityChip
+	local badge = PhoneConfig.button
+	local ability = props.ability
+	local busy = ability.busy
+	local ringColor = if busy then colors.textDim elseif ability.state == "active" then colors.text else colors.accent
+	local statusColor = if ability.state == "ready" and not busy then colors.accent else colors.textDim
+	local seconds = ability.seconds
+	local inside = if ability.state == "recharging" and seconds ~= nil
+		then e("TextLabel", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			FontFace = Theme.fonts.bold,
+			Text = tostring(seconds),
+			TextColor3 = colors.text,
+			TextSize = chip.secondsTextSize,
+		})
+		else e(UpArrow, { color = ringColor })
+	local textLeft = chip.padding + chip.ringSize + chip.gap
+	local keyText = props.keyText
+	return e("Frame", {
+		LayoutOrder = props.order,
+		Size = UDim2.fromOffset(chip.width, Theme.size.buttonHeight),
+		BackgroundColor3 = colors.panel,
+		BackgroundTransparency = colors.panelTransparency,
+		BorderSizePixel = 0,
+	}, {
+		Corner = e("UICorner", { CornerRadius = UDim.new(0, Controls.hud.cornerRadius) }),
+		Ring = e(Ring, { fill = ability.fill, color = ringColor, hole = colors.panelRaised, inside = inside }),
+		Words = e("Frame", {
+			Position = UDim2.fromOffset(textLeft, 0),
+			Size = UDim2.new(1, -(textLeft + chip.padding), 1, 0),
+			BackgroundTransparency = 1,
+		}, {
+			Layout = e("UIListLayout", {
+				FillDirection = Enum.FillDirection.Vertical,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+			Label = e(jobText, {
+				order = 1,
+				text = ability.label,
+				font = Theme.fonts.bold,
+				size = Theme.text.body,
+				color = colors.text,
+				height = HITCH.nameHeight,
+			}),
+			Status = e(jobText, {
+				order = 2,
+				text = ability.status,
+				font = Theme.fonts.medium,
+				size = Theme.text.small,
+				color = statusColor,
+				height = HITCH.eyebrowHeight,
+			}),
+		}),
+		Key = if keyText
+			then e("TextLabel", {
+				ZIndex = 4,
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, 0, 0, badge.badgeInset),
+				Size = UDim2.fromOffset(badge.badgeSize, badge.badgeSize),
+				AutomaticSize = Enum.AutomaticSize.X,
+				BackgroundColor3 = colors.panelRaised,
+				BorderSizePixel = 0,
+				FontFace = Theme.fonts.bold,
+				Text = keyText,
+				TextColor3 = colors.text,
+				TextSize = badge.badgeTextSize,
+			}, {
+				Corner = e("UICorner", { CornerRadius = UDim.new(0, Theme.spacing.xs) }),
+				Padding = e("UIPadding", {
+					PaddingLeft = UDim.new(0, Theme.spacing.xs),
+					PaddingRight = UDim.new(0, Theme.spacing.xs),
+				}),
+			})
+			else nil,
+	})
+end
+
 -- The fleet chip: a little pod and "$1,240 ready", as tall as the cash readout, growing with the amount up to
 -- PhoneConfig.hud.fleetChip.maxWidth. Never a gamepad selection target (like the hitch button): gamepads open the
 -- phone with LB.
@@ -1098,14 +1297,16 @@ local function FleetChip(props: { amount: number, order: number, onTap: (() -> (
 end
 
 -- The player's cash, top left (lined up with the touch steering zones), with the fleet chip on its right, the
--- active job under it and the hitch row under that; the fleet chip goes under those instead when HudController
--- placed it "below".
+-- active job under it and the hitch row (or, in its place, the ability chip) under that; the fleet chip goes under
+-- those instead when HudController placed it "below".
 local function Wallet(props: {
 	cash: number?,
 	job: ActiveJob?,
 	hitch: Hitch?,
 	hitchKey: string?,
 	onHitch: ((action: HitchAction) -> ())?,
+	ability: AbilityChip?,
+	abilityKey: string?,
 	fleetReady: number?,
 	fleetPlacement: FleetChipPlacement?,
 	onFleetChip: (() -> ())?,
@@ -1179,6 +1380,10 @@ local function Wallet(props: {
 		Hitch = if hitch
 			then e(HitchRow, { hitch = hitch, keyText = props.hitchKey, order = 3, onHitch = props.onHitch })
 			else nil,
+		-- The hitch row's place: a car with a hitch has no thrusters, and the hitch row would win if one did.
+		Ability = if hitch == nil and props.ability ~= nil
+			then e(AbilityChipView, { ability = props.ability, keyText = props.abilityKey, order = 3 })
+			else nil,
 		Fleet = if fleetReady ~= nil and placement == "below"
 			then e(FleetChip, { amount = fleetReady, order = 4, onTap = props.onFleetChip })
 			else nil,
@@ -1212,6 +1417,9 @@ local function Hud(props: Props)
 			hitch = if props.driving then props.hitch else nil,
 			hitchKey = props.hitchKey,
 			onHitch = props.onHitch,
+			-- So does the ability chip.
+			ability = if props.driving then props.ability else nil,
+			abilityKey = props.abilityKey,
 			fleetReady = props.fleetReady,
 			fleetPlacement = props.fleetPlacement,
 			onFleetChip = props.onFleetChip,

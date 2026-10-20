@@ -2,7 +2,8 @@
 -- Driving controls and the driving HUD (PLAN.md Phase 1, docs/phase-1-contracts.md "Client").
 -- Read by Controllers/InputController (bindings, deadzones, steering ramp), DriveController (drive-mode and
 -- regen cycles, lamps), VehicleVisualsController (other players' cars), HudController and the UI components
--- (layout, touch sizes, theme, copy).
+-- (layout, touch sizes, theme, copy), and the controllers that bind their own keys only while they apply
+-- (HitchInputController's hitch, AbilityController's ability).
 --
 -- GUI sizes are in pixels at UI scale 1, which is a landscape phone (`hud.referenceShortSide`). HudController
 -- only ever scales the UI up from there, never down, so every touch target stays at least `touch.minTarget`.
@@ -21,6 +22,7 @@ export type KeyboardBindings = {
 	camera: { Enum.KeyCode },
 	regen: { Enum.KeyCode },
 	hitch: { Enum.KeyCode }, -- couple / uncouple a trailer or towed car (Controllers/HitchInputController)
+	ability: { Enum.KeyCode }, -- the Arc's boost-hop or flight (Controllers/AbilityController)
 }
 
 export type GamepadBindings = {
@@ -33,6 +35,7 @@ export type GamepadBindings = {
 	camera: { Enum.KeyCode },
 	regen: { Enum.KeyCode },
 	hitch: { Enum.KeyCode }, -- couple / uncouple (Controllers/HitchInputController)
+	ability: { Enum.KeyCode }, -- boost-hop or flight (Controllers/AbilityController)
 	-- Swallowed while driving and otherwise ignored: the default gamepad jump would stand the driver up.
 	sink: { Enum.KeyCode },
 }
@@ -61,6 +64,9 @@ local Controls = {
 		-- Phase 8: bound by HitchInputController (not InputController) and only while driving a car with a hitch
 		-- (a Kingpin or TowHitch attachment), so T stays free on foot.
 		hitch = { Enum.KeyCode.T },
+		-- Phase 10: bound by AbilityController (not InputController) and only while driving a car whose trim has a
+		-- thruster ability (Config/Abilities.byTrim), so Q stays free on foot.
+		ability = { Enum.KeyCode.Q },
 	} :: KeyboardBindings,
 
 	gamepad = {
@@ -75,6 +81,10 @@ local Controls = {
 		-- Phase 8, bound like the keyboard's T. ButtonR1 was free: the triggers, X, Y, B, R3, D-pad up and A drive,
 		-- and the phone has ButtonL1 (UI/Phone/PhoneConfig keys).
 		hitch = { Enum.KeyCode.ButtonR1 },
+		-- Phase 10, bound like the keyboard's Q. Clicking the left stick (L3) was free and stays under the thumb that
+		-- steers: the triggers, X, Y, B, R3, D-pad up, A and RB drive, LB opens the phone, and A also opens the
+		-- Customize shop in a bay (UI/Customize/Style).
+		ability = { Enum.KeyCode.ButtonL3 },
 		sink = { Enum.KeyCode.ButtonA },
 	} :: GamepadBindings,
 
@@ -89,6 +99,7 @@ local Controls = {
 		ButtonR3 = "R3",
 		DPadUp = "D-pad up",
 		ButtonR1 = "RB",
+		ButtonL3 = "L3",
 	} :: { [string]: string },
 
 	-- Analog input below these magnitudes reads as zero; the rest is rescaled to the full 0..1 range.
@@ -176,6 +187,34 @@ local Controls = {
 			standard = "Regen normal",
 			high = "Regen high",
 		} :: { [Types.RegenLevel]: string },
+		-- Phase 10: the ability chip (UI/Hud), in the hitch row's place under the cash column while driving a car
+		-- with a thruster ability: a ring that fills as the ability recharges, what a press does now and whether
+		-- it is ready, with its key cap on keyboard and gamepad. Controllers/AbilityController works out what it
+		-- shows. As tall as a button (Theme.size.buttonHeight).
+		abilityChip = {
+			width = 136,
+			padding = 7, -- inside the chip, left of the ring
+			ringSize = 34,
+			ringThickness = 4,
+			ringSteps = 72, -- the ring fills in this many steps (5 degrees), so it redraws only when it visibly moves
+			gap = 8, -- between the ring and the words
+			chevronSize = 12, -- the up arrow inside a ready ring
+			chevronThickness = 3,
+			secondsTextSize = 13, -- the seconds left inside a recharging ring
+			-- What a press does now, and what the chip says while it runs.
+			labels = {
+				boostHop = "Boost",
+				flight = "Fly",
+			} :: { [string]: string },
+			activeLabels = {
+				boostHop = "Boosting",
+				flight = "Flying",
+			} :: { [string]: string },
+			ready = "Ready",
+			recharging = "Recharging",
+			landing = "Landing",
+			secondsFormat = "%d s", -- the seconds left on the touch Boost / Fly button while it recharges
+		},
 	},
 
 	-- On-screen controls for touch devices (UI/TouchControls). Every size here is a touch target.
@@ -188,6 +227,12 @@ local Controls = {
 		brakeSize = Vector2.new(88, 108), -- left of the gas pedal
 		handbrakeSize = Vector2.new(88, 52), -- above the brake pedal
 		buttonSize = Vector2.new(68, 48), -- mode, camera and exit, top right
+		-- Phase 10: in a car with a thruster ability the gas pedal shortens to abilityGasSize and the Boost / Fly
+		-- button sits above it, so the right-hand column stays exactly as tall as the brake and handbrake beside it
+		-- and the pedal block UI/Phone/Layout keeps clear of doesn't change (tests/Thrusters.spec checks it).
+		abilitySize = Vector2.new(88, 52),
+		abilityGasSize = Vector2.new(88, 108),
+		abilityStatusTextSize = 12, -- "Ready" / "12 s" under the button's label
 		cornerRadius = 16,
 		chevronSize = 26, -- steering arrow drawn on each hold zone
 		chevronThickness = 5,
@@ -237,12 +282,14 @@ local Controls = {
 		},
 	},
 
-	-- The HUD's key hint row on keyboard and gamepad (none on touch: the buttons label themselves).
+	-- The HUD's key hint row on keyboard and gamepad (none on touch: the buttons label themselves). The ability
+	-- entry shows only while driving a car with a thruster ability (HudController.hintsFor).
 	hints = {
 		keyboard = {
 			{ actions = { "throttle", "brake" }, label = "Drive" },
 			{ actions = { "steerLeft", "steerRight" }, label = "Steer" },
 			{ actions = { "handbrake" }, label = "Handbrake" },
+			{ actions = { "ability" }, label = "Boost" },
 			{ actions = { "mode" }, label = "Mode" },
 			{ actions = { "regen" }, label = "Regen" },
 			{ actions = { "camera" }, label = "Camera" },
@@ -252,6 +299,7 @@ local Controls = {
 			{ actions = { "throttle", "brake" }, label = "Drive" },
 			{ actions = { "steer" }, label = "Steer" },
 			{ actions = { "handbrake" }, label = "Handbrake" },
+			{ actions = { "ability" }, label = "Boost" },
 			{ actions = { "mode" }, label = "Mode" },
 			{ actions = { "regen" }, label = "Regen" },
 			{ actions = { "camera" }, label = "Camera" },
