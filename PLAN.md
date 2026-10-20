@@ -536,24 +536,24 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 5 — Energy: charging and fuel
 
 **Tasks**
-- [ ] `Vehicle/Energy.luau`:
+- [x] `Vehicle/Energy.luau`:
   - A battery or fuel tank per vehicle.
   - Drain from speed, acceleration and climbing; regen on braking for batteries only.
   - Capacity comes from config.
   - The HUD shows % and estimated range.
-- [ ] `EnergyService`:
+- [x] `EnergyService`:
   - Parking in a `ChargerStall` starts charging, and leaving stops it. 10→80% takes 60–90 s at fast stalls, for a small cost per %.
   - At a `FuelPump`, 10→100% takes 20–30 s, for a cost per %.
-- [ ] Hangout bonus: a small cash trickle while 3+ players charge at the same plaza.
-- [ ] Low energy:
+- [x] Hangout bonus: a small cash trickle while 3+ players charge at the same plaza.
+- [x] Low energy:
   - Warnings at 20% and 10%.
   - At 0%, limp mode (15 mph) with GPS to the nearest compatible station. No towing required.
-- [ ] Truck charger (`TruckCharger`) at The Plant (semi only, faster).
+- [x] Truck charger (`TruckCharger`) at The Plant (semi only, faster).
 
 **Acceptance**
-- [ ] A full charge or tank lasts the configured minutes at cruise (±10%, AutoDriver).
-- [ ] 10→80% charging and 10→100% refueling finish within config time, and the cost is deducted.
-- [ ] From the farthest point on the map, limp mode reaches a compatible station for one battery car and one fuel car (AutoDriver).
+- [x] A full charge or tank lasts the configured minutes at cruise (±10%, AutoDriver).
+- [x] 10→80% charging and 10→100% refueling finish within config time, and the cost is deducted.
+- [x] From the farthest point on the map, limp mode reaches a compatible station for one battery car and one fuel car (AutoDriver).
 
 **Stop.**
 

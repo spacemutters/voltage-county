@@ -51,9 +51,10 @@ function Template.new(now: number?): Types.PlayerData
 	}
 end
 
--- A newly bought or claimed car (Types.OwnedVehicle) with the default look from Config/Garage. `uid` comes from
--- HttpService:GenerateGUID(false) (GarageService makes it, keeping this module pure), `paid` is whole dollars
--- (0 for the free starter) and `now` is os.time() seconds.
+-- A newly bought or claimed car (Types.OwnedVehicle) with the default look from Config/Garage and a full charge
+-- or tank (Config/Data.defaults.vehicleEnergy). `uid` comes from HttpService:GenerateGUID(false) (GarageService
+-- makes it, keeping this module pure), `paid` is whole dollars (0 for the free starter) and `now` is os.time()
+-- seconds.
 function Template.ownedVehicle(
 	uid: string,
 	vehicleId: string,
@@ -74,6 +75,7 @@ function Template.ownedVehicle(
 		acquiredAt = now,
 		favorite = false,
 		paid = paid,
+		energy = Data.defaults.vehicleEnergy,
 	}
 end
 

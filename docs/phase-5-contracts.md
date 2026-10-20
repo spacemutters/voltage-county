@@ -27,7 +27,8 @@ wall), the hangout bonus ($/min while 3+ players charge at the same plaza), and 
 - `Energy.drainPerSecond(vehicleId, trim, speed: number, accel: number, climb: number): number` — fraction of
   a full charge or tank per second. At constant `Config/Energy.cruiseMph` on the flat it equals
   `1 / (trim.energyMinutes × 60)`, so a full charge lasts the catalog's minutes at cruise. Acceleration and
-  climbing add; braking on a battery car subtracts (regen), never below zero overall.
+  climbing add; slowing and descending first offset the speed load (coasting isn't billed twice) down to the
+  idle drain; past that, braking on a battery car subtracts (regen), never below zero overall.
 - `Energy.rangeMiles(vehicleId, trim, level: number): number` — distance left at cruise.
 - `Energy.chargeRatePerSecond(kind: "ChargerStall" | "TruckCharger" | "FuelPump", attributes, vehicleId,
   trim, level): number` — fraction per second (with a gentle taper above 80 % for batteries) and
@@ -53,18 +54,28 @@ wall), the hangout bonus ($/min while 3+ players charge at the same plaza), and 
   ("battery" | "fuel"); sets attribute `Limp = true` at 0 and clears it when the level rises above a small
   margin.
 - Writes the level back to the owned vehicle (`OwnedUid` attribute → `DataService.update`) when the car is
-  put away, when the player leaves, and at most once a minute while driving.
+  put away, when the player leaves, and at most once a minute while driving. Leaving and server shutdown use
+  `DataService.beforeRelease(fn: (player) -> ())` (added in the Phase 5 fixes): DataService calls it
+  synchronously just before it ends a player's session (on leave, and for every loaded player on close), so
+  the write lands while the session is still open, whatever order Roblox runs the PlayerRemoving and
+  BindToClose handlers in.
+- Drains nothing for a move the server made itself (`AntiExploitService.lastServerMove(model): number?`, set
+  by `allowTeleport`, which `VehicleService.resetCar` calls); any other jump is billed as the travel it is.
 - **Stations:** a car is at a station when its chassis is inside a tagged station part's footprint
-  (`ChargerStall`, `TruckCharger`, `FuelPump` under `Workspace.Map.Generated.Locations`) and nearly still.
-  Charging/fueling then adds `chargeRatePerSecond` each sample, charges `costPerFraction` through
-  `EconomyService.trySpend` per whole % (stops with a notice when the player can't pay), stops at full or when
-  the car leaves. Incompatible station → one friendly notice.
-- **Hangout bonus:** while 3+ players charge at stalls with the same `plaza` attribute, each gets the Config
-  trickle every minute (`EconomyService.add`, reason "hangout").
+  (`ChargerStall`, `TruckCharger`, `FuelPump` under `Workspace.Map.Generated.Locations`) and nearly still,
+  with at least a whole % missing (`Config/Energy.charging.startBelow`). Charging/fueling then adds
+  `chargeRatePerSecond` each sample and bills the energy added at `costPerFraction` through
+  `EconomyService.trySpend` in whole dollars (cents carry over within the stop, so each % costs
+  costPerFull / 100); when the player can't pay for more it adds what their cash covers and stops with a
+  notice. It stops at full or when the car leaves. Incompatible station → one friendly notice. Dealership
+  test drives (temporary, full, never saved) never charge.
+- **Hangout bonus:** while 3+ players charge at stalls with the same `plaza` attribute, each earns the Config
+  trickle for the time they charge together, paid every minute (`EconomyService.add`, reason "hangout").
 - **Alerts:** `Notify` at 20 % and 10 % (once each per drop), and at 0 % a notice plus Net `EnergyAlert`
   `{ level, stationId }` with the nearest compatible station's location id (MapLayout + Pathfind distance).
 - **Limp mode:** at 0 % the car is limited to `Config/Energy.limpMph`; tell AntiExploit the car's allowed
-  speed changed (add `AntiExploitService.setTopSpeed(model, studsPerSecond)`; restore when it clears).
+  speed changed (add `AntiExploitService.setTopSpeed(model, studsPerSecond)`; restore when it clears) once the
+  car has slowed to it, or at the latest `Config/Energy.limpCapGraceSeconds` after limp mode began.
 - Pure decision helpers for `tests/EnergyService.spec.luau` (station detection from a footprint and a
   position, charging step with cost and stop rules, hangout eligibility, alert thresholds).
 

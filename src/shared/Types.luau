@@ -19,6 +19,9 @@ export type OwnedVehicle = {
 	acquiredAt: number, -- os.time()
 	favorite: boolean, -- v3: starred in the phone's Garage app (favorites sort first)
 	paid: number, -- v3: whole $ the player paid (0 for the free starter); selling back pays Config/Garage share
+	-- v4: charge or tank level, 0..1 (1 = full). Services/EnergyService owns it while the car is out and writes
+	-- it back when the car is put away, the player leaves, and at most once a minute while driving.
+	energy: number,
 }
 
 export type CustomDesign = {
@@ -37,7 +40,7 @@ export type Boost = { id: string, factor: number, endsAt: number } -- endsAt = o
 -- Player settings, set from the phone's Settings app (Net UpdateSettings, validated by GarageService).
 export type Settings = { units: "mph" | "kph", camera: string, musicVolume: number }
 
--- Schema version 3 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
+-- Schema version 4 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
 export type PlayerData = {
 	version: number,
 	cash: number,

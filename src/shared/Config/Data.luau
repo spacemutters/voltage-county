@@ -19,7 +19,8 @@ local Data = {
 	-- higher version (written by a newer server) is refused rather than downgraded.
 	--   2  timed earnings boosts (Phase 3)
 	--   3  owned cars remember `favorite` and `paid` (Phase 4 garage)
-	schemaVersion = 3,
+	--   4  owned cars remember their `energy` level (Phase 5 charging and fuel)
+	schemaVersion = 4,
 	-- A save with no version field predates versioning and is treated as this version.
 	unversionedVersion = 1,
 
@@ -44,6 +45,9 @@ local Data = {
 	-- Values a fresh profile starts with (cash and slots come from Config/Economy).
 	defaults = {
 		credits = 0, -- Design Credits; the free design is tracked by credits.freeDesignUsed
+		-- A new car, and every car a pre-version-4 save already owned, starts with a full charge or tank (energy
+		-- is a fraction: 1 = full, 0 = empty).
+		vehicleEnergy = 1,
 		settings = {
 			units = "mph" :: "mph" | "kph",
 			camera = "chase",

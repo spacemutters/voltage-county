@@ -211,15 +211,56 @@ local PhoneConfig = {
 	-- New parts of the HUD (UI/Hud).
 	hud = {
 		unitLabels = { mph = "mph", kph = "km/h" } :: { [string]: string },
-		-- The energy row along the bottom of the speed panel. Phase 5 fills it; until then the bar shows full
-		-- with no number.
+		-- The energy row along the bottom of the speed panel (Phase 5): a battery or pump drawing, the level bar,
+		-- then the % and the range (or "Limp mode").
 		energy = {
 			rowHeight = 18,
 			barHeight = 4,
-			labelWidth = 52,
-			valueWidth = 38,
-			labels = { battery = "Battery", fuel = "Fuel" } :: { [string]: string },
 			percentFormat = "%d%%",
+			iconSize = Vector2.new(16, 10), -- the battery or pump drawing
+			iconStroke = 1.5, -- its outline
+			iconInset = 2, -- between the battery's outline and its charge
+			nubSize = Vector2.new(2, 4), -- the battery's terminal
+			gap = 6, -- between the drawing, the bar and the value
+			valueWidth = 84, -- "100%  120 mi"
+			rangeSpacing = "  ", -- between the % and the range
+			limpText = "Limp mode", -- in place of the range once the car is empty
+			-- The row shows the level in steps of this (half a percent: under a pixel of the bar), so it redraws
+			-- when something visible changes rather than on every server sample.
+			shownLevelStep = 0.005,
+			-- What the driver reads (Controllers/EnergyController). %s is filled in where noted.
+			text = {
+				rangeMiles = "%s mi",
+				rangeKilometers = "%s km",
+				-- Ranges under this (in the shown unit) get one decimal ("4.2 mi"); longer ones are whole.
+				decimalsBelow = 10,
+				rate = "+%.1f%% a sec", -- percent per second
+				costPerPercent = "%s per %%", -- the price
+				-- On empty, once the GPS is routing (%s: the station's name).
+				routed = {
+					battery = "Your GPS is set to the nearest charger: %s.",
+					fuel = "Your GPS is set to the nearest fuel station: %s.",
+				} :: { [string]: string },
+				-- On empty, when the server found no station to route to.
+				noStation = {
+					battery = "Open the GPS and head for a charging stall.",
+					fuel = "Open the GPS and head for a fuel station.",
+				} :: { [string]: string },
+			},
+		},
+		-- The card shown while the car charges or fuels (UI/Hud draws it; Controllers/HudController places it,
+		-- above the speed panel when there's room, `Config/Controls hud.gap` from it, and never over the touch
+		-- controls, the phone button, the cash and job slot, the GPS route chip or the notices). Narrower than
+		-- the speed panel so it still fits between the GPS chip and the cash on a small phone.
+		chargingCard = {
+			size = Vector2.new(180, 60),
+			padding = Vector2.new(12, 6), -- sides, top and bottom
+			rowGap = 3,
+			barHeight = 6,
+			titles = { battery = "Charging", fuel = "Fueling" } :: { [string]: string },
+			-- The notices band at the top centre is kept clear for a notice this many lines tall.
+			noticeLines = 2,
+			noticeLineHeight = 1.25, -- line height as a multiple of the notice text size
 		},
 		-- The active job, under the cash readout (Phase 6 fills it; empty until then).
 		jobSlot = {

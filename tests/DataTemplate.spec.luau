@@ -39,7 +39,7 @@ local SHAPE: { [string]: any } = {
 	boosts = "table",
 }
 
--- Every field a new owned car (Types.OwnedVehicle, schema version 3) starts with. The optional fields (designUid,
+-- Every field a new owned car (Types.OwnedVehicle, schema version 4) starts with. The optional fields (designUid,
 -- wrap, plateText, mods, serial) start unset.
 local OWNED_VEHICLE_SHAPE: { [string]: any } = {
 	uid = "string",
@@ -53,6 +53,7 @@ local OWNED_VEHICLE_SHAPE: { [string]: any } = {
 	acquiredAt = "number",
 	favorite = "boolean",
 	paid = "number",
+	energy = "number",
 }
 
 -- Checks `value` against `shape`, adding one line per mismatch (with its path) to `problems`.
@@ -159,6 +160,12 @@ return function(t: Harness.Api)
 			t.expect(car.wheels).toBe(Garage.defaults.wheels)
 			t.expect(car.rideHeight).toBe(0)
 			t.expect(car.tint).toBe(0)
+		end)
+
+		t.it("makes a new owned car with a full charge or tank", function()
+			local car = Template.ownedVehicle("car-3", "ohm_spark", "standard", 35000, JOIN_TIME)
+			t.expect(car.energy).toBe(1)
+			t.expect(car.energy).toBe(Data.defaults.vehicleEnergy)
 		end)
 
 		t.it("records a free car as paid 0", function()

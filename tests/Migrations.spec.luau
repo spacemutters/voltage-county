@@ -1,6 +1,7 @@
 --!strict
 -- PlayerData migrations (CLAUDE.md hard rule 7; PLAN.md Phase 3 acceptance: migration specs pass; Phase 4 adds
--- schema version 3, docs/phase-4-contracts.md "Data changes"). Pure logic: runs in Edit mode.
+-- schema version 3, docs/phase-4-contracts.md "Data changes"; Phase 5 adds version 4, docs/phase-5-contracts.md
+-- "Schema v4"). Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -60,6 +61,19 @@ local function v1Save(): { [string]: any }
 	return data
 end
 
+-- A version 3 save as the Phase 4 template wrote it: every car has `favorite` and `paid`, none has `energy`.
+local function v3Save(): { [string]: any }
+	local data = v2Save()
+	data.version = 3
+	for _, car in data.vehicles do
+		car.favorite = false
+		car.paid = 0
+	end
+	data.vehicles[2].favorite = true
+	data.vehicles[2].paid = 35000
+	return data
+end
+
 local function keysOf(t: { [any]: any }): { [string]: boolean }
 	local keys = {}
 	for key in t do
@@ -91,8 +105,8 @@ end
 
 return function(t: Harness.Api)
 	t.describe("Migrations", function()
-		t.it("is at schema version 3", function()
-			t.expect(Data.schemaVersion).toBe(3)
+		t.it("is at schema version 4", function()
+			t.expect(Data.schemaVersion).toBe(4)
 		end)
 
 		t.it("has a step from every older version up to the schema version", function()
@@ -130,7 +144,7 @@ return function(t: Harness.Api)
 		t.it("2 -> 3: every owned car gains favorite = false", function()
 			local migrated, fromVersion = Migrations.run(v2Save())
 			t.expect(fromVersion).toBe(2)
-			t.expect(migrated.version).toBe(3)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(#migrated.vehicles).toBe(6)
 			for _, car in migrated.vehicles do
 				t.expect(car.favorite).toBe(false)
@@ -168,7 +182,7 @@ return function(t: Harness.Api)
 			local missing = v2Save()
 			missing.vehicles = nil
 			local migrated = Migrations.run(missing)
-			t.expect(migrated.version).toBe(3)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(migrated.vehicles).toBe(nil) -- left for Reconcile to fill from the template
 
 			local damaged = v2Save()
@@ -180,8 +194,79 @@ return function(t: Harness.Api)
 			t.expect(carIn(fixed, "car-bare").paid).toBe(0)
 		end)
 
-		t.it("never drops a field and keeps every player-owned value", function()
+		t.it("3 -> 4: every owned car gains a full energy level", function()
+			local migrated, fromVersion = Migrations.run(v3Save())
+			t.expect(fromVersion).toBe(3)
+			t.expect(migrated.version).toBe(4)
+			t.expect(#migrated.vehicles).toBe(6)
+			for _, car in migrated.vehicles do
+				t.expect(car.energy).toBe(1)
+				t.expect(car.energy).toBe(Data.defaults.vehicleEnergy)
+			end
+			-- What version 3 added is untouched.
+			t.expect(carIn(migrated, "car-spark").favorite).toBe(true)
+			t.expect(carIn(migrated, "car-spark").paid).toBe(35000)
+		end)
+
+		t.it("3 -> 4: older saves reach version 4 with full cars too", function()
 			for _, makeSave in { v1Save, v2Save } do
+				local migrated = Migrations.run(makeSave())
+				t.expect(migrated.version).toBe(4)
+				for _, car in migrated.vehicles do
+					t.expect(car.energy).toBe(1)
+				end
+			end
+		end)
+
+		t.it("3 -> 4: keeps a level a car already has, pulled into 0..1", function()
+			local save = v3Save()
+			save.vehicles[1].energy = 0.42
+			save.vehicles[2].energy = 0
+			save.vehicles[3].energy = 1.7
+			save.vehicles[4].energy = -0.3
+			local migrated = Migrations.run(save)
+			t.expect(carIn(migrated, "car-starter").energy).toBe(0.42)
+			t.expect(carIn(migrated, "car-spark").energy).toBe(0)
+			t.expect(carIn(migrated, "car-arc").energy).toBe(1)
+			t.expect(carIn(migrated, "car-flight").energy).toBe(0)
+		end)
+
+		t.it("3 -> 4: replaces a level that isn't a number with a full one", function()
+			local save = v3Save()
+			save.vehicles[1].energy = "half" :: any
+			save.vehicles[2].energy = 0 / 0
+			save.vehicles[3].energy = true :: any
+			local migrated = Migrations.run(save)
+			t.expect(carIn(migrated, "car-starter").energy).toBe(1)
+			t.expect(carIn(migrated, "car-spark").energy).toBe(1)
+			t.expect(carIn(migrated, "car-arc").energy).toBe(1)
+		end)
+
+		t.it("3 -> 4: survives damaged vehicle lists and entries", function()
+			local missing = v3Save()
+			missing.vehicles = nil
+			local migrated = Migrations.run(missing)
+			t.expect(migrated.version).toBe(4)
+			t.expect(migrated.vehicles).toBe(nil) -- left for Reconcile to fill from the template
+
+			local damaged = v3Save()
+			damaged.vehicles = { "junk", { uid = "car-bare" } } :: { any }
+			local fixed = Migrations.run(damaged)
+			t.expect(fixed.vehicles[1]).toBe("junk")
+			t.expect(carIn(fixed, "car-bare").energy).toBe(1)
+		end)
+
+		t.it("running the 3 -> 4 step twice changes nothing the second time", function()
+			local save = v3Save()
+			save.vehicles[1].energy = 0.25
+			Migrations.steps[3](save)
+			local once = deepCopy(save)
+			Migrations.steps[3](save)
+			t.expect(save).toEqual(once)
+		end)
+
+		t.it("never drops a field and keeps every player-owned value", function()
+			for _, makeSave in { v1Save, v2Save, v3Save } do
 				local before = makeSave()
 				local snapshot = deepCopy(before)
 				local migrated = Migrations.run(before)
@@ -202,7 +287,7 @@ return function(t: Harness.Api)
 						t.expect(newCar[field]).toEqual(value)
 					end
 					for field in newCar do
-						local isNew = field == "favorite" or field == "paid"
+						local isNew = field == "favorite" or field == "paid" or field == "energy"
 						t.expect(oldCarValue[field] ~= nil or isNew).toBe(true)
 					end
 				end

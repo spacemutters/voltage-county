@@ -21,11 +21,16 @@
 --
 -- DriveController calls step(dt, controls) from RunService.PreSimulation. Wheels are animated through
 -- Vehicle/WheelVisuals. Gravity is read from workspace.Gravity every step.
+--
+-- Limp mode (Phase 5, docs/phase-5-contracts.md "Client"): while the server sets the car's `Limp` attribute (out
+-- of energy), the powertrain's top speed is Config/Energy.limpMph. The attribute is cached from its changed
+-- signal, never read per frame; the server's anti-exploit holds the car to the same limit.
 
 local Workspace = game:GetService("Workspace")
 
 local Shared = script.Parent.Parent
 local Driving = require(Shared.Config.Driving)
+local EnergyConfig = require(Shared.Config.Energy)
 local Powertrain = require(script.Parent.Powertrain)
 local Tuning = require(script.Parent.Tuning)
 local Types = require(Shared.Types)
@@ -36,6 +41,8 @@ local WHEEL_IDS = WheelVisuals.WHEEL_IDS
 local TWO_PI = 2 * math.pi
 local BOX_INERTIA_DIVISOR = 12 -- a solid box's moment of inertia is mass * (a² + b²) / 12
 local EPSILON = 1e-6
+-- Car attribute the server (EnergyService) sets while the car has no energy left (docs/phase-5-contracts.md).
+local LIMP_ATTRIBUTE = "Limp"
 
 type WheelState = {
 	id: WheelVisuals.WheelId,
@@ -76,6 +83,8 @@ type State = {
 	steer: number, -- -1..1, the stick after the mode's steering rate
 	steerAngle: number, -- radians, + = right
 	telemetry: Types.Telemetry,
+	limp: boolean, -- the car's Limp attribute, cached from its changed signal
+	limpConnection: RBXScriptConnection?,
 	destroyed: boolean,
 }
 
@@ -168,9 +177,36 @@ function Chassis.new(model: Model, tuning: Tuning.Tuning): Chassis
 		steer = 0,
 		steerAngle = 0,
 		telemetry = newTelemetry("standard", "standard"),
+		limp = false,
+		limpConnection = nil,
 		destroyed = false,
 	}
-	return setmetatable(self, Chassis)
+	local chassis = setmetatable(self, Chassis)
+
+	-- Limp mode: follow the server's Limp attribute (one changed signal, no per-frame reads).
+	local function readLimp()
+		chassis:setLimp(model:GetAttribute(LIMP_ATTRIBUTE) == true)
+	end
+	chassis.limpConnection = model:GetAttributeChangedSignal(LIMP_ATTRIBUTE):Connect(readLimp)
+	readLimp()
+	return chassis
+end
+
+-- The limp-mode top speed, studs/s (Config/Energy.limpMph).
+function Chassis.limpSpeed(): number
+	return Units.mphToStuds(EnergyConfig.limpMph)
+end
+
+-- Caps the car at the limp speed (true) or gives it its own top speed back (false). Chassis.new keeps this in
+-- step with the car's Limp attribute; exposed for the specs.
+function Chassis.setLimp(self: Chassis, limp: boolean)
+	self.limp = limp
+	self.powertrain:setSpeedCap(if limp then Chassis.limpSpeed() else nil)
+end
+
+-- True while the car is held to the limp speed.
+function Chassis.isLimp(self: Chassis): boolean
+	return self.limp
 end
 
 -- Casts every wheel's ray and records what it found.
@@ -552,6 +588,11 @@ function Chassis.destroy(self: Chassis)
 		return
 	end
 	self.destroyed = true
+	local limpConnection = self.limpConnection
+	if limpConnection then
+		limpConnection:Disconnect()
+		self.limpConnection = nil
+	end
 	self.stopFilter()
 	self.visuals:destroy()
 end

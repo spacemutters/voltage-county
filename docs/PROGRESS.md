@@ -2,6 +2,53 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-20 — Phase 5: energy (charging and fuel)
+
+**Shipped**
+- **Energy model** (`Vehicle/Energy`, `Config/Energy`). Drain is calibrated so a steady 45 mph on the flat
+  lasts exactly the catalog's `energyMinutes`. Speed, launches and climbing cost more; battery cars get 60% of
+  braking and downhill energy back.
+  - Charging time depends on the stall's power: 350 kW = 60 s, 250 kW = 75 s, 150 kW = 90 s for 10→80%,
+    tapering above 80%. The truck charger is faster and serves heavy trucks only.
+  - Pumps fill 10→100% in about 22 s.
+  - Costs are a small sink: $300 for a full charge, $400 for a full tank, $500 at the truck charger.
+- **EnergyService** (server-authoritative):
+  - samples every car and drains from server-observed motion
+  - charges or fuels at the right kind of station (friendly notice at the wrong kind), billing each %
+  - hangout bonus while 3+ players charge at one plaza
+  - alerts at 20% and 10%; at 0 the car limps at 15 mph and the GPS points to the nearest compatible
+    station
+  - AntiExploit holds a limping car to the limp speed
+- **Data v4:** each owned car keeps its energy level, so it survives putting the car away and rejoining.
+- **Client:** HUD energy bar with a battery or fuel icon, % and range in the player's units (amber under 20%,
+  red under 10%), a charging card showing rate and cost, and limp mode in the car.
+- **Fix found in Studio:** the server read sample-to-sample wobble in a client-driven car as constant
+  launches, so a steady 45 mph cruise drained **2.8× too fast** (12.6 minutes instead of 35). Speed and climb
+  are now smoothed over 2 s before billing, and small accelerations (< 4 studs/s²) and climbs (< 0.75
+  studs/s) count as steady.
+- Built by 3 helpers, then 2 reviewers. They found 13 issues (1 crash, 7 serious, 5 minor), and all were
+  fixed.
+
+**Checked in Studio:**
+- Tests: `TESTS: passed=612 failed=0`. The server booted 12 services.
+- **Cruise:** Ohm Spark at 45 mph on the County Loop: a full charge lasts **33.6 min** (catalog 35, ±10%
+  allowed).
+- **Charging:** 10→80% in **74.6 s** at the Cedar Bend plaza (allowed 60–90 s), **$211** deducted.
+- **Refueling:** Aldermoor Belcourt, 10→100% in **22.2 s** (allowed 20–30 s), **$360** deducted.
+- **Limp to a station:** both drives ran at a top speed of 15 mph, the GPS routed both, and charging or
+  fueling started on arrival.
+  - Battery (Spark): from the County Loop 3,537 studs out to the Mesa Control charger, a 4,890-stud route
+    in 207 s.
+  - Fuel (Belcourt): 5,014 studs out to the Loop Stop pump, a 5,301-stud route in 223 s.
+
+**Open issues**
+- When a player leaves, EnergyService and DataService both react to `PlayerRemoving`, and Roblox doesn't
+  guarantee their order. If DataService ends the session first, up to a minute of energy change isn't saved.
+  A pre-release hook in DataService would close this.
+- A parked car keeps charging (and billing) after its driver walks away. That's what makes plaza hangouts
+  work, but Davis may prefer it to stop.
+- The test driver can't reverse out of a charging bay; the energy tests start each run on an open road.
+
 ## 2026-10-20 — Phase 4: dealership, used lot, garage, phone UI (+ catalog to 32 cars)
 
 **Shipped**

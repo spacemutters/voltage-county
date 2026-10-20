@@ -12,9 +12,11 @@
 --   play     other services read with `get` and change data only through `update`, which refuses whenever the
 --            session isn't active (so nothing is ever written to a profile this server no longer owns).
 --            onChanged listeners hear about every successful update (and every load), e.g. ProfileSyncService.
---   leave    end the session; ProfileStore saves and releases the lock.
+--   leave    run the beforeRelease listeners (last writes), then end the session; ProfileStore saves and
+--            releases the lock.
 --   elsewhere if another server takes the session (the player joined somewhere else), we kick them here.
---   shutdown game:BindToClose ends every open session; ProfileStore holds the server open until they've saved.
+--   shutdown game:BindToClose runs the beforeRelease listeners for everyone, then ends every open session;
+--            ProfileStore holds the server open until they've saved.
 --
 -- Stores: live servers use Config/Data.storeName. Studio uses studioStoreName so playtests never touch live
 -- player data, and when DataStores aren't reachable (Studio with API access off, or no internet) it uses
@@ -67,6 +69,8 @@ local departed: { [Player]: boolean } = {} -- players who left while their sessi
 local waiters: { [Player]: { Waiter } } = {}
 local listeners: { LoadedListener } = {}
 local changedListeners: { LoadedListener } = {} -- onChanged: after every successful update, and on load
+local releaseListeners: { (player: Player) -> () } = {} -- beforeRelease: last writes before a session ends
+local releasing: { [Player]: boolean } = {} -- players whose beforeRelease listeners are running
 local closing = false -- set by game:BindToClose
 
 -- Helpers ---------------------------------------------------------------------------------------------------
@@ -262,10 +266,27 @@ local function loadPlayer(player: Player)
 	fireChanged(player, data)
 end
 
+-- Runs every beforeRelease listener for a player whose session is about to end, in order and right now (no
+-- yielding), while `update` still accepts their writes. One that errors is reported and the rest still run.
+local function runBeforeRelease(player: Player)
+	if profiles[player] == nil then
+		return
+	end
+	releasing[player] = true
+	for _, listener in releaseListeners do
+		local ok, err = xpcall(listener, debug.traceback, player)
+		if not ok then
+			warn(`{LOG} a beforeRelease listener failed for {player.Name}: {err}`)
+		end
+	end
+	releasing[player] = nil
+end
+
 local function onPlayerRemoving(player: Player)
 	if loading[player] then
 		departed[player] = true -- loadPlayer sees this, cancels or ends the session and clears it
 	end
+	runBeforeRelease(player)
 	local profile = profiles[player]
 	profiles[player] = nil
 	if profile ~= nil then
@@ -275,6 +296,10 @@ local function onPlayerRemoving(player: Player)
 end
 
 local function onClose()
+	-- Last writes first (beforeRelease), while every session is still open.
+	for player in profiles do
+		runBeforeRelease(player)
+	end
 	closing = true
 	-- ProfileStore saves and releases every active session on close and keeps the server open until they're
 	-- done. Ending them here as well makes the order explicit: no update lands after its final save, and
@@ -299,7 +324,8 @@ end
 -- the session isn't active (the player left, the server is closing, or another server took the session).
 function DataService.update(player: Player, fn: (data: Types.PlayerData) -> ()): boolean
 	local profile = profiles[player]
-	if profile == nil or isClosing() or not profile:IsActive() then
+	-- beforeRelease listeners may still write while the server closes: their session is open until just after.
+	if profile == nil or (isClosing() and not releasing[player]) or not profile:IsActive() then
 		return false
 	end
 	local ok, err = xpcall(fn, debug.traceback, profile.Data)
@@ -358,6 +384,14 @@ function DataService.onChanged(fn: LoadedListener)
 	for player, profile in profiles do
 		runChangedListener(fn, player, profile.Data)
 	end
+end
+
+-- Calls `fn(player)` just before a loaded player's session ends: when they leave, and for everyone when the
+-- server closes. It runs before the session is released, so `update` still works inside it (even while the
+-- server closes); it must not yield. For services that keep state outside the save and write it back on the
+-- way out (EnergyService's car levels). Register in Init or Start.
+function DataService.beforeRelease(fn: (player: Player) -> ())
+	table.insert(releaseListeners, fn)
 end
 
 -- Lifecycle -------------------------------------------------------------------------------------------------

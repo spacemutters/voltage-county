@@ -11,6 +11,11 @@
 --
 -- This module reads the trim's numbers through `Spec`, the part of Vehicle/Tuning's `Tuning` it needs, so
 -- Tuning can require this module for calibration without a require cycle.
+--
+-- Speed cap (Phase 5 limp mode): setSpeedCap(studsPerSecond) holds the car under a lower top speed than the
+-- trim's, forward and in reverse, through the same limiter and overspeed brake as the real top speed; nil lifts
+-- it. Vehicle/Chassis sets it from the car's `Limp` attribute. The pure simulations below never use a cap, so
+-- Tuning's 0-60 calibration is unchanged.
 
 local Shared = script.Parent.Parent
 local Driving = require(Shared.Config.Driving)
@@ -50,6 +55,7 @@ type State = {
 	reverseTimer: number, -- how long the brake has been held at a standstill
 	gear: number, -- fuel cars: current gear index
 	shiftTimer: number, -- fuel cars: time left in the current shift dip
+	speedCap: number?, -- studs/s; a lower top speed than the trim's while set (limp mode)
 }
 
 local Powertrain = {}
@@ -104,17 +110,42 @@ function Powertrain.new(spec: Spec): Powertrain
 		reverseTimer = 0,
 		gear = 1,
 		shiftTimer = 0,
+		speedCap = nil,
 	}
 	return setmetatable(self, Powertrain)
 end
 
--- Back to a standstill in drive (after the server moves the car).
+-- Back to a standstill in drive (after the server moves the car). A speed cap stays: it belongs to the car's
+-- energy, not to its motion.
 function Powertrain.reset(self: Powertrain)
 	self.pedal = 0
 	self.reversing = false
 	self.reverseTimer = 0
 	self.gear = 1
 	self.shiftTimer = 0
+end
+
+-- Holds the car under `studsPerSecond` (forward and reverse) until it is lifted with nil. A cap at or above the
+-- trim's own top speed changes nothing. Non-positive or non-finite caps are ignored.
+function Powertrain.setSpeedCap(self: Powertrain, studsPerSecond: number?)
+	if studsPerSecond ~= nil and not (studsPerSecond > 0 and studsPerSecond < math.huge) then
+		return
+	end
+	self.speedCap = studsPerSecond
+end
+
+-- The cap set with setSpeedCap, or nil.
+function Powertrain.getSpeedCap(self: Powertrain): number?
+	return self.speedCap
+end
+
+-- The top speed (studs/s) the car may reach going forward, or in reverse, right now: the trim's, or the speed
+-- cap when that is lower.
+function Powertrain.topSpeedNow(self: Powertrain, reversing: boolean): number
+	local spec = self.spec
+	local top = if reversing then spec.reverseTopSpeed else spec.topSpeed
+	local cap = self.speedCap
+	return if cap ~= nil then math.min(top, cap) else top
 end
 
 -- Decides between drive and reverse. Reverse engages after the brake is held at a standstill; drive comes
@@ -188,18 +219,20 @@ function Powertrain.update(
 	local rate = if target > self.pedal then shaping.throttleRiseRate else settings.throttleFallRate
 	self.pedal = approach(self.pedal, target, rate * dt)
 
-	-- Speed in the direction the car is trying to go.
+	-- Speed in the direction the car is trying to go, and the most it may reach that way right now (the trim's
+	-- top speed, or the limp cap).
 	local travelSpeed = if self.reversing then -forwardSpeed else forwardSpeed
 	local speedAbs = math.abs(forwardSpeed)
+	local limit = self:topSpeedNow(self.reversing)
 
 	local driveAccel: number
 	if self.reversing then
 		local available = spec.reverseAccel * shaping.forceScale * self.pedal
-		driveAccel = -limited(spec, available, travelSpeed, spec.reverseTopSpeed)
+		driveAccel = -limited(spec, available, travelSpeed, limit)
 	else
 		local gearShare = if spec.energy == "fuel" then gearbox(self, dt, math.max(0, forwardSpeed)) else 1
 		local available = Powertrain.tractiveAccel(spec, forwardSpeed) * gearShare * shaping.forceScale * self.pedal
-		driveAccel = limited(spec, available, travelSpeed, spec.topSpeed)
+		driveAccel = limited(spec, available, travelSpeed, limit)
 	end
 
 	local brakeAccel = brakePedal * spec.brakeDecel
@@ -220,8 +253,8 @@ function Powertrain.update(
 		brakeAccel = math.max(brakeAccel, spec.brakeDecel * settings.holdBrakeFraction)
 	end
 
-	-- Going downhill past the limit: brake back toward it, so no car outruns its top speed for long.
-	local limit = if self.reversing then spec.reverseTopSpeed else spec.topSpeed
+	-- Going downhill past the limit (or above a new limp cap): brake back toward it, so no car outruns its top
+	-- speed for long.
 	if travelSpeed > limit then
 		brakeAccel += (travelSpeed - limit) * settings.overspeedBrakeGain
 	end

@@ -18,6 +18,10 @@
 --   GarageService.spawnOwned(player, uid)                  what SpawnOwned does, for server code that just
 --                                                          handed the player a car
 --
+-- Energy (Phase 5, docs/phase-5-contracts.md "Server"): a car brought out carries its saved charge or tank level
+-- (OwnedVehicle.energy) for EnergyService, and putting cars away (or replacing them) first has EnergyService write
+-- their current level back to the save, so the car comes out again exactly as it went in.
+--
 -- Server-authoritative (CLAUDE.md hard rule 1): a client only ever names a uid, and the server looks it up in that
 -- player's own data and nowhere else. A sale removes the car and pays for it inside one DataService.update, which
 -- re-checks that the car is still there, so a double click (or a forged burst) can never sell a car twice. No
@@ -46,6 +50,7 @@ local Template = require(script.Parent.DataService.Template)
 -- helpers.
 type DataServiceModule = typeof(require(script.Parent.DataService))
 type VehicleServiceModule = typeof(require(script.Parent.VehicleService))
+type EnergyServiceModule = typeof(require(script.Parent.EnergyService))
 
 -- What the function remotes answer.
 export type Reply = { ok: boolean, message: string }
@@ -59,6 +64,7 @@ local GarageService = {}
 
 local DataService: DataServiceModule? = nil
 local VehicleService: VehicleServiceModule? = nil
+local EnergyService: EnergyServiceModule? = nil
 
 -- Pure helpers ----------------------------------------------------------------------------------------------
 
@@ -242,6 +248,14 @@ local function onTestDrive(car: Model?): boolean
 	return car ~= nil and car:GetAttribute(Garage.testDriveAttribute) == true
 end
 
+-- Writes the energy level of every car the player has out back to their save, before those cars are put away.
+local function saveEnergy(player: Player)
+	local energyService = EnergyService
+	if energyService ~= nil then
+		energyService.persistPlayer(player)
+	end
+end
+
 -- For the dealership and used lot ---------------------------------------------------------------------------
 
 -- True while the player's data is loaded and their garage has a free slot.
@@ -317,7 +331,9 @@ function GarageService.spawnOwned(player: Player, uid: string): Reply
 		return reply(false, messages.noCharacter)
 	end
 
-	-- "Replaces any car they had out": put every car away first, then bring this one out.
+	-- "Replaces any car they had out": put every car away first (saving their energy, so bringing the same car
+	-- out again reads its current level), then bring this one out.
+	saveEnergy(player)
 	vehicleService.despawn(player)
 	local pad = nearestPad(player, position)
 	-- No pads on the map: VehicleService puts the car just in front of the player instead.
@@ -326,6 +342,10 @@ function GarageService.spawnOwned(player: Player, uid: string): Reply
 		return reply(false, messages.spawnFailed)
 	end
 	model:SetAttribute(Garage.ownedUidAttribute, vehicle.uid)
+	local energyService = EnergyService
+	if energyService ~= nil then
+		energyService.attach(model, vehicle.energy) -- `vehicle` is the live entry, so this is the level just saved
+	end
 	if Garage.seatDriver then
 		vehicleService.seatDriver(player)
 	end
@@ -345,6 +365,7 @@ function GarageService.despawnOwned(player: Player): Reply
 	if onTestDrive(car) then
 		return reply(false, messages.testDriveOut)
 	end
+	saveEnergy(player)
 	vehicleService.despawn(player)
 	return reply(true, messages.putAway)
 end
@@ -450,6 +471,7 @@ end
 function GarageService:Init()
 	DataService = require(script.Parent.DataService)
 	VehicleService = require(script.Parent.VehicleService)
+	EnergyService = require(script.Parent.EnergyService)
 end
 
 function GarageService:Start()

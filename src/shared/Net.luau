@@ -184,6 +184,34 @@ local REMOTES: { [string]: Spec } = {
 		burst = 0,
 		perSecond = 0,
 	},
+	-- Phase 6: jobs. The client asks; the server checks positions and decides (docs/phase-6-contracts.md).
+	JobAction = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({
+			action = Check.oneOf({ "accept", "arrive", "cancel", "refresh" }),
+			offerId = Check.optional(Check.string(ID_LENGTH)),
+			jobId = Check.optional(Check.string(UID_LENGTH)),
+		}),
+		burst = 4,
+		perSecond = 1,
+	},
+	-- Server sends a player their active job and current offers.
+	JobUpdate = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Studio only: dev shortcuts for the automated job tests (JobService refuses it outside Studio).
+	DevJob = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ action = Check.oneOf({ "teleportToStop" }) }),
+		burst = 3,
+		perSecond = 1,
+	},
 	-- Studio only: set the caller's current car's energy (0..1) for the energy tests (EnergyService refuses it
 	-- outside Studio).
 	DevSetEnergy = {

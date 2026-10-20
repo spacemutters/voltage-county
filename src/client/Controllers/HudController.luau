@@ -1,15 +1,17 @@
 --!strict
 -- Owns the one HUD ScreenGui (docs/phase-1-contracts.md "Client") and renders it with react-lua: the HUD
 -- (UI/Hud: the player's cash and active job at all times, the speed panel with its energy row while they
--- drive), on touch screens the touch controls (UI/TouchControls) while the player drives, and the dev spawn
--- menu (UI/DevSpawnMenu) in Studio. Since Phase 4 codes live in the phone (PhoneController), which draws its
--- own button beside the speed panel.
+-- drive, and the charging card while their car charges or fuels), on touch screens the touch controls
+-- (UI/TouchControls) while the player drives, and the dev spawn menu (UI/DevSpawnMenu) in Studio. Since Phase 4
+-- codes live in the phone (PhoneController), which draws its own button beside the speed panel.
 --
 -- Telemetry is read from DriveController about 10 times a second (Heartbeat plus an accumulator, connected
 -- only while driving), and the tree re-renders only when a shown value changes. Speed shows in the player's
 -- units (mph or km/h) from ProfileController. Cash comes from the player's `Cash` attribute, which the server
--- sets (Config/Economy cashAttribute). The UI is laid out at a landscape phone's size and scaled up on bigger
--- screens by one UIScale; it never scales down, so touch targets keep their 44 px minimum.
+-- sets (Config/Economy cashAttribute). The energy row and the charging card come from EnergyController
+-- (setEnergy), which watches the driven car's energy attributes. The UI is laid out at a landscape phone's
+-- size and scaled up on bigger screens by one UIScale; it never scales down, so touch targets keep their 44 px
+-- minimum.
 --
 -- Other controllers read which controls the player is using from here (getInputKind, onInputKindChanged), so
 -- the HUD, the touch controls and the phone always agree.
@@ -21,9 +23,9 @@ local UserInputService = game:GetService("UserInputService")
 
 local React = require(ReplicatedStorage.Packages.React)
 local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
-local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
+local Gps = require(ReplicatedStorage.Shared.Config.Gps)
 local Types = require(ReplicatedStorage.Shared.Types)
 local Units = require(ReplicatedStorage.Shared.Util.Units)
 local DriveController = require(script.Parent.DriveController)
@@ -33,6 +35,7 @@ local ProfileController = require(script.Parent.ProfileController)
 local UI = script.Parent.Parent.UI
 local DevSpawnMenu = require(UI.DevSpawnMenu)
 local Hud = require(UI.Hud)
+local Layout = require(UI.Phone.Layout)
 local PhoneConfig = require(UI.Phone.PhoneConfig)
 local Theme = require(UI.Theme)
 local TouchControls = require(UI.TouchControls)
@@ -47,8 +50,20 @@ local DEV_MENU_TOP = Controls.touch.margin
 	+ PhoneConfig.hud.jobSlot.size.Y
 	+ Economy.hud.gap
 
+-- The charging card (PhoneConfig.hud.chargingCard, px at UI scale 1) and where it may go. It sits above the
+-- speed panel when there's room, and never over the touch controls, the phone button, the cash and job slot,
+-- the GPS route chip or the notices.
+local CHARGING_CARD = {
+	size = PhoneConfig.hud.chargingCard.size,
+	gap = Controls.hud.gap, -- from the speed panel and the phone button
+	noticeLines = PhoneConfig.hud.chargingCard.noticeLines,
+	noticeLineHeight = PhoneConfig.hud.chargingCard.noticeLineHeight,
+}
+
 export type InputKind = "keyboard" | "gamepad" | "touch"
 export type ActiveJob = Hud.ActiveJob
+export type Energy = Hud.Energy
+export type Charging = Hud.Charging
 
 -- Everything the tree shows. render() hands a copy to the App component.
 type View = {
@@ -58,10 +73,12 @@ type View = {
 	gear: string,
 	mode: Types.DriveMode,
 	regen: Types.RegenLevel,
-	energy: Hud.Energy?,
+	energy: Energy?,
+	charging: Charging?,
 	inputKind: InputKind,
 	hints: { InputController.HintItem }?,
 	scale: number,
+	screen: Vector2, -- the screen in UI-scale-1 pixels (where the charging card can go)
 	showDevMenu: boolean,
 	cash: number?, -- nil until the player's data has loaded
 	job: ActiveJob?,
@@ -82,9 +99,11 @@ local view: View = {
 	mode = Controls.defaultMode,
 	regen = Controls.defaultRegen,
 	energy = nil,
+	charging = nil,
 	inputKind = "keyboard",
 	hints = nil,
 	scale = 1,
+	screen = Vector2.new(Controls.hud.referenceShortSide, Controls.hud.referenceShortSide),
 	showDevMenu = false,
 	cash = nil,
 	job = nil,
@@ -94,9 +113,21 @@ local root: any = nil
 local ticker: RBXScriptConnection? = nil
 local lastMph = 0 -- the latest telemetry speed, so a units switch redraws at once
 
+-- Declared with the pure helpers below; App places the charging card with it.
+local chargingCardRect: (screen: Vector2, context: Layout.Context) -> Layout.Rect
+
 -- The whole tree. The root frame is sized 1/scale so that, after the UIScale, it exactly fills the screen
 -- and every child can be laid out in unscaled (phone) pixels.
 local function App(props: View)
+	local showHints = props.hints ~= nil and #props.hints > 0
+	local charging = if props.driving then props.charging else nil
+	local chargingRect = if charging
+		then chargingCardRect(props.screen, {
+			driving = true,
+			touch = props.inputKind == "touch",
+			hints = showHints,
+		})
+		else nil
 	return e("Frame", {
 		Size = UDim2.fromScale(1 / props.scale, 1 / props.scale),
 		BackgroundTransparency = 1,
@@ -110,6 +141,8 @@ local function App(props: View)
 			mode = props.mode,
 			regen = props.regen,
 			energy = props.energy,
+			charging = charging,
+			chargingRect = chargingRect,
 			hints = props.hints,
 			cash = props.cash,
 			job = props.job,
@@ -161,6 +194,69 @@ function HudController.hintsFor(kind: "keyboard" | "gamepad"): { InputController
 	return hints
 end
 
+-- What the charging card must stay clear of while driving on `screen` (UI-scale-1 pixels): the speed panel, the
+-- phone button, the cash readout with its job slot, the GPS route chip (top right), the notices band (top
+-- centre) and, on touch, the steering zones, pedals and touch buttons.
+function HudController.chargingCardBlockers(screen: Vector2, context: Layout.Context): { Layout.Rect }
+	local hud = Economy.hud
+	local jobSlot = PhoneConfig.hud.jobSlot.size
+	local margin = Controls.touch.margin
+	local panel = Gps.panel
+	local toast = Gps.toast
+	local noticeWidth = toast.maxTextWidth + 2 * toast.padding.X + toast.dotSize + toast.gap
+	local noticeHeight = 2 * toast.padding.Y
+		+ CHARGING_CARD.noticeLines * toast.textSize * CHARGING_CARD.noticeLineHeight
+	local list: { Layout.Rect } = {
+		Layout.cluster(screen, context.hints),
+		Layout.phoneButton(screen, context),
+		Layout.rect(margin, margin, math.max(hud.cashMaxWidth, jobSlot.X), hud.rowHeight + hud.gap + jobSlot.Y),
+		Layout.rect(screen.X - panel.margin - panel.chipWidth, panel.top, panel.chipWidth, panel.buttonSize.Y),
+		Layout.rect((screen.X - noticeWidth) / 2, toast.margin, noticeWidth, noticeHeight),
+	}
+	if context.touch then
+		local zones = Layout.touchZones(screen)
+		table.insert(list, zones.steering)
+		table.insert(list, zones.pedals)
+		table.insert(list, zones.buttons)
+	end
+	return list
+end
+
+-- Where the charging card goes while driving on `screen` (UI-scale-1 pixels). The first spot that is on screen
+-- and clear of everything in chargingCardBlockers: centred just above the speed panel; centred above the speed
+-- panel and the phone button (when the phone button sits above the panel); then left, then right of the phone
+-- button. If none is clear (a very small screen), just above the speed panel.
+function HudController.chargingCardRect(screen: Vector2, context: Layout.Context): Layout.Rect
+	local size = CHARGING_CARD.size
+	local gap = CHARGING_CARD.gap
+	local cluster = Layout.cluster(screen, context.hints)
+	local phone = Layout.phoneButton(screen, context)
+	local centreLeft = (cluster.left + cluster.right - size.X) / 2
+
+	local candidates: { Layout.Rect } = {
+		Layout.rect(centreLeft, cluster.top - gap - size.Y, size.X, size.Y),
+		Layout.rect(centreLeft, math.min(cluster.top, phone.top) - gap - size.Y, size.X, size.Y),
+		Layout.rect(phone.left - gap - size.X, phone.bottom - size.Y, size.X, size.Y),
+		Layout.rect(phone.right + gap, phone.bottom - size.Y, size.X, size.Y),
+	}
+	local blockers = HudController.chargingCardBlockers(screen, context)
+	local whole = Layout.screen(screen)
+	for _, candidate in candidates do
+		local clear = Layout.contains(whole, candidate)
+		for _, blocker in blockers do
+			if not clear then
+				break
+			end
+			clear = not Layout.overlaps(candidate, blocker)
+		end
+		if clear then
+			return candidate
+		end
+	end
+	return candidates[1]
+end
+chargingCardRect = HudController.chargingCardRect
+
 -- Input kind -------------------------------------------------------------------------------------------------
 
 -- Which controls the player is using, from the last input type (nil: an input that says nothing about it).
@@ -210,17 +306,38 @@ function HudController.setActiveJob(job: ActiveJob?)
 	render()
 end
 
--- Driving ----------------------------------------------------------------------------------------------------
+-- Energy (Phase 5) -----------------------------------------------------------------------------------------------
 
--- The car's energy kind from the catalog. The level stays nil until Phase 5 tracks energy.
-local function energyOf(car: Model?): Hud.Energy?
-	local vehicleId = if car then car:GetAttribute("VehicleId") else nil
-	local vehicle = if type(vehicleId) == "string" then Catalog.getVehicle(vehicleId) else nil
-	if vehicle == nil then
-		return nil
+local function sameFields(a: { [string]: any }?, b: { [string]: any }?): boolean
+	if a == nil or b == nil then
+		return a == b
 	end
-	return { kind = vehicle.energy, level = nil }
+	for key, value in a do
+		if b[key] ~= value then
+			return false
+		end
+	end
+	for key in b do
+		if a[key] == nil then
+			return false
+		end
+	end
+	return true
 end
+
+-- Shows the driven car's energy in the speed panel's energy row, and the charging card while it charges or
+-- fuels (nil: none). For EnergyController, which works both out from the car's attributes; redraws only when
+-- something shown changed.
+function HudController.setEnergy(energy: Energy?, charging: Charging?)
+	if sameFields(view.energy :: any, energy :: any) and sameFields(view.charging :: any, charging :: any) then
+		return
+	end
+	view.energy = if energy then table.clone(energy) else nil
+	view.charging = if charging then table.clone(charging) else nil
+	render()
+end
+
+-- Driving ----------------------------------------------------------------------------------------------------
 
 -- Copies the telemetry into the view; re-renders only if something shown changed.
 local function refreshTelemetry()
@@ -267,15 +384,14 @@ local function stopTicker()
 	end
 end
 
-local function onDrivingChanged(driving: boolean, car: Model?)
+-- The energy row and charging card follow EnergyController (setEnergy), which watches the same signal.
+local function onDrivingChanged(driving: boolean)
 	view.driving = driving
 	if driving then
 		view.mode = DriveController.getMode()
 		view.regen = DriveController.getRegen()
-		view.energy = energyOf(car or DriveController.getCar())
 		startTicker()
 	else
-		view.energy = nil
 		stopTicker()
 	end
 	render()
@@ -313,13 +429,18 @@ function HudController:Start()
 	root = ReactRoblox.createRoot(screenGui)
 	view.showDevMenu = RunService:IsStudio()
 	view.scale = HudController.scaleFor(screenGui.AbsoluteSize)
+	view.screen = Layout.layoutSize(screenGui.AbsoluteSize, view.scale)
 	setInputKind(kindFor(UserInputService:GetLastInputType()) or deviceKind())
 	-- Controllers that started before this one (the phone) hear the first guess too.
 	HudController.onInputKindChanged:Fire(view.inputKind)
 
 	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		local scale = HudController.scaleFor(screenGui.AbsoluteSize)
-		if scale ~= view.scale then
+		local screen = Layout.layoutSize(screenGui.AbsoluteSize, scale)
+		local moved = screen ~= view.screen
+		view.screen = screen
+		-- The charging card's spot depends on the screen size; everything else only on the scale.
+		if scale ~= view.scale or (moved and view.charging ~= nil) then
 			view.scale = scale
 			render()
 		end
@@ -346,7 +467,7 @@ function HudController:Start()
 
 	DriveController.onDrivingChanged:Connect(onDrivingChanged)
 	if DriveController.getCar() then
-		onDrivingChanged(true, DriveController.getCar())
+		onDrivingChanged(true)
 	else
 		render()
 	end

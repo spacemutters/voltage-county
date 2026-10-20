@@ -58,6 +58,26 @@ Migrations.steps = {
 			end
 		end
 	end,
+
+	-- 3 -> 4: every owned car gains `energy`, a full charge or tank (Config/Data.defaults.vehicleEnergy). A car
+	-- that already has a usable level keeps it (pulled into 0..1); a level that isn't a number (or is NaN) is
+	-- replaced by a full one. A save with no vehicles list is left for Reconcile to fill in.
+	[3] = function(data: { [string]: any })
+		local vehicles = data.vehicles
+		if type(vehicles) ~= "table" then
+			return
+		end
+		for _, vehicle in vehicles do
+			if type(vehicle) == "table" then
+				local energy = vehicle.energy
+				if type(energy) ~= "number" or energy ~= energy then
+					vehicle.energy = Data.defaults.vehicleEnergy
+				else
+					vehicle.energy = math.clamp(energy, 0, 1)
+				end
+			end
+		end
+	end,
 } :: { [number]: Step }
 
 -- The version a save claims (a missing field counts as unversionedVersion); nil if the field is unusable.
