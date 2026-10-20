@@ -3,7 +3,10 @@
 --
 --   setDestination(target)   a MapLayout location id, a point, or nil to clear. Routes right away with
 --                            Pathfind.route on this client (the road graph is shared data, so streaming never
---                            hides a destination).
+--                            hides a destination). Options (Phase 6, for JobController): `name` for the chip in
+--                            place of the place's own name ("Pick up at Town Square"), and `keepOnArrival`, which
+--                            keeps the route and its marker up on arrival, with no notice, until the caller
+--                            changes or clears it (a job stop counts only once the server says so).
 --   route line               flat Beams between Attachments in Workspace.GpsRoute, a folder this client makes
 --                            (never replicated), floating just above the road, with a marker at the end.
 --   tracking                 a few times a second (RunService.Heartbeat with an accumulator, connected only
@@ -60,6 +63,13 @@ export type Destination = {
 	id: string?, -- the MapLayout location id, or nil when the destination was given as a point
 	name: string, -- shown in the panel and the arrival notice
 	position: Vector3,
+	keepOnArrival: boolean, -- arriving neither clears the route nor shows a notice (job stops)
+}
+
+-- How setDestination routes (both optional).
+export type Options = {
+	name: string?, -- shown in the chip and the phone instead of the place's own name
+	keepOnArrival: boolean?, -- see Destination
 }
 
 -- Route math ------------------------------------------------------------------------------------------------
@@ -255,7 +265,7 @@ local view: View = { scale = 1, activeId = nil, activeName = nil, distanceText =
 local locationsById: { [string]: MapLayout.Location }? = nil
 
 -- The public GpsController.setDestination (defined in the API section below), for the chip's callbacks.
-local setDestination: (target: string | Vector3 | nil) -> ()
+local setDestination: (target: string | Vector3 | nil, options: Options?) -> ()
 
 local function locationIndex(): { [string]: MapLayout.Location }
 	local index = locationsById
@@ -696,8 +706,9 @@ local function check()
 	end
 	local tracking = Gps.tracking
 
-	-- At the place itself (it may sit off the road, past the route's end).
-	if (position - target.position).Magnitude <= tracking.arriveRadius then
+	-- At the place itself (it may sit off the road, past the route's end). A kept destination (a job stop) stays
+	-- up: the route keeps following the player until its owner moves it on.
+	if (position - target.position).Magnitude <= tracking.arriveRadius and not target.keepOnArrival then
 		arrive()
 		return
 	end
@@ -717,7 +728,7 @@ local function check()
 
 	-- At the end of the route (on the road nearest the place).
 	local left = RouteMath.remaining(currentPath, current)
-	if left <= tracking.arriveRadius and current.distance <= tracking.arriveRadius then
+	if left <= tracking.arriveRadius and current.distance <= tracking.arriveRadius and not target.keepOnArrival then
 		arrive()
 		return
 	end
@@ -749,8 +760,9 @@ end
 -- Public API ------------------------------------------------------------------------------------------------
 
 -- Starts routing to a MapLayout location id or a point; nil clears the route. An unknown id is ignored with a
--- warning. With no character yet, the route is made as soon as there is one.
-function GpsController.setDestination(target: string | Vector3 | nil)
+-- warning. With no character yet, the route is made as soon as there is one. `options` (see Options) can name
+-- the destination and keep it up on arrival.
+function GpsController.setDestination(target: string | Vector3 | nil, options: Options?)
 	if target == nil then
 		if destination ~= nil then
 			clearRoute()
@@ -758,6 +770,8 @@ function GpsController.setDestination(target: string | Vector3 | nil)
 		return
 	end
 
+	local name = if options then options.name else nil
+	local keep = options ~= nil and options.keepOnArrival == true
 	local resolved: Destination
 	if type(target) == "string" then
 		local location = locationIndex()[target]
@@ -766,9 +780,14 @@ function GpsController.setDestination(target: string | Vector3 | nil)
 			return
 		end
 		-- gpsTarget: the part of the site players want (the dealership's display cars), when it isn't the door.
-		resolved = { id = location.id, name = location.displayName, position = location.gpsTarget or location.position }
+		resolved = {
+			id = location.id,
+			name = name or location.displayName,
+			position = location.gpsTarget or location.position,
+			keepOnArrival = keep,
+		}
 	else
-		resolved = { id = nil, name = Gps.panel.labels.markedSpot, position = target }
+		resolved = { id = nil, name = name or Gps.panel.labels.markedSpot, position = target, keepOnArrival = keep }
 	end
 
 	destination = resolved

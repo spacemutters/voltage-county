@@ -268,6 +268,8 @@ local PhoneConfig = {
 			padding = 12,
 			titleTextSize = 15,
 			detailTextSize = 13,
+			-- A title or stop line too long for the slot shrinks down to this before it is cut short.
+			minTextSize = 11,
 		},
 		phoneHint = "Phone", -- the HUD hint row entry for the phone key
 	},

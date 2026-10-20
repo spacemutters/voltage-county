@@ -15,9 +15,11 @@
 -- rules, cap pro rata), then their samples and pay timer start over. Leaving the game drops it unpaid.
 --
 -- Dealership test-drive cars (attribute Config/Garage.testDriveAttribute) never earn: they count as not driving.
+-- Neither does a player with an active job (JobService.hasActiveJob; docs/phase-6-contracts.md): the job is the
+-- earning, so the two never stack. Accepting a job settles the driving before it, like getting out.
 --
 -- Who's driving comes from VehicleService.getCar(player) and the car's Driver seat Occupant. Neither
--- VehicleService nor EconomyService requires this module, so there is no require cycle. No polling loops beyond
+-- VehicleService, EconomyService nor JobService requires this module, so there is no require cycle. No polling loops beyond
 -- the sampling Heartbeat (CLAUDE.md hard rule 10).
 
 local HttpService = game:GetService("HttpService")
@@ -34,6 +36,7 @@ local Graph = require(Shared.Road.Graph)
 local Net = require(Shared.Net)
 local Units = require(Shared.Util.Units)
 local EconomyService = require(script.Parent.EconomyService)
+local JobService = require(script.Parent.JobService)
 local VehicleService = require(script.Parent.VehicleService)
 local Earnings = require(script.Earnings)
 
@@ -96,6 +99,9 @@ local function drivenCar(player: Player): (Model?, Humanoid?)
 	end
 	if car:GetAttribute(Garage.testDriveAttribute) == true then
 		return nil, nil -- a dealership test drive: no earnings
+	end
+	if JobService.hasActiveJob(player) then
+		return nil, nil -- on a job: the job pays instead
 	end
 	local seats = car:FindFirstChild(SEATS_FOLDER)
 	local seat = if seats then seats:FindFirstChild(DRIVER_SEAT) else nil

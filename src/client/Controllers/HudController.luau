@@ -1,7 +1,8 @@
 --!strict
 -- Owns the one HUD ScreenGui (docs/phase-1-contracts.md "Client") and renders it with react-lua: the HUD
--- (UI/Hud: the player's cash and active job at all times, the speed panel with its energy row while they
--- drive, and the charging card while their car charges or fuels), on touch screens the touch controls
+-- (UI/Hud: the player's cash at all times with the active job under it while one runs (Phase 6: JobController
+-- calls setActiveJob), the speed panel with its energy row while they drive, and the charging card while
+-- their car charges or fuels), on touch screens the touch controls
 -- (UI/TouchControls) while the player drives, and the dev spawn menu (UI/DevSpawnMenu) in Studio. Since Phase 4
 -- codes live in the phone (PhoneController), which draws its own button beside the speed panel.
 --
@@ -194,6 +195,50 @@ function HudController.hintsFor(kind: "keyboard" | "gamepad"): { InputController
 	return hints
 end
 
+-- The notices band at the top centre (UI/Toast), tall enough for a notice CHARGING_CARD.noticeLines lines tall.
+function HudController.noticesRect(screen: Vector2): Layout.Rect
+	local toast = Gps.toast
+	local noticeWidth = toast.maxTextWidth + 2 * toast.padding.X + toast.dotSize + toast.gap
+	local noticeHeight = 2 * toast.padding.Y
+		+ CHARGING_CARD.noticeLines * toast.textSize * CHARGING_CARD.noticeLineHeight
+	return Layout.rect((screen.X - noticeWidth) / 2, toast.margin, noticeWidth, noticeHeight)
+end
+
+-- The GPS route chip, top right (UI/GpsPanel).
+function HudController.gpsChipRect(screen: Vector2): Layout.Rect
+	local panel = Gps.panel
+	return Layout.rect(screen.X - panel.margin - panel.chipWidth, panel.top, panel.chipWidth, panel.buttonSize.Y)
+end
+
+-- The active-job slot (UI/Hud's Wallet: under the cash readout, at the touch margin).
+function HudController.jobSlotRect(_screen: Vector2): Layout.Rect
+	local hud = Economy.hud
+	local slot = PhoneConfig.hud.jobSlot.size
+	local margin = Controls.touch.margin
+	return Layout.rect(margin, margin + hud.rowHeight + hud.gap, slot.X, slot.Y)
+end
+
+-- What the active-job slot must stay clear of on `screen` (UI-scale-1 pixels): the notices band, the GPS route
+-- chip, the speed panel and the phone button, and on touch the steering zones, pedals and touch buttons
+-- (tests/JobClient.spec checks it on landscape phones, tablets and desktops).
+function HudController.jobSlotBlockers(screen: Vector2, context: Layout.Context): { Layout.Rect }
+	local list: { Layout.Rect } = {
+		HudController.noticesRect(screen),
+		HudController.gpsChipRect(screen),
+		Layout.phoneButton(screen, context),
+	}
+	if context.driving then
+		table.insert(list, Layout.cluster(screen, context.hints))
+	end
+	if context.touch then
+		local zones = Layout.touchZones(screen)
+		table.insert(list, zones.steering)
+		table.insert(list, zones.pedals)
+		table.insert(list, zones.buttons)
+	end
+	return list
+end
+
 -- What the charging card must stay clear of while driving on `screen` (UI-scale-1 pixels): the speed panel, the
 -- phone button, the cash readout with its job slot, the GPS route chip (top right), the notices band (top
 -- centre) and, on touch, the steering zones, pedals and touch buttons.
@@ -201,17 +246,12 @@ function HudController.chargingCardBlockers(screen: Vector2, context: Layout.Con
 	local hud = Economy.hud
 	local jobSlot = PhoneConfig.hud.jobSlot.size
 	local margin = Controls.touch.margin
-	local panel = Gps.panel
-	local toast = Gps.toast
-	local noticeWidth = toast.maxTextWidth + 2 * toast.padding.X + toast.dotSize + toast.gap
-	local noticeHeight = 2 * toast.padding.Y
-		+ CHARGING_CARD.noticeLines * toast.textSize * CHARGING_CARD.noticeLineHeight
 	local list: { Layout.Rect } = {
 		Layout.cluster(screen, context.hints),
 		Layout.phoneButton(screen, context),
 		Layout.rect(margin, margin, math.max(hud.cashMaxWidth, jobSlot.X), hud.rowHeight + hud.gap + jobSlot.Y),
-		Layout.rect(screen.X - panel.margin - panel.chipWidth, panel.top, panel.chipWidth, panel.buttonSize.Y),
-		Layout.rect((screen.X - noticeWidth) / 2, toast.margin, noticeWidth, noticeHeight),
+		HudController.gpsChipRect(screen),
+		HudController.noticesRect(screen),
 	}
 	if context.touch then
 		local zones = Layout.touchZones(screen)
@@ -300,8 +340,24 @@ end
 
 -- Active job (Phase 6) -------------------------------------------------------------------------------------------
 
--- Shows a job in the slot under the cash, or empties it (nil). For Phase 6's job controller.
+-- Shows a job in the slot under the cash, or empties it (nil). JobController calls it when the job, its stop,
+-- or the distance or time left as shown changes; an unchanged job doesn't redraw.
 function HudController.setActiveJob(job: ActiveJob?)
+	local current = view.job
+	if
+		current ~= nil
+		and job ~= nil
+		and current.title == job.title
+		and current.detail == job.detail
+		and current.status == job.status
+		and current.pay == job.pay
+		and current.alert == job.alert
+	then
+		return
+	end
+	if current == nil and job == nil then
+		return
+	end
 	view.job = if job then table.clone(job) else nil
 	render()
 end

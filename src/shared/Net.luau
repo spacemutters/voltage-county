@@ -44,6 +44,8 @@ local MAX_LOT_SLOTS = 64
 local MAX_DEV_CASH = 100000000
 local MAX_PRICE = 100000000 -- the dearest car in the catalog is far below this
 local DATE_LENGTH = 10 -- "YYYY-MM-DD"
+local MAX_EXTRAS = 8 -- kit extras on one car
+local PLATE_LENGTH = 16 -- generous: the server trims and enforces Config/Customization's own limit
 
 local REMOTES: { [string]: Spec } = {
 	-- Studio only: spawn a car next to the player for testing (VehicleService refuses it outside Studio).
@@ -198,6 +200,71 @@ local REMOTES: { [string]: Spec } = {
 	},
 	-- Server sends a player their active job and current offers.
 	JobUpdate = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Phase 7: the Wrap & Tint shop. `changes` holds only what the player changed; the server validates every
+	-- value against Config/Customization and prices it. Returns { ok, message, cost }.
+	BuyCustomization = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({
+			uid = Check.string(UID_LENGTH),
+			changes = Check.shape({
+				paint = Check.optional(Check.string(ID_LENGTH)),
+				customColor = Check.optional(Check.shape({
+					h = Check.number(0, 1),
+					s = Check.number(0, 1),
+					v = Check.number(0, 1),
+				})),
+				finish = Check.optional(Check.string(ID_LENGTH)),
+				wrap = Check.optional(Check.string(ID_LENGTH)),
+				wheels = Check.optional(Check.string(ID_LENGTH)),
+				rideHeight = Check.optional(Check.number(-1, 1)),
+				tint = Check.optional(Check.number(0, 1)),
+				caliper = Check.optional(Check.string(ID_LENGTH)),
+				extras = Check.optional(Check.array(Check.string(ID_LENGTH), MAX_EXTRAS)),
+				plateFormat = Check.optional(Check.string(ID_LENGTH)),
+			}),
+		}),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Custom plate text (filtered by TextService on the server before anyone sees it).
+	SetPlate = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH), text = Check.string(PLATE_LENGTH) }),
+		burst = 2,
+		perSecond = 0.2,
+	},
+	-- Light shows at a MeetSpot.
+	JoinLightShow = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ meetSpotId = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	LeaveLightShow = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Server tells nearby players a show starts: { showId, routineId, startAt, cars }.
+	LightShowStart = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	LightShowEnd = {
 		kind = "event",
 		direction = "toClient",
 		validate = Check.none(),

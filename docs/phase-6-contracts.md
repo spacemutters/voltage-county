@@ -77,7 +77,11 @@ and any trim with ≥ 6 seats). Delivery classes: `van`, `suv`, `pickup`, `miniv
 ### `src/server/Services/JobService/Rideshare.luau` (jobs-core helper)
 NPC fares at `RideshareHotspot` locations (MapLayout); a fare's drop-off is another hotspot or a GPS
 destination far enough away (route length band from Config). Pay = base + route distance × payPerStud × class
-multiplier (XL for XL classes) + tip. Pickup leg (driving to the fare) is unpaid but counted in the time limit.
+multiplier (XL for XL classes) + tip. The pickup leg (driving to the fare) counts in the time limit and, since the
+Phase 6 review, is paid by the stud like the ride: measured from where the car is when the fare is accepted,
+capped at `pickupMaxStuds`. (Changed from "unpaid": a fixed allowance for an assumed 900-stud leg in `basePay`
+overpaid fares picked up where the car already stood, and paid again for a leg driven under drive-to-earn
+before accepting.) `basePay` covers only the stops and the time between jobs (`Jobs.calibration`).
 
 ### `src/server/Services/JobService/Delivery.luau` (delivery helper)
 Load at a `JobDepot` with `jobType = "delivery"` (stand still for a few seconds), then 3–6 drops at `HousePlot`

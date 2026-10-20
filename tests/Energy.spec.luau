@@ -18,6 +18,9 @@ local Vehicles = require(ReplicatedStorage.Shared.Config.Vehicles)
 type StationKind = Energy.StationKind
 
 local CRUISE_TOLERANCE = 0.01 -- cruise drain within 1 % of 1 / (energyMinutes × 60)
+-- Easing off just past the deadband and back on may cost at most this much more than holding speed (the share of
+-- the ease-off that goes below idle isn't fully recovered).
+local MAX_EASE_OFF_EXTRA = 1.06
 local DT = 0.05 -- seconds per step when timing a charge
 local MAX_CHARGE_SECONDS = 600 -- a charge that takes longer than this never finishes
 local PERCENT = 100
@@ -191,10 +194,12 @@ return function(t: Harness.Api)
 					return Energy.drainPerSecond(ref.vehicleId, ref.trim, speed, accel, climb)
 				end
 				local flat = drain(cruise, 0, 0)
-				-- Easing off and back on by the same amount costs what holding the speed does.
+				-- Easing off and back on by the same amount just past the deadband never costs less than holding
+				-- the speed, and only a little more: at cruise that ease-off already takes the motor below idle,
+				-- where only regenEfficiency of it comes back (none for fuel cars), so the small extra is real.
 				local accel = deadband + 0.5
 				local pulsed = (drain(cruise, -accel, 0) + drain(cruise, accel, 0)) / 2
-				if math.abs(pulsed - flat) > flat * 1e-9 then
+				if pulsed < flat * (1 - 1e-9) or pulsed > flat * MAX_EASE_OFF_EXTRA then
 					table.insert(problems, `{ref.name}: easing off and on costs {pulsed / flat}x holding speed`)
 				end
 				if drain(cruise, deadband * 0.9, 0) ~= flat or drain(cruise, -deadband * 0.9, 0) ~= flat then

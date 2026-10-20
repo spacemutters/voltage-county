@@ -560,22 +560,22 @@ Models live in `ServerStorage.VehicleModels`. Greybox versions come from `Dev/Ve
 ### Phase 6 — Jobs framework, rideshare, delivery
 
 **Tasks**
-- [ ] `JobService` + `Config/Jobs.luau`:
+- [x] `JobService` + `Config/Jobs.luau`:
   - Job definitions: eligible vehicle classes, payout formula, XP, cooldown.
   - State machine: offered → accepted → pickup → dropoff → complete/failed.
   - Positions are server-checked at every step.
-- [ ] Rideshare:
+- [x] Rideshare:
   - NPC fares appear at `RideshareHotspot`s; drop-offs route via the road graph.
   - Pay = base + distance × rate × class multiplier.
   - Smooth driving (no hard braking or crashes) earns a tip.
   - `suv` and `minivan` classes get XL fares.
-- [ ] Delivery: load parcels at a `JobDepot` for a multi-stop suburb route; `van`, `suv` and `pickup` classes carry more stops.
-- [ ] Job XP levels unlock higher-paying work.
+- [x] Delivery: load parcels at a `JobDepot` for a multi-stop suburb route; `van`, `suv` and `pickup` classes carry more stops.
+- [x] Job XP levels unlock higher-paying work.
 
 **Acceptance**
-- [ ] One rideshare and one delivery complete end to end in an automated playtest (AutoDriver + dev-only shortcuts).
-- [ ] A forged "complete job" remote sent far from the destination is rejected.
-- [ ] Measured $/min lands in the §4 band.
+- [x] One rideshare and one delivery complete end to end in an automated playtest (AutoDriver + dev-only shortcuts).
+- [x] A forged "complete job" remote sent far from the destination is rejected.
+- [x] Measured $/min lands in the §4 band.
 
 **Stop.** End of Milestone B, a good point for a friends-only playtest.
 

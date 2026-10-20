@@ -12,7 +12,12 @@
 --                   the rate and the cost per %. HudController picks its spot (clear of the touch controls, the
 --                   phone button, the GPS chip and the notices) and passes it in.
 --   wallet          always, top left: the player's cash ("$12,345"), lined up with the touch steering zones.
---   active job      under the cash: the job in progress (Phase 6 fills it; empty until then, so nothing shows).
+--   active job      under the cash, only while a job runs (Phase 6, Controllers/JobController): the job's title,
+--                   what to do at the current stop ("Pick up at Town Square"), and the distance and time left
+--                   ("0.8 mi · 2:41 left", amber and then red as the time runs short) with the pay estimate on
+--                   their right. The slot keeps PhoneConfig.hud.jobSlot's size, which HudController keeps the
+--                   charging card and the dev menu clear of; it sits below the notices band and above the touch
+--                   steering zones on every landscape phone (tests/JobClient.spec checks it).
 --
 -- Codes moved to the phone's Codes app, and the phone button is drawn by the phone itself (UI/Phone), placed
 -- beside this speed panel by UI/Phone/Layout, which shares the panel's size and position with this file.
@@ -39,8 +44,17 @@ local PERCENT_EPSILON = 1e-6 -- absorbs float noise when rounding a level down t
 
 export type HintItem = { keys: string, label: string }
 
--- The job in progress, as the HUD shows it (Phase 6 decides what goes in it).
-export type ActiveJob = { title: string, detail: string? }
+-- How worried the active job's time line looks: "low" is amber, "critical" red (JobController.timeAlert).
+export type JobAlert = "normal" | "low" | "critical"
+
+-- The job in progress, as the HUD shows it (Controllers/JobController.hudFor works the texts out).
+export type ActiveJob = {
+	title: string, -- "Fare to Theater Row"
+	detail: string?, -- what to do at the current stop: "Pick up at Town Square"
+	status: string?, -- the distance and time left: "0.8 mi · 2:41 left", or "Stop here to pick up"
+	pay: string?, -- the pay estimate, "$1,240"
+	alert: JobAlert?, -- the status line's color (nil: normal)
+}
 
 -- How worried the energy row looks: "low" is amber, "critical" red (Config/Energy warningLevel, criticalLevel).
 export type EnergyAlert = "normal" | "low" | "critical"
@@ -101,6 +115,17 @@ local ENERGY = {
 	rangeSpacing = PhoneConfig.hud.energy.rangeSpacing,
 	limpText = PhoneConfig.hud.energy.limpText,
 	card = PhoneConfig.hud.chargingCard,
+}
+
+-- The active-job slot's rows (px at UI scale 1), inside PhoneConfig.hud.jobSlot.size: the title, the stop, then
+-- the status with the pay on its right (the shortest line, so the title and the stop keep the full width).
+-- 18 + 2 x 16 = 50 px of the slot's 56, centred, so the three rows always fit.
+local JOB = {
+	slot = PhoneConfig.hud.jobSlot,
+	titleHeight = 18, -- the title, at slot.titleTextSize
+	lineHeight = 16, -- the stop and the status lines, at slot.detailTextSize
+	payWidth = 48, -- room kept for the pay at the end of the status line ("$1,240")
+	payGap = 6, -- between the status and the pay
 }
 
 -- "W/S Drive    A/D Steer ..." with the keys in bold white and the labels in the dim text color.
@@ -613,11 +638,59 @@ local function cashText(cash: number): string
 		.. string.sub(formatted, at + #symbol)
 end
 
--- The job in progress: its title and one line of detail, on a panel under the cash.
+-- A single line of the job slot at a fixed height, cut short with "..." when too long, so the three rows always
+-- fit the slot.
+local function jobText(
+	props: {
+		order: number?,
+		text: string,
+		font: Font,
+		size: number,
+		color: Color3,
+		height: number,
+		room: number?, -- px kept free on the right (for the pay)
+		minSize: number?, -- shrink a line too long for the row down to this size before cutting it short
+	}
+)
+	local minSize = props.minSize
+	return e("TextLabel", {
+		LayoutOrder = props.order,
+		Size = UDim2.new(1, -(props.room or 0), 0, props.height),
+		BackgroundTransparency = 1,
+		FontFace = props.font,
+		Text = props.text,
+		TextColor3 = props.color,
+		TextSize = props.size,
+		TextScaled = minSize ~= nil,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, {
+		Fit = if minSize ~= nil
+			then e("UITextSizeConstraint", { MaxTextSize = props.size, MinTextSize = math.min(minSize, props.size) })
+			else nil,
+	})
+end
+
+-- The status line's color for how much time is left.
+local function jobAlertColor(alert: JobAlert?): Color3
+	local colors = Theme.colors
+	if alert == "critical" then
+		return colors.danger
+	elseif alert == "low" then
+		return colors.warning
+	end
+	return colors.textDim
+end
+
+-- The job in progress, on a panel under the cash: the title, what to do at the current stop, and the distance and
+-- time left with the pay estimate on their right.
 local function JobSlot(props: { job: ActiveJob, order: number })
-	local slot = PhoneConfig.hud.jobSlot
+	local slot = JOB.slot
 	local colors = Theme.colors
 	local job = props.job
+	local pay = job.pay
+	local status = job.status
+	local urgent = job.alert ~= nil and job.alert ~= "normal"
 	return e("Frame", {
 		LayoutOrder = props.order,
 		Size = UDim2.fromOffset(slot.size.X, slot.size.Y),
@@ -635,22 +708,57 @@ local function JobSlot(props: { job: ActiveJob, order: number })
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
-		Title = e(line, {
+		Title = e(jobText, {
 			order = 1,
 			text = job.title,
 			font = Theme.fonts.bold,
 			size = slot.titleTextSize,
 			color = colors.text,
-			align = Enum.TextXAlignment.Left,
+			height = JOB.titleHeight,
+			minSize = slot.minTextSize,
 		}),
 		Detail = if job.detail
-			then e(line, {
+			then e(jobText, {
 				order = 2,
 				text = job.detail,
-				font = Theme.fonts.regular,
+				font = Theme.fonts.medium,
 				size = slot.detailTextSize,
-				color = colors.textDim,
-				align = Enum.TextXAlignment.Left,
+				color = colors.text,
+				height = JOB.lineHeight,
+				minSize = slot.minTextSize,
+			})
+			else nil,
+		Bottom = if status or pay
+			then e("Frame", {
+				LayoutOrder = 3,
+				Size = UDim2.new(1, 0, 0, JOB.lineHeight),
+				BackgroundTransparency = 1,
+			}, {
+				Status = if status
+					then e(jobText, {
+						text = status,
+						font = if urgent then Theme.fonts.bold else Theme.fonts.regular,
+						size = slot.detailTextSize,
+						color = jobAlertColor(job.alert),
+						height = JOB.lineHeight,
+						room = if pay then JOB.payWidth + JOB.payGap else 0,
+					})
+					else nil,
+				-- The estimate in the accent, never cut short: it grows left over the status's spare room if it must.
+				Pay = if pay
+					then e("TextLabel", {
+						AnchorPoint = Vector2.new(1, 0),
+						Position = UDim2.fromScale(1, 0),
+						Size = UDim2.new(0, JOB.payWidth, 1, 0),
+						AutomaticSize = Enum.AutomaticSize.X,
+						BackgroundTransparency = 1,
+						FontFace = Theme.fonts.bold,
+						Text = pay,
+						TextColor3 = colors.accent,
+						TextSize = slot.detailTextSize,
+						TextXAlignment = Enum.TextXAlignment.Right,
+					})
+					else nil,
 			})
 			else nil,
 	})
