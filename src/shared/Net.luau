@@ -39,6 +39,9 @@ export type RejectReason = "rate" | "payload" | "arity" | "direction"
 export type RejectListener = (player: Player, remote: string, reason: RejectReason) -> ()
 
 local ID_LENGTH = 40
+local UID_LENGTH = 64 -- HttpService:GenerateGUID(false) is 36 characters
+local MAX_LOT_SLOTS = 64
+local MAX_DEV_CASH = 100000000
 
 local REMOTES: { [string]: Spec } = {
 	-- Studio only: spawn a car next to the player for testing (VehicleService refuses it outside Studio).
@@ -72,6 +75,106 @@ local REMOTES: { [string]: Spec } = {
 		validate = Check.none(),
 		burst = 0,
 		perSecond = 0,
+	},
+
+	-- Phase 4: dealership, used lot, garage, settings. Functions return { ok: boolean, message: string, ... }.
+	BuyVehicle = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ vehicleId = Check.string(ID_LENGTH), trim = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	UpgradeVehicle = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH), trim = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	StartTestDrive = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ vehicleId = Check.string(ID_LENGTH), trim = Check.string(ID_LENGTH) }),
+		burst = 2,
+		perSecond = 0.2,
+	},
+	ClaimStarter = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 2,
+		perSecond = 0.2,
+	},
+	GetUsedLot = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 4,
+		perSecond = 1,
+	},
+	BuyUsed = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ slot = Check.integer(1, MAX_LOT_SLOTS) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	SpawnOwned = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	DespawnOwned = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	SellVehicle = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	SetFavorite = {
+		kind = "event",
+		direction = "toServer",
+		validate = Check.shape({ uid = Check.string(UID_LENGTH), favorite = Check.boolean() }),
+		burst = 6,
+		perSecond = 2,
+	},
+	UpdateSettings = {
+		kind = "event",
+		direction = "toServer",
+		validate = Check.shape({
+			units = Check.optional(Check.oneOf({ "mph", "kph" })),
+			camera = Check.optional(Check.oneOf({ "chase", "orbit", "hood" })),
+			musicVolume = Check.optional(Check.number(0, 1)),
+		}),
+		burst = 6,
+		perSecond = 2,
+	},
+	-- Server sends a player their own profile snapshot (docs/phase-4-contracts.md, ProfileSyncService).
+	ProfileSnapshot = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Studio only: set the caller's cash to exactly `amount` for the shop tests (DealershipService refuses it
+	-- outside Studio).
+	DevSetCash = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ amount = Check.integer(0, MAX_DEV_CASH) }),
+		burst = 3,
+		perSecond = 1,
 	},
 }
 
