@@ -112,8 +112,9 @@ supply), capped), the DataStore name (`UsedLotSupply`, `UsedLotSupply_Studio` in
 
 ## Client UI (owners: phone helper, shop helper)
 
-Shared look: `src/client/UI/Theme.luau` (owner: phone helper) — colors, text sizes, corner radii, spacing,
-touch-target size, used by every new screen and matching the existing HUD/GPS/Toast look. Mobile-first:
+Shared look: `src/client/UI/Theme.luau` (written by the lead; read it, don't change it) — colors, fonts, text
+sizes, corner radii, spacing, touch-target size and ScreenGui draw order, used by every new screen and matching
+the existing HUD/GPS/Toast look. Mobile-first:
 scale with the screen, touch targets ≥ 44 px, readable contrast, works at 375 × 667 portrait and landscape
 phones, tablets and desktop. Real brand names never appear.
 
