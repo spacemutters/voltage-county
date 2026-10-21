@@ -541,6 +541,55 @@ local REMOTES: { [string]: Spec } = {
 		burst = 5,
 		perSecond = 2,
 	},
+	-- Phase 13: houses (docs/phase-13-contracts.md). One plot per player per server; released when they leave.
+	ClaimHouse = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ plotId = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	LeaveHouse = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 2,
+		perSecond = 0.5,
+	},
+	BuyHouseUpgrade = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ upgrade = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Server tells a player about their house: { plotId?, address?, upgrades, message? }.
+	HouseUpdate = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Server tells everyone about something on this server (a car meet started): { id, kind, text, at }.
+	FeedUpdate = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Studio only: park or clear stand-in cars at a meet spot for the meet test (MeetService refuses it outside Studio).
+	DevSocial = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({
+			action = Check.oneOf({ "parkDummyCar", "clearDummies" }),
+			meetSpotId = Check.optional(Check.string(ID_LENGTH)),
+		}),
+		burst = 6,
+		perSecond = 3,
+	},
 	-- Studio only: clear the caller's car's ability cooldowns (AbilityService refuses it outside Studio), for the
 	-- 50-run hop and flight tests.
 	DevAbility = {

@@ -37,3 +37,8 @@ and sign, charges the owner's car at the home charger and checks a second (dev-s
 charge there, then leaves the claim and checks the plot is free; `meet()` parks dev cars at a MeetSpot one by one
 (dev-only server helper `DevSocial { action = "parkDummyCar" | "clearDummies", meetSpotId }`) and checks the Feed
 announcement arrives at the 4th and not the 3rd.
+
+## Net (declared by the lead before the build)
+`ClaimHouse { plotId }`, `LeaveHouse`, `BuyHouseUpgrade { upgrade }` (functions), `HouseUpdate` (server → client),
+`FeedUpdate` (server → all clients), Studio-only `DevSocial { action = "parkDummyCar" | "clearDummies", meetSpotId? }`.
+Emotes need no remote (`Humanoid:PlayEmote` on the client replicates).
