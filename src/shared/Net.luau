@@ -50,6 +50,8 @@ local PLATE_LENGTH = 16 -- generous: the server trims and enforces Config/Custom
 local PROMPT_BYTES = 800 -- a 200-character design prompt in UTF-8; the server counts characters (DesignKit limits)
 local REPORT_REASON_LENGTH = 40 -- a report reason id from Config/Designer
 local MAX_DEV_CREDITS = 10000
+local MAX_SEASON_TIERS = 60 -- generous: Config/Season holds the real tier count (30)
+local MAX_USER_ID = 2 ^ 53 -- Roblox UserIds are positive integers well below this
 
 local REMOTES: { [string]: Spec } = {
 	-- Studio only: spawn a car next to the player for testing (VehicleService refuses it outside Studio). A player
@@ -433,6 +435,111 @@ local REMOTES: { [string]: Spec } = {
 		validate = Check.shape({ amount = Check.integer(0, MAX_DEV_CREDITS) }),
 		burst = 3,
 		perSecond = 1,
+	},
+	-- Phase 12: the store, passes, the Voltage Club, drops, the season pass, streaks and events
+	-- (docs/phase-12-contracts.md). Keys are Config/Monetization keys; an id of 0 means "not created yet" and the
+	-- server answers with a friendly "coming soon" instead of prompting.
+	BuyProduct = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ key = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	BuyPass = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ key = Check.string(ID_LENGTH) }),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	JoinClub = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 2,
+		perSecond = 0.2,
+	},
+	-- What the store sells right now, with prices from MarketplaceService: { products, passes, club, offers }.
+	GetStore = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 3,
+		perSecond = 0.5,
+	},
+	-- Server tells a player something they own changed (a purchase landed, a pass, the club, an offer).
+	StoreUpdate = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Buy one serial of a limited drop (Config/Limiteds id), with in-game cash.
+	BuyLimited = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ dropId = Check.string(ID_LENGTH) }),
+		burst = 2,
+		perSecond = 0.5,
+	},
+	ClaimStreak = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 2,
+		perSecond = 0.2,
+	},
+	ClaimSeasonReward = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({
+			tier = Check.integer(1, MAX_SEASON_TIERS),
+			track = Check.oneOf({ "free", "premium" }),
+		}),
+		burst = 4,
+		perSecond = 1,
+	},
+	-- Rewarded video (switched off by flag until the game is eligible): ask to watch one ad for a credit.
+	WatchAdReward = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.none(),
+		burst = 2,
+		perSecond = 0.1,
+	},
+	-- Server tells everyone the live events changed: { active = { ... }, next = { ... } }.
+	EventUpdate = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Admins only (Config/Admins): kick, despawn a car, recent logs, hide a design or mod.
+	AdminAction = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({
+			action = Check.oneOf({ "kick", "despawn", "logs", "hideDesign" }),
+			targetUserId = Check.optional(Check.integer(1, MAX_USER_ID)),
+			ref = Check.optional(Check.string(UID_LENGTH)),
+		}),
+		burst = 5,
+		perSecond = 1,
+	},
+	-- Studio only: pretend a developer product was bought (runs the real ProcessReceipt path with a made-up
+	-- PurchaseId), for the store tests. MonetizationService refuses it outside Studio.
+	DevPurchase = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({
+			key = Check.string(ID_LENGTH),
+			purchaseId = Check.optional(Check.string(UID_LENGTH)),
+		}),
+		burst = 5,
+		perSecond = 2,
 	},
 	-- Studio only: clear the caller's car's ability cooldowns (AbilityService refuses it outside Studio), for the
 	-- 50-run hop and flight tests.
