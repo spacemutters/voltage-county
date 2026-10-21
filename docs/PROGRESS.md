@@ -2,6 +2,68 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-21 — Phase 13: houses and social roleplay
+
+**Shipped**
+- **Houses:** 26 claimable plots in Riverside, one per player per server, claimed at the plot's sign. The house is
+  built with your display name on the sign, a garage door that opens for your car, and a home charger. The claim
+  goes when you leave the server and the plot frees up.
+- **Home charger:** 200 kW, between the public stalls, and it charges only the owner's car.
+- **Upgrades:** faster charger (300 kW) $15,000, solar roof $20,000, garden $5,000, porch lights $3,000,
+  mailbox $1,500. They are bought with in-game cash and follow you to the next house you claim.
+- **Phone:** a Home app (status, address, upgrades, "Set GPS home") and a Feed app (recent server events, newest
+  first).
+- **Car meets:** when 4 or more players' cars park at one meet spot, everyone gets a feed post and a toast once.
+  There's no new announcement there until it drops below 4 and 10 minutes pass. Counting runs on park and unpark
+  events, not a loop.
+- **Nametags:** display name plus the title of your best job level (e.g. "Freight Hauler II"). They hide while
+  driving fast.
+- **Also:** Roblox's own bubble chat (nothing custom), and an Emotes app (default emotes, on foot only).
+- **Review:** built by 3 helpers, then reviewed: 6 findings, all fixed. The serious one: meets didn't count cars whose
+  owner sat still in them.
+
+**Checked in Studio:**
+- Tests: `TESTS: passed=2156 failed=0` (with the art pass and the new supercars).
+- **House test in a playtest** (30 checks, all passed):
+  - Claimed 1 Cedar Court; all 16 house pieces built; your name on the sign.
+  - A stand-in car that isn't yours sat on your charger at 50 % for 6 s and didn't charge.
+  - Your own car charged at 0.875 %/s, the server's rate for 200 kW, which sits inside the public stalls' range
+    (0.82–1.08 %/s).
+  - Moving out took the house down and stopped charging, and the plot could be claimed again.
+- **Meet test** (15 checks, all passed): nothing was announced with 3 cars parked over 8 s; the 4th car brought
+  "Car meet at Lakeview Overlook! 4 cars parked up." within 0.05 s; a 5th car didn't announce it again.
+
+**Open issues**
+- Backlog for after launch (PLAN): emergency and roadside roles, trading classics.
+
+## 2026-10-21 — Art pass: realistic, high-detail cars (+ two new Montevale supercars)
+
+**Shipped**
+- **Every car is realistic:** all 32 catalog cars (80 trims) and the 3 trailers now have high-detail bodies made with
+  Studio's mesh generator. Each car has 8 parts (body, glass, head and tail lights, 4 wheels), and each piece is
+  under 20,000 triangles. All are original designs: drafts that looked like a real car were thrown out and
+  made again.
+- **Driving is unchanged:** `Dev/ArtPass` fits each body onto the car's existing frame, wheels and seats. Paint,
+  window tint, wheels, lights (left and right kept apart for light shows), brake and reverse lamps, roof racks,
+  spoilers, plates and the hood camera all work on the new bodies. Trailers keep clear of a coupled truck.
+- **Wraps on the new cars:** stripes can't sit on curved bodies. So each paid or earned wrap goes on as a full-body
+  colour there, and keeps its stripes on designed cars.
+- **Two new Montevale supercars** (Davis: "add some lamborgini cars"; original designs, no real brand):
+  - **Vorrena:** long, very low, bubble canopy. $780k / Ultima $1.05M, 208–214 mph.
+  - **Ardenza:** cab-forward track car with a swan-neck wing. $520k / Corsa $640k, 196–202 mph.
+  - The generator's first tries looked like real Italian and British supercars, so they were made again with
+    their own design cues.
+  - Vorrena 0–60 is 2.5 s / Ultima 2.3 s (not 2.4 / 2.1). As a fuel car at 2.1 s it out-launched the Arc, and a
+    spec keeps the Arc the quickest car in the game.
+  - A spare winged Vorrena design is kept in `ServerStorage.ArtPassIncoming` in case Davis prefers it.
+
+**Checked in Studio:** every art model passes the contract and art checks (the new supercars at 21 parts each);
+screenshots in `docs/images/art-pass-*`.
+
+**Open issues**
+- Whether the full-body colour is the right look for the exclusive wraps on the realistic cars is Davis's call
+  (TODO, "Waiting on Davis").
+
 ## 2026-10-21 — Phase 12: store, passes, Voltage Club, drops, season pass, events
 
 **Shipped**

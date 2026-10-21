@@ -862,16 +862,16 @@ All numbers are clamped in code: `body` values run 0–1, `stance.rideHeight` ru
 ### Phase 13 — Houses and social roleplay
 
 **Tasks**
-- [ ] Claimable `HousePlot`s in Riverside (one per player per server), with a garage door, a faster home charger, and a short upgrade list.
-- [ ] Car meets: when 4+ cars park at a `MeetSpot`, announce the meet in the phone feed.
-- [ ] Nametags with job titles; TextChatService defaults; emotes.
-- [ ] Backlog for after launch:
+- [x] Claimable `HousePlot`s in Riverside (one per player per server), with a garage door, a faster home charger, and a short upgrade list.
+- [x] Car meets: when 4+ cars park at a `MeetSpot`, announce the meet in the phone feed.
+- [x] Nametags with job titles; TextChatService defaults; emotes.
+- [ ] Backlog for after launch (not built in Phase 13):
   - emergency services and roadside-assistance roles
   - player trading of classics, with trade confirmations and value checks
 
 **Acceptance**
-- [ ] A house claim is released when the player leaves, and the home charging rate applies only at the owner's plot.
-- [ ] The meet announcement fires at 4 parked cars and not at 3.
+- [x] A house claim is released when the player leaves, and the home charging rate applies only at the owner's plot.
+- [x] The meet announcement fires at 4 parked cars and not at 3.
 
 **Stop.**
 

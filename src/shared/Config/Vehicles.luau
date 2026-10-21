@@ -1632,8 +1632,8 @@ local Vehicles: { [string]: Vehicle } = {
 		},
 	},
 
-	-- Montevale's flagship (added 2026-10-21 at Davis's ask for wilder supercars): a long, very low wedge with
-	-- scissor doors and a big rear wing. Original design; the quickest car outside the Arc.
+	-- Montevale's flagship (added 2026-10-21 at Davis's ask for wilder supercars): long, very low and smooth, with a
+	-- bubble canopy and a ducktail. Original design; Montevale's quickest car, still well behind the Arc.
 	montevale_vorrena = {
 		id = "montevale_vorrena",
 		brandId = "montevale",
@@ -1661,7 +1661,7 @@ local Vehicles: { [string]: Vehicle } = {
 				acquisition = "dealership",
 				price = 780000,
 				topSpeedMph = 208,
-				zeroToSixtySec = 2.4,
+				zeroToSixtySec = 2.5,
 				energyMinutes = 20,
 				seats = 2,
 				handling = 0.88,
@@ -1673,7 +1673,7 @@ local Vehicles: { [string]: Vehicle } = {
 				acquisition = "dealership",
 				price = 1050000,
 				topSpeedMph = 214,
-				zeroToSixtySec = 2.1,
+				zeroToSixtySec = 2.3, -- a fuel car needs a harder peak for its time; 2.1 out-launched the Arc
 				energyMinutes = 19,
 				seats = 2,
 				handling = 0.92,
@@ -1682,7 +1682,8 @@ local Vehicles: { [string]: Vehicle } = {
 		},
 	},
 
-	-- The smaller, sharper Montevale (added 2026-10-21): short overhangs, big side intakes, a fixed wing.
+	-- The smaller, sharper Montevale (added 2026-10-21): a cab-forward track car with a roof scoop and a tall
+	-- swan-neck wing.
 	montevale_ardenza = {
 		id = "montevale_ardenza",
 		brandId = "montevale",

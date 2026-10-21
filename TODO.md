@@ -4,21 +4,10 @@ One phase at a time from PLAN.md. Standing go from Davis (2026-10-19): keep goin
 for an OK; stop only for things that are his.
 
 ## Now
-- Phase 11 (AI Car Designer): built, reviewed and committed on `phase-11`; backend live at
-  voltage-county-designer.vercel.app (answers "not set up yet" until its keys are in). Finishing the Studio checks.
+- Phase 14: performance, security, soft launch (`docs/phase-14-contracts.md`).
 
-## Next, in order
-1. Phase 12: monetization, credit sales, limited drops, live-ops (`docs/phase-12-contracts.md`)
-2. Phase 13: houses and social roleplay (`docs/phase-13-contracts.md`)
-3. Phase 14: performance, security, soft launch (`docs/phase-14-contracts.md`)
-4. **Art pass: realistic, high-poly cars** (Davis, 2026-10-20: "good and real looking and like teslas and real
-   cars ... high poly models"). Replace every catalog car's greybox Body with high-detail MeshParts made with
-   Studio's mesh generation, within 20,000 triangles per mesh; Ohm Motors gets the clean modern EV look. Original
-   designs only: no real carmaker names, logos or signature shapes (CLAUDE.md hard rule 4).
-
-5. **Two new Montevale supercars** (Davis, 2026-10-21: "add some lamborgini cars"). Original designs in that wild
-   spirit: sharp wedge bodies, scissor doors, big rear wings, loud colours. No real brand names, logos or signature
-   shapes. Catalog entries priced in the exotic band, EconSim, dealership pads, realistic art drafts.
+## Done (see docs/PROGRESS.md)
+- Phases 0–13, the art pass (realistic bodies on every car and trailer) and the two new Montevale supercars.
 
 ## Waiting on Davis
 - Paid and earned wraps on the new realistic cars: stripes can't sit on their curved bodies, so each exclusive wrap
