@@ -11,7 +11,8 @@
 --   standardPlateText(formatId, seed)             the free standard plate for a car
 --
 -- Fair monetization (CLAUDE.md hard rule 6): prices are a money sink (PLAN.md §4), in-game $ only. Nothing here
--- is random or sold for Robux. Every option is original: no real brands, wheel makers or paint names.
+-- is random or sold for Robux; exclusive wraps (exclusiveWraps) come with Store items, the Voltage Club and the Season
+-- Pass (Phase 12) and are free to put on. Every option is original: no real brands, wheel makers or paint names.
 --
 -- Pure: no Roblox services (Color3, Vector3 and Enum are plain data types), so specs run it in Edit mode.
 
@@ -55,9 +56,10 @@ export type Band = {
 export type Wrap = {
 	id: string,
 	displayName: string,
-	price: number,
+	price: number, -- 0: free to put on (exclusive wraps: the player already has the look)
 	bands: { Band },
 	trimColor: Color3?, -- recolors every Trim-tagged part (bumpers, mirrors, cladding); nil keeps the car's own
+	exclusive: boolean?, -- an exclusive look (exclusiveWraps): only for players who have it, never sold for cash
 }
 
 -- A wheel style: the rim parts Vehicle/Appearance builds on each tire. Diameters and lengths are shares of the
@@ -395,6 +397,80 @@ local Customization = {
 				{ face = "side", center = 0.6, width = 0.02, color = rgb(204, 164, 72) },
 				{ face = "top", center = -0.1, width = 0.025, color = rgb(204, 164, 72) },
 				{ face = "top", center = 0.1, width = 0.025, color = rgb(204, 164, 72) },
+			},
+		},
+	} :: { Wrap },
+
+	-- Exclusive wraps (Phase 12): looks a player gets, never buys here. The Wrap tab lists one only for a player who
+	-- has it: saved in PlayerData.cosmetics (the Starter Pack, a limited cosmetic, a Season Pass reward) or, for the
+	-- club's, while they are a Voltage Club member (Services/MonetizationService.ownsCosmetic; the profile
+	-- snapshot's `looks`), and Services/CustomizationService refuses it to anyone else. Putting one on is free. Ids are
+	-- the look ids Config/Monetization, Config/Limiteds and Config/Season grant (lookExists; tests/Monetization.spec
+	-- fails when something grants a look that isn't here).
+	exclusiveWraps = {
+		{
+			id = "starter_wrap", -- the Starter Pack (Config/Monetization grants.starterPack)
+			displayName = "Starter Spark",
+			price = 0,
+			exclusive = true,
+			bands = {
+				{ face = "side", center = 0.38, width = 0.05, color = rgb(255, 190, 60) },
+				{ face = "side", center = 0.46, width = 0.02, color = VINYL_WHITE },
+			},
+		},
+		{
+			id = "club_wrap", -- Voltage Club members, while subscribed (Config/Monetization club.cosmetics)
+			displayName = "Voltage Club",
+			price = 0,
+			exclusive = true,
+			bands = {
+				{ face = "top", center = -0.14, width = 0.06, color = rgb(40, 200, 190) },
+				{ face = "top", center = 0.14, width = 0.06, color = rgb(40, 200, 190) },
+				{ face = "side", center = 0.2, width = 0.03, color = rgb(40, 200, 190) },
+			},
+			trimColor = rgb(20, 22, 26),
+		},
+		{
+			id = "launch_week_wrap", -- the serial-numbered launch-week limited (Config/Limiteds launch_wrap)
+			displayName = "Launch Week",
+			price = 0,
+			exclusive = true,
+			bands = {
+				{ face = "top", center = 0, width = 0.22, color = rgb(232, 72, 48) },
+				{ face = "top", center = -0.27, width = 0.02, color = VINYL_WHITE },
+				{ face = "top", center = 0.27, width = 0.02, color = VINYL_WHITE },
+			},
+		},
+		{
+			id = "season1_wrap", -- Season 1 premium track (Config/Season)
+			displayName = "Lift Off",
+			price = 0,
+			exclusive = true,
+			bands = {
+				{ face = "side", center = 0.25, width = 0.05, color = rgb(120, 80, 220) },
+				{ face = "side", center = 0.33, width = 0.035, color = rgb(160, 120, 240) },
+				{ face = "side", center = 0.4, width = 0.02, color = rgb(200, 170, 255) },
+			},
+		},
+		{
+			id = "season1_arc_wrap", -- Season 1 premium track (Config/Season)
+			displayName = "Arc Streak",
+			price = 0,
+			exclusive = true,
+			bands = {
+				{ face = "top", center = -0.35, width = 0.08, color = rgb(60, 140, 255) },
+				{ face = "side", center = 0.5, width = 0.03, color = rgb(60, 140, 255) },
+			},
+			trimColor = VINYL_WHITE,
+		},
+		{
+			id = "season1_finale_wrap", -- Season 1 premium track, the last tier (Config/Season)
+			displayName = "Season One Gold",
+			price = 0,
+			exclusive = true,
+			bands = {
+				{ face = "top", center = 0, width = 1, color = rgb(204, 164, 72), minHeight = 0.8 },
+				{ face = "side", center = 0.5, width = 0.02, color = rgb(204, 164, 72) },
 			},
 		},
 	} :: { Wrap },
@@ -846,6 +922,7 @@ local Customization = {
 		paintAndCustom = "Pick a palette paint or a custom color, not both.",
 		unknownFinish = "That finish isn't in the shop.",
 		unknownWrap = "That wrap isn't in the shop.",
+		lockedWrap = "That's an exclusive wrap you don't have.",
 		unknownWheels = "Those wheels aren't in the shop.",
 		badRideHeight = "That ride height isn't available.",
 		badTint = "That tint level isn't available.",
@@ -875,6 +952,10 @@ end
 local paintsById = indexById(Customization.paints)
 local finishesById = indexById(Customization.finishes)
 local wrapsById = indexById(Customization.wraps)
+local exclusiveWrapsById = indexById(Customization.exclusiveWraps)
+for id, wrap in exclusiveWrapsById do
+	wrapsById[id] = wrap -- every wrap renders and validates by id; the shop list and the server gate exclusives
+end
 local wheelsById = indexById(Customization.wheels)
 local calipersById = indexById(Customization.calipers)
 local extrasById = indexById(Customization.extras)
@@ -891,9 +972,33 @@ function Customization.getFinish(id: string?): Finish?
 	return if id then finishesById[id] else nil
 end
 
--- nil and "none" both mean the "none" wrap.
+-- nil and "none" both mean the "none" wrap. Exclusive wraps are found too.
 function Customization.getWrap(id: string?): Wrap?
 	return wrapsById[id or "none"]
+end
+
+-- True for an exclusive look's id (exclusiveWraps): one a player must have before they can use it.
+function Customization.isExclusive(id: string?): boolean
+	return id ~= nil and exclusiveWrapsById[id] ~= nil
+end
+
+-- True when the shop has the exclusive look `lookId` (Config/Monetization, Config/Limiteds and Config/Season grant
+-- look ids). Plate frames aren't built yet, so a plate frame id is false: whatever grants one isn't sold yet.
+function Customization.lookExists(lookId: string): boolean
+	return Customization.isExclusive(lookId)
+end
+
+-- The wraps the Wrap tab lists for a player: every shop wrap, then the exclusive wraps they have (`owned`, by look
+-- id) and the one already on the car (`onCar`), so a look they no longer have (the club lapsed) still shows as
+-- current.
+function Customization.wrapsFor(owned: { [string]: boolean }?, onCar: string?): { Wrap }
+	local list = table.clone(Customization.wraps)
+	for _, wrap in Customization.exclusiveWraps do
+		if (owned ~= nil and owned[wrap.id] == true) or wrap.id == onCar then
+			table.insert(list, wrap)
+		end
+	end
+	return list
 end
 
 function Customization.getWheel(id: string?): Wheel?
@@ -1253,7 +1358,8 @@ function Customization.priceOf(changes: Changes, current: Look, vehicleClass: st
 	if changes.wrap ~= nil then
 		local wrap = wrapsById[changes.wrap]
 		local currentWrap = current.wrap or "none"
-		if wrap and wrap.id ~= currentWrap then
+		-- An exclusive wrap (price 0) goes on free: the player already has the look.
+		if wrap and wrap.id ~= currentWrap and wrap.price > 0 then
 			charge("wrap", wrap.id, wrap.price)
 		end
 	end

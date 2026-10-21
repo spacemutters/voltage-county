@@ -191,7 +191,8 @@ local DesignerStyle = {
 		after = "After",
 		reportMod = "Report this mod",
 
-		-- Out of credits and the credit store (the store arrives in a later update).
+		-- Out of credits. Get credits opens the phone's Store app (Controllers/StoreController); the store note
+		-- shows only if it couldn't.
 		outTitle = "Out of credits",
 		outBody = "%s, and you have %s.", -- "A new car uses 2 credits", "0 credits"
 		outDesign = "A new car uses %s",
@@ -200,7 +201,8 @@ local DesignerStyle = {
 		getCredits = "Get credits",
 		notNow = "Not now",
 		storeTitle = "Credit store",
-		storeBody = "The credit store opens in a coming update. Check back soon.",
+		storeBody = "Credit packs are in the Store app on your phone.",
+		openStore = "Open the Store",
 		back = "Back",
 
 		-- Report.

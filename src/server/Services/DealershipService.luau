@@ -9,6 +9,10 @@
 -- tracked by anti-exploit or paid by drive-to-earn. UsedLotService puts its cars up the same way
 -- (placeDisplayCar).
 --
+-- Featured car (Phase 12): while a running event names one (EventService.featuredVehicleId), its display car gets
+-- the spotlight (Config/Dealership display.featured: a Highlight and the Featured attribute), moved whenever
+-- EventService says the events changed (applyFeatured).
+--
 -- Remotes (declared in Net, which has already checked each payload's shape and rate-limited it):
 --   BuyVehicle { vehicleId, trim }   function: the trim must exist, be sold at the dealership and not be an
 --                                    upgrade; the garage needs a free slot; then the price is charged
@@ -451,6 +455,56 @@ local function buildDisplays()
 	print(`{LOG} {count} display cars on the dealership pads`)
 end
 
+-- The event spotlight (Config/Dealership display.featured): the display car of `vehicleId` (nil: none) gets the
+-- outline and the Featured attribute; every other display car loses them. Safe to call again with the same id.
+function DealershipService.applyFeatured(vehicleId: string?)
+	local featured = Dealership.display.featured
+	local folder = DealershipService.showroomFolder(Dealership.display.dealershipFolderName)
+	local rgb = featured.rgb
+	local color = Color3.fromRGB(rgb[1], rgb[2], rgb[3])
+	for _, model in folder:GetChildren() do
+		if not model:IsA("Model") then
+			continue
+		end
+		local on = vehicleId ~= nil and model:GetAttribute(Dealership.prompt.vehicleIdAttribute) == vehicleId
+		local existing = model:FindFirstChild(featured.highlightName)
+		if on and existing == nil then
+			local highlight = Instance.new("Highlight")
+			highlight.Name = featured.highlightName
+			highlight.OutlineColor = color
+			highlight.FillColor = color
+			highlight.FillTransparency = featured.fillTransparency
+			highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+			highlight.Parent = model
+		elseif not on and existing ~= nil then
+			existing:Destroy()
+		end
+		model:SetAttribute(featured.attribute, if on then true else nil)
+	end
+end
+
+-- Follows EventService (Phase 12): spotlights the featured car now and whenever the events change.
+local function followFeatured()
+	local module = script.Parent:FindFirstChild("EventService")
+	if module == nil or not module:IsA("ModuleScript") then
+		return
+	end
+	local ok, events = pcall(require :: any, module)
+	if not ok or type(events) ~= "table" or type(events.featuredVehicleId) ~= "function" then
+		return
+	end
+	local function refresh()
+		local found, vehicleId = pcall(events.featuredVehicleId)
+		DealershipService.applyFeatured(if found and type(vehicleId) == "string" then vehicleId else nil)
+	end
+	refresh()
+	if type(events.onChanged) == "function" then
+		events.onChanged(function(_payload: any)
+			refresh()
+		end)
+	end
+end
+
 -- Turns every display car on its pad (only when Config/Dealership display.rotationDegreesPerSecond isn't 0).
 local function startTurning()
 	local display = Dealership.display
@@ -787,6 +841,7 @@ function DealershipService:Start()
 	if Dealership.display.rotationDegreesPerSecond ~= 0 then
 		startTurning()
 	end
+	followFeatured()
 end
 
 return DealershipService

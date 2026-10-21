@@ -76,6 +76,7 @@ local Garage = require(Shared.Config.Garage)
 local Graph = require(Shared.Road.Graph)
 local Jobs = require(Shared.Config.Jobs)
 local MapLayout = require(Shared.Config.MapLayout)
+local Monetization = require(Shared.Config.Monetization)
 local Net = require(Shared.Net)
 local Pathfind = require(Shared.Road.Pathfind)
 local SharedTypes = require(Shared.Types)
@@ -159,6 +160,7 @@ local OFFER_PREFIX = { rideshare = "r", delivery = "d", towing = "t", freight = 
 -- The job type modules besides Rideshare: type id -> module name under this script.
 local TYPE_MODULES = { delivery = "Delivery", towing = "Towing", freight = "Freight" } :: { [string]: string }
 local HITCH_SERVICE = "HitchService" -- Services/HitchService (Phase 8), required when first needed
+local MONETIZATION_SERVICE = "MonetizationService" -- Services/MonetizationService (Phase 12): the VIP pass
 local CLASS_SEPARATOR = ", "
 local SIGNATURE_SEPARATOR = "|"
 
@@ -166,6 +168,8 @@ local JobService = {}
 
 local DataService: DataServiceModule? = nil
 local Levels: LevelsModule? = nil
+-- MonetizationService.hasPassCached (never yields), found in Init; nil means nobody has VIP.
+local hasPassCached: ((player: Player, key: string) -> boolean)? = nil
 -- Job type modules by type id, in Init (Delivery, Towing and Freight only when present and complete), and the
 -- finish(job, outcome) of those that have one (Types.Finish).
 local modules: { [JobKind]: JobModule } = {}
@@ -463,9 +467,15 @@ end
 
 -- Public API ----------------------------------------------------------------------------------------------------
 
--- The VIP pass's job pay multiplier: 1 until Phase 12 wires the pass (Config/Economy.vipJobPayBonus).
-function JobService.vipMultiplier(_player: Player): number
-	return 1
+-- The VIP pass's job pay multiplier: 1 + Config/Economy.vipJobPayBonus while the player owns the pass
+-- (Config/Monetization.vipPass, MonetizationService's cached answer, so paying never waits on a lookup), else 1.
+function JobService.vipMultiplier(player: Player): number
+	local check = hasPassCached
+	if check == nil then
+		return 1
+	end
+	local ok, owned = pcall(check, player, Monetization.vipPass)
+	return if ok and owned == true then 1 + Economy.vipJobPayBonus else 1
 end
 
 -- True while the player has a job in progress (DriveEarnService pays nothing then).
@@ -1612,6 +1622,13 @@ end
 
 function JobService:Init()
 	DataService = require(script.Parent.DataService)
+	local monetization = script.Parent:FindFirstChild(MONETIZATION_SERVICE)
+	if monetization ~= nil and monetization:IsA("ModuleScript") then
+		local ok, module = pcall(require :: any, monetization)
+		if ok and type(module) == "table" and type(module.hasPassCached) == "function" then
+			hasPassCached = module.hasPassCached
+		end
+	end
 	modules.rideshare = Rideshare
 	for _, kind in Jobs.order do
 		local name = TYPE_MODULES[kind]

@@ -42,6 +42,7 @@ function Template.new(now: number?): Types.PlayerData
 		season = { id = "", xp = 0, premium = false, claimed = {} },
 		streak = { lastDay = 0, count = 0 },
 		offersSeen = {},
+		cosmetics = {}, -- v7
 		club = {},
 		receipts = {},
 		pendingGrants = {},

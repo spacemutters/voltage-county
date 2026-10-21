@@ -14,8 +14,9 @@
 --   built          the design is in the garage: Drive it / Done
 --   modCompose     "Mod with AI": the car as it is, the prompt box and the cost
 --   modResult      the mod is on: before and after side by side, Report
---   outOfCredits   what a request costs, the balance, and Get credits (opens `store`)
---   store          the credit store's stub until Phase 12
+--   outOfCredits   what a request costs, the balance, and Get credits (Controllers/StoreController puts this sheet
+--                  away and opens the phone's Store app on its Credits page)
+--   store          only if the Store app couldn't open: where the credit packs are, and Open the Store
 --   report         the reasons from Config/Designer, one row each, and Send report
 --
 -- Every block has a fixed height (ShopSheet sizes the sheet from them); text that wraps is measured with
@@ -35,6 +36,7 @@ local ShopStyle = require(script.Parent.Parent.Shop.Style)
 local DesignerModel = require(script.Parent.DesignerModel)
 local DesignerStyle = require(script.Parent.DesignerStyle)
 local Preview = require(script.Parent.Preview)
+local StoreState = require(script.Parent.Parent.Store.StoreState)
 
 local e = React.createElement
 local colors = Theme.colors
@@ -741,14 +743,19 @@ function StudioSheet.outOfCredits(props: OutOfCreditsProps): Content
 	}
 end
 
--- The credit store's stub (Phase 12 replaces it with the real store).
+-- Where the credit packs are, if Get credits couldn't open the Store app (UI/Store/StoreState.open tries again).
 function StudioSheet.store(widths: Widths, onBack: () -> ()): Content
 	return {
 		eyebrow = copy.creditsEyebrow,
 		title = copy.storeTitle,
 		main = { paragraph("body", copy.storeBody, widths.main, { tone = "dim" }) },
 		summary = {},
-		actions = { action("back", copy.back, "primary", false, onBack) },
+		actions = {
+			action("open", copy.openStore, "primary", false, function()
+				StoreState.open("credits")
+			end),
+			action("back", copy.back, "secondary", false, onBack),
+		},
 	}
 end
 

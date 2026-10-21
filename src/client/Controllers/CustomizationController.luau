@@ -46,6 +46,7 @@ local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
+local Monetization = require(ReplicatedStorage.Shared.Config.Monetization)
 local Net = require(ReplicatedStorage.Shared.Net)
 local CameraController = require(script.Parent.CameraController)
 local DriveController = require(script.Parent.DriveController)
@@ -184,9 +185,30 @@ local function ownCar(): (Model?, string?)
 	return car, uid
 end
 
--- Custom plate text needs the Custom Plates pass (Phase 12); until the game can tell, only Studio allows it (the
--- server's rule, Services/CustomizationService).
+-- The player attribute MonetizationService keeps true while the Custom Plates pass is owned (a pass given in Studio
+-- with DevPurchase counts too).
+local PLATES_PASS_ATTRIBUTE = Monetization.attributes.passPrefix .. Customization.shop.passId
+
+-- The exclusive looks the player has (Phase 12: the profile snapshot's `looks`), so the Wrap tab lists those
+-- wraps. The server checks ownership again on every purchase (Services/CustomizationService).
+local function ownedLooks(): { [string]: boolean }
+	local owned: { [string]: boolean } = {}
+	local snapshot = ProfileController.get()
+	if snapshot ~= nil and snapshot.looks ~= nil then
+		for _, id in snapshot.looks do
+			owned[id] = true
+		end
+	end
+	return owned
+end
+
+-- Custom plate text needs the Custom Plates pass (Phase 12); until the pass is created (its id is 0), only Studio
+-- allows it. The server's rule (Services/CustomizationService.customTextAllowed); the server decides either way.
 local function customPlatesAllowed(): boolean
+	local passId = Monetization.passes[Customization.shop.passId]
+	if type(passId) == "number" and passId > 0 then
+		return localPlayer:GetAttribute(PLATES_PASS_ATTRIBUTE) == true
+	end
 	return RunService:IsStudio()
 end
 
@@ -230,6 +252,7 @@ local function App(props: { view: View })
 				busy = current.busy ~= nil,
 				platePending = current.busy == "plate",
 				plateAllowed = customPlatesAllowed(),
+				looks = ownedLooks(),
 			}),
 			screen = current.screen,
 			gamepad = inputKind == "gamepad",
@@ -745,6 +768,10 @@ function CustomizationController:Start()
 	end)
 	localPlayer:GetAttributeChangedSignal(Economy.cashAttribute):Connect(function()
 		readCash()
+		render()
+	end)
+	-- The Custom Plates pass bought (or found on join) unlocks the plate text box while the shop is open.
+	localPlayer:GetAttributeChangedSignal(PLATES_PASS_ATTRIBUTE):Connect(function()
 		render()
 	end)
 	-- Switching to a gamepad selects Buy; the key chip on the Customize button follows the input too.

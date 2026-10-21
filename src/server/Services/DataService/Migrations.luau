@@ -144,6 +144,24 @@ Migrations.steps = {
 			fleet.lastOnlineAt = Template.UNSET_TIME
 		end
 	end,
+
+	-- 6 -> 7 (Phase 12, monetization): the save gains `cosmetics`, the exclusive looks owned for good (id -> serial,
+	-- 0 when not numbered), empty: nothing could grant one before this version. A table already there keeps every
+	-- entry whose serial is a whole number of at least 0; anything else in it can't be a look the player owns. A
+	-- `cosmetics` that isn't a table becomes an empty one.
+	[6] = function(data: { [string]: any })
+		local cosmetics = data.cosmetics
+		if type(cosmetics) ~= "table" then
+			data.cosmetics = {}
+			return
+		end
+		for id, serial in cosmetics do
+			local usable = type(id) == "string" and isFinite(serial) and serial >= 0 and serial % 1 == 0
+			if not usable then
+				cosmetics[id] = nil
+			end
+		end
+	end,
 } :: { [number]: Step }
 
 -- The version a save claims (a missing field counts as unversionedVersion); nil if the field is unusable.

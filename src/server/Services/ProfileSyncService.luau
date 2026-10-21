@@ -27,18 +27,27 @@
 --             moderator hid (that car spawns plain, Services/VehicleService), sends `modHidden = true` and no spec
 --             or summary. Fields that don't apply are left out.
 --
+-- Phase 12: garageSlots and customSlots include the slots the player's passes (Garage+) and the Voltage Club add
+-- right now (the player attributes MonetizationService keeps; never saved), so the phone counts the same room as
+-- GarageService. MonetizationService calls `push` when they change. `looks` lists the exclusive looks the player may
+-- use right now (Config/Customization.exclusiveWraps ids): those saved in PlayerData.cosmetics, plus the club's
+-- (Config/Monetization club.cosmetics) while the club attribute says they are a member; the Wrap & Tint shop lists
+-- those wraps (Services/CustomizationService checks ownership again on every purchase).
+--
 -- Only ever sends a player their own data. No polling: one task.defer or task.delay per burst, per player.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Classes = require(ReplicatedStorage.Shared.Config.Classes)
+local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 local DesignKit = require(ReplicatedStorage.Shared.Config.DesignKit)
 local Designer = require(ReplicatedStorage.Shared.Config.Designer)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Fleet = require(ReplicatedStorage.Shared.Config.Fleet)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
+local Monetization = require(ReplicatedStorage.Shared.Config.Monetization)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Types = require(ReplicatedStorage.Shared.Types)
 local Validate = require(script.Parent.DesignerService.Validate)
@@ -61,6 +70,10 @@ export type SnapshotMod = {
 	modSummary: string?,
 }
 
+-- Slots passes and the Voltage Club add right now (Phase 12): MonetizationService mirrors them to the player
+-- attributes Config/Monetization.attributes.garageBonus / customBonus.
+export type SlotBonus = { garage: number, custom: number }
+
 local ProfileSyncService = {}
 
 local DataService: DataServiceModule? = nil
@@ -80,6 +93,11 @@ end
 
 local function text(value: any, fallback: string): string
 	return if type(value) == "string" then value else fallback
+end
+
+-- A slot bonus as a whole number of at least 0 (anything else counts as none).
+local function wholeBonus(value: any): number
+	return if isFinite(value) and value > 0 then math.floor(value) else 0
 end
 
 -- The client's copy of a car's AI mod (see the header), or nil for a car without one. Every saved mod has a string
@@ -191,10 +209,45 @@ function ProfileSyncService.snapshotFleet(fleet: any, hasFleetManager: boolean):
 	}
 end
 
+-- The exclusive looks a player may use right now (see the header): the exclusive look ids saved in `cosmetics`
+-- (any whole serial; 0 = not numbered), plus the club's while `clubMember`. Sorted, each once.
+function ProfileSyncService.snapshotLooks(cosmetics: any, clubMember: boolean): { string }
+	local seen: { [string]: boolean } = {}
+	if type(cosmetics) == "table" then
+		for id, serial in cosmetics do
+			local whole = isFinite(serial) and serial >= 0 and serial % 1 == 0
+			if type(id) == "string" and whole and Customization.isExclusive(id) then
+				seen[id] = true
+			end
+		end
+	end
+	if clubMember then
+		for _, id in Monetization.club.cosmetics do
+			if Customization.isExclusive(id) then
+				seen[id] = true
+			end
+		end
+	end
+	local looks: { string } = {}
+	for id in seen do
+		table.insert(looks, id)
+	end
+	table.sort(looks)
+	return looks
+end
+
 -- The snapshot a player's client gets of their own data: new tables throughout (nothing shared with the save),
 -- sanitized fields only, cars sorted favorites first then newest (Config/Garage.sortVehicles). `hasFleetManager`
--- (default false) is whether the player owns the Fleet Manager pass, for the fleet's slots.
-function ProfileSyncService.snapshot(data: Types.PlayerData, hasFleetManager: boolean?): Types.ProfileSnapshot
+-- (default false) is whether the player owns the Fleet Manager pass, for the fleet's slots. `slotBonus` (default
+-- none) is the garage and custom-car slots the player's passes and the Voltage Club add right now (Phase 12; never
+-- saved): the snapshot's garageSlots and customSlots count them, as GarageService.roomIn / customRoomIn do.
+-- `clubMember` (default false) adds the club's exclusive looks to `looks`.
+function ProfileSyncService.snapshot(
+	data: Types.PlayerData,
+	hasFleetManager: boolean?,
+	slotBonus: SlotBonus?,
+	clubMember: boolean?
+): Types.ProfileSnapshot
 	local raw = data :: any
 	local hiddenDesigns: { [string]: boolean } = {}
 	if type(raw.designs) == "table" then
@@ -224,10 +277,11 @@ function ProfileSyncService.snapshot(data: Types.PlayerData, hasFleetManager: bo
 	local defaults = Data.defaults.settings
 	local settings = if type(raw.settings) == "table" then raw.settings else {}
 	local credits = if type(raw.credits) == "table" then raw.credits else {}
+	local bonus: SlotBonus = slotBonus or { garage = 0, custom = 0 }
 	local snapshot: { [string]: any } = {
 		cash = number(raw.cash, 0),
-		garageSlots = number(raw.garageSlots, Economy.garageSlots),
-		customSlots = number(raw.customSlots, Economy.customSlots),
+		garageSlots = number(raw.garageSlots, Economy.garageSlots) + wholeBonus(bonus.garage),
+		customSlots = number(raw.customSlots, Economy.customSlots) + wholeBonus(bonus.custom),
 		starterClaimed = raw.starterClaimed == true,
 		vehicles = Garage.sortVehicles(vehicles),
 		settings = {
@@ -241,6 +295,7 @@ function ProfileSyncService.snapshot(data: Types.PlayerData, hasFleetManager: bo
 		},
 		fleet = ProfileSyncService.snapshotFleet(raw.fleet, hasFleetManager == true),
 		designs = designs,
+		looks = ProfileSyncService.snapshotLooks(raw.cosmetics, clubMember == true),
 	}
 	return snapshot :: any
 end
@@ -256,7 +311,13 @@ local function send(player: Player)
 	end
 	lastSent[player] = os.clock()
 	local hasFleetManager = player:GetAttribute(Fleet.pass.attribute) == true
-	Net.fireClient(REMOTE, player, ProfileSyncService.snapshot(data, hasFleetManager))
+	local attributes = Monetization.attributes
+	local slotBonus: SlotBonus = {
+		garage = wholeBonus(player:GetAttribute(attributes.garageBonus)),
+		custom = wholeBonus(player:GetAttribute(attributes.customBonus)),
+	}
+	local clubMember = player:GetAttribute(attributes.club) == true
+	Net.fireClient(REMOTE, player, ProfileSyncService.snapshot(data, hasFleetManager, slotBonus, clubMember))
 end
 
 -- Schedules a snapshot for the player unless one is already on its way (it will read the latest data when it

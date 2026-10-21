@@ -9,7 +9,9 @@
 --                                      class can't take), prices only what differs from the saved look
 --                                      (Customization.priceOf), takes the cash and saves the new look in ONE
 --                                      DataService.update, then puts the look on the car. Answers
---                                      { ok, message, cost }.
+--                                      { ok, message, cost }. An exclusive wrap (Phase 12,
+--                                      Customization.exclusiveWraps) goes on free, and only for a player who has
+--                                      it (MonetizationService.ownsCosmetic; exclusiveAllowed).
 --   SetPlate { uid, text }             function: custom plate text (the Custom Plates pass; Studio only until that
 --                                      pass exists). Empty text goes back to the free standard plate. Answers
 --                                      { ok, message, cost = 0 }.
@@ -40,8 +42,8 @@
 -- server looks the car up in that player's own data, checks every value, prices it and decides. No polling:
 -- everything runs on remote calls, prompt triggers and CollectionService signals.
 --
--- The rules are exported as pure helpers (lookOf, changedFields, validate, canCustomize, insideFootprint,
--- checkPlateText, customTextAllowed) so tests/CustomizationService.spec can check them in Edit mode.
+-- The rules are exported as pure helpers (lookOf, changedFields, validate, exclusiveAllowed, canCustomize,
+-- insideFootprint, checkPlateText, customTextAllowed) so tests/CustomizationService.spec can check them in Edit mode.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -96,6 +98,8 @@ CustomizationService.SHOP = SHOP
 local DataService: DataServiceModule? = nil
 local VehicleService: VehicleServiceModule? = nil
 local hasPass: PassChecker? = nil
+local passCreated: ((passId: string) -> boolean)? = nil -- MonetizationService.passCreated (Phase 12)
+local ownsCosmetic: ((player: Player, lookId: string) -> boolean)? = nil -- MonetizationService.ownsCosmetic
 
 -- The plate text shown on each spawned car: the raw text it was filtered from (to tell when it is stale) and
 -- the filtered result ("" while the filter runs or when it failed). Cleared when the model is destroyed.
@@ -226,6 +230,24 @@ function CustomizationService.validate(
 	end
 	local cost = Customization.priceOf(changes, current, vehicleClass)
 	return true, nil, cost, after
+end
+
+-- Whether `changes` may put an exclusive wrap (Config/Customization.exclusiveWraps) on a car whose saved wrap is
+-- `currentWrap`: only when the player has that look (`owns(lookId)`: MonetizationService.ownsCosmetic). Keeping the
+-- wrap already on the car, or any shop wrap, is always fine. Pure.
+function CustomizationService.exclusiveAllowed(
+	changes: Changes,
+	currentWrap: string?,
+	owns: (lookId: string) -> boolean
+): (boolean, string?)
+	local wrapId = changes.wrap
+	if wrapId == nil or wrapId == (currentWrap or Customization.defaults.wrap) then
+		return true, nil
+	end
+	if not Customization.isExclusive(wrapId) or owns(wrapId) then
+		return true, nil
+	end
+	return false, Customization.messages.lockedWrap
 end
 
 -- Writes a validated look onto a saved car (the look fields only; plate text, energy and the rest untouched).
@@ -491,6 +513,18 @@ function CustomizationService.buy(player: Player, uid: string, changes: Changes)
 	if not ok then
 		return reply(false, problem or Customization.messages.nothingChanged)
 	end
+	-- An exclusive wrap only for a player who has it (Phase 12; nobody, before MonetizationService exists).
+	local allowed, locked = CustomizationService.exclusiveAllowed(changes, vehicle.wrap, function(lookId: string)
+		local checker = ownsCosmetic
+		if checker == nil then
+			return false
+		end
+		local checked, owned = pcall(checker, player, lookId)
+		return checked and owned == true
+	end)
+	if not allowed then
+		return reply(false, locked or Customization.messages.lockedWrap)
+	end
 
 	-- Charge and save in one update, validated and priced again against the live data, so the cash and the look
 	-- never disagree (a double click, a sale in between or a wallet that just changed can't charge without saving).
@@ -534,11 +568,19 @@ function CustomizationService.buy(player: Player, uid: string, changes: Changes)
 	return reply(true, message, spent)
 end
 
--- Whether the player owns the Custom Plates pass: true or false once MonetizationService exists, nil before.
+-- Whether the player owns the Custom Plates pass: true or false once MonetizationService exists and the pass has
+-- been created (Config/Monetization id not 0), nil before (custom text is then a Studio-only test feature).
 local function passOwned(player: Player): boolean?
 	local checker = hasPass
 	if checker == nil then
 		return nil
+	end
+	local created = passCreated
+	if created ~= nil then
+		local ok, exists = pcall(created, SHOP.passId)
+		if ok and exists == false then
+			return nil
+		end
 	end
 	local ok, owned = pcall(checker, player, SHOP.passId)
 	if not ok then
@@ -639,6 +681,12 @@ function CustomizationService:Init()
 		local ok, module = pcall(require, monetization)
 		if ok and type(module) == "table" and type((module :: any).hasPass) == "function" then
 			hasPass = (module :: any).hasPass
+			if type((module :: any).passCreated) == "function" then
+				passCreated = (module :: any).passCreated
+			end
+			if type((module :: any).ownsCosmetic) == "function" then
+				ownsCosmetic = (module :: any).ownsCosmetic
+			end
 		end
 	end
 end

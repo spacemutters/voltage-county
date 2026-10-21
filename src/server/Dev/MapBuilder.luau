@@ -31,6 +31,10 @@
 --                                attributes BrandId and Index) and the section's brand sign behind its pads
 --   UsedLot                      Phase 4: a numbered platform per MapLayout.usedLot pad (tag UsedLotPad,
 --                                attribute Index)
+--   Billboards                   Phase 12: a panel on two posts per MapLayout billboard (tag Config/Ads.billboards
+--                                .tag, attributes BillboardId, BrandId, Zone): an AdGui on its Front face, built
+--                                switched off (Services/AdsService decides at runtime), and the brand's poster
+--                                painted on its Back face (AdsService copies it to the front while no ads are served)
 --   PlayerSpawns                 SpawnLocations at MapLayout.playerSpawns
 --
 -- Display pads keep buildings, lots, streetlights and props off themselves and off the rectangle round each
@@ -52,6 +56,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = ReplicatedStorage.Shared.Config
+local Ads = require(Config.Ads)
 local Brands = require(Config.Brands)
 local Dealership = require(Config.Dealership)
 local MapLayoutModule = require(Config.MapLayout)
@@ -96,6 +101,16 @@ export type LandmarkData = { id: string, kind: string, position: Vector3, yaw: n
 -- on it points; every pad of a layout is padSize.
 export type DealershipData = { padSize: Vector3, sections: { { brandId: string, pads: { CFrame } } } }
 export type UsedLotData = { padSize: Vector3, pads: { CFrame } }
+-- Billboards (Phase 12): see Config/MapLayout's Billboard.
+export type BillboardData = {
+	id: string,
+	zone: string,
+	position: Vector3,
+	yaw: number,
+	size: Vector3,
+	clearance: number,
+	brandId: string,
+}
 
 export type LayoutData = {
 	seed: number,
@@ -109,6 +124,7 @@ export type LayoutData = {
 	landmarks: { LandmarkData }?,
 	dealership: DealershipData?,
 	usedLot: UsedLotData?,
+	billboards: { BillboardData }?,
 	reservedWestOfX: number?, -- nothing but the County Loop west of this x (the dev track's ground)
 	groundHeight: ((x: number, z: number) -> number)?,
 }
@@ -144,10 +160,15 @@ export type Role =
 	| "spawn"
 	| "displayPad" -- a dealership or used-lot display platform
 	| "sign" -- a dealership brand sign (post and board)
+	| "billboard" -- a billboard's panel or one of its posts (Phase 12)
 
 -- Text painted on one face of a part (a SurfaceGui with one TextLabel). `center` and `size` are fractions of the
 -- face (defaults: centred, TUNING.labelSize).
 export type LabelSpec = { face: Enum.NormalId, text: string, color: Color3, center: Vector2?, size: Vector2? }
+
+-- An AdGui on one face of a part (a billboard's ad unit; Config/Ads). Built switched off: Services/AdsService turns it
+-- on at runtime only when ads may be served. `fallbackImage` "" leaves Roblox's default.
+export type AdUnitSpec = { name: string, face: Enum.NormalId, enableVideoAds: boolean, fallbackImage: string }
 
 export type LightSpec = {
 	kind: "point" | "spot",
@@ -181,6 +202,7 @@ export type PartSpec = {
 	attributes: { [string]: any }?,
 	light: LightSpec?,
 	labels: { LabelSpec }?,
+	adUnit: AdUnitSpec?,
 }
 
 export type Container = { path: string, class: "Folder" | "Model", streaming: Enum.ModelStreamingMode? }
@@ -394,6 +416,12 @@ local TUNING = {
 	-- A used-lot space's number is painted across its front edge, clear of the car standing in the middle.
 	padNumberCenter = Vector2.new(0.5, 0.08),
 	padNumberSize = Vector2.new(0.4, 0.12),
+
+	-- Billboards (Phase 12; where, how big and whose poster come from MapLayout.billboards, the ad unit's limits
+	-- and the poster look from Config/Ads): the panel stands on two square posts as tall as its clearance.
+	billboardPostWidth = 1.2,
+	billboardPostInset = 3, -- each post stands this far in from its end of the panel
+	billboardPostColor = Color3.fromRGB(70, 72, 76),
 
 	-- Player spawns
 	spawnSize = Vector3.new(6, 0.2, 6),
@@ -2781,6 +2809,128 @@ local function addDisplayPads(ctx: Ctx)
 end
 
 ---------------------------------------------------------------------------------------------------------------
+-- Billboards (Phase 12)
+---------------------------------------------------------------------------------------------------------------
+
+-- What a billboard must not stand on or over: roads and their sidewalks, other things' ground and the way from a
+-- pad to its road.
+local BILLBOARD_BLOCKERS: { [string]: boolean } = {
+	road = true,
+	sidewalk = true,
+	driveway = true,
+	support = true,
+	landmark = true,
+	location = true,
+	access = true,
+	prop = true,
+	ramp = true,
+	mesa = true,
+	lake = true,
+}
+
+-- True when the ad face (width x height) is inside Roblox's ad unit limits (Config/Ads.billboards).
+local function adFaceFits(size: Vector3): boolean
+	local limits = Ads.billboards
+	return size.X >= limits.minFace.X
+		and size.Y >= limits.minFace.Y
+		and size.X <= limits.maxFace.X
+		and size.Y <= limits.maxFace.Y
+end
+
+-- Each billboard: a panel (its Front face, toward `yaw`, carries the AdGui; its Back face the brand's poster) on two
+-- posts, the posts parented to the panel. Lots, buildings and streetlights keep off its footprint. A billboard whose
+-- footprint would land on a road or another thing's ground, or whose face is outside the ad limits, is left out with
+-- a note.
+local function addBillboards(ctx: Ctx)
+	local list = ctx.layout.billboards
+	if list == nil or #list == 0 then
+		return
+	end
+	local config = Ads.billboards
+	container(ctx, "Billboards", "Folder")
+	for _, data in list do
+		local size = data.size
+		if not adFaceFits(size) then
+			note(ctx, `billboard {data.id}: its {size.X} x {size.Y} face is outside the ad unit limits, left out`)
+			continue
+		end
+		local poster = config.posters[data.brandId]
+		local brand = Brands[data.brandId]
+		if poster == nil or brand == nil then
+			note(ctx, `billboard {data.id}: no brand or poster for "{data.brandId}", left out`)
+			continue
+		end
+		local width = TUNING.billboardPostWidth
+		local facing = CFrame.Angles(0, math.rad(data.yaw), 0)
+		local base = CFrame.new(data.position) * facing
+		local footprint: Rect = {
+			c = flat(data.position),
+			u = flat(facing.LookVector).Unit,
+			ha = math.max(size.Z, width) / 2,
+			hc = size.X / 2,
+		}
+		if gridHits(ctx.grid, footprint, BILLBOARD_BLOCKERS, 0) then
+			note(ctx, `billboard {data.id} would stand on a road, a location or a prop, left out`)
+			continue
+		end
+		local panel = block(
+			"Billboards",
+			data.id,
+			"billboard",
+			base * CFrame.new(0, data.clearance + size.Y / 2, 0),
+			size,
+			poster.background,
+			Enum.Material.SmoothPlastic
+		)
+		panel.tag = config.tag
+		panel.attributes = {
+			[config.idAttribute] = data.id,
+			[config.brandAttribute] = data.brandId,
+			Zone = data.zone,
+		}
+		panel.labels = {
+			{
+				face = config.posterFace,
+				text = brand.displayName,
+				color = poster.title,
+				center = config.titleCenter,
+				size = config.titleSize,
+			},
+			{
+				face = config.posterFace,
+				text = poster.tagline,
+				color = poster.text,
+				center = config.taglineCenter,
+				size = config.taglineSize,
+			},
+		}
+		panel.adUnit = {
+			name = config.adUnitName,
+			face = config.adFace,
+			enableVideoAds = config.enableVideoAds,
+			fallbackImage = poster.image,
+		}
+		add(ctx, panel)
+		local postSize = Vector3.new(width, data.clearance, width)
+		for i, side in { -1, 1 } do
+			local post = block(
+				"Billboards",
+				`Post{i}`,
+				"billboard",
+				base * CFrame.new(side * (size.X / 2 - TUNING.billboardPostInset), data.clearance / 2, 0),
+				postSize,
+				TUNING.billboardPostColor,
+				Enum.Material.Metal
+			)
+			post.parent = data.id
+			post.shadow = false
+			add(ctx, post)
+		end
+		gridInsert(ctx.grid, footprint, "prop")
+	end
+end
+
+---------------------------------------------------------------------------------------------------------------
 -- Streetlights
 ---------------------------------------------------------------------------------------------------------------
 
@@ -3132,6 +3282,7 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 	addLocations(ctx)
 	addSpawns(ctx)
 	addDisplayPads(ctx)
+	addBillboards(ctx)
 	addStreetlights(ctx)
 	addBuildings(ctx, zones)
 
@@ -3245,6 +3396,32 @@ local function createPart(spec: PartSpec): BasePart
 		text.Font = TUNING.labelFont
 		text.TextScaled = true
 		text.Parent = gui
+	end
+	local adUnit = spec.adUnit
+	if adUnit then
+		-- Built switched off: Services/AdsService turns it on at runtime only when ads may be served.
+		local made, unit = pcall(Instance.new, "AdGui")
+		if made then
+			local ad: any = unit
+			local set = pcall(function()
+				ad.Name = adUnit.name
+				ad.Face = adUnit.face
+				ad.AdShape = Enum.AdShape.HorizontalRectangle
+				ad.EnableVideoAds = adUnit.enableVideoAds
+				if adUnit.fallbackImage ~= "" then
+					ad.FallbackImage = adUnit.fallbackImage
+				end
+				ad.Enabled = false
+			end)
+			if set then
+				ad.Parent = part
+			else
+				ad:Destroy()
+				warn(`[MapBuilder] couldn't set up the AdGui on {spec.name}; add one by hand (Config/Ads)`)
+			end
+		else
+			warn(`[MapBuilder] couldn't create an AdGui on {spec.name}; add one by hand (Config/Ads): {unit}`)
+		end
 	end
 	return part
 end

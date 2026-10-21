@@ -58,7 +58,7 @@ export type FleetData = {
 	lastOnlineAt: number, -- v6: earnings are counted up to here; saved on the fleet timer and on leaving
 }
 
--- Schema version 6 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
+-- Schema version 7 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
 export type PlayerData = {
 	version: number,
 	cash: number,
@@ -75,7 +75,10 @@ export type PlayerData = {
 	codesRedeemed: { [string]: boolean },
 	season: { id: string, xp: number, premium: boolean, claimed: { [string]: boolean } },
 	streak: { lastDay: number, count: number },
-	offersSeen: { [string]: boolean }, -- one-time offers like the Starter Pack
+	offersSeen: { [string]: boolean }, -- one-time offers like the Starter Pack (true once bought)
+	-- v7: exclusive looks the player owns for good (the Starter Pack's wrap, limited cosmetics): cosmetic id ->
+	-- its serial number, or 0 for a look that isn't numbered. Granted by MonetizationService and LimitedService.
+	cosmetics: { [string]: number },
 	club: { lastGrantMonth: string? }, -- Voltage Club monthly credit grant (once per billing month)
 	receipts: { string }, -- last 100 processed PurchaseIds (ProcessReceipt idempotency)
 	pendingGrants: { { kind: string, ref: string } },
@@ -151,6 +154,9 @@ export type ProfileSnapshot = {
 	fleet: SnapshotFleet?,
 	-- Phase 11: ProfileSyncService always sends it (optional for the same reason as `fleet`).
 	designs: { SnapshotDesign }?,
+	-- Phase 12: the exclusive looks (Config/Customization.exclusiveWraps ids) the player may use right now: the ones
+	-- saved in PlayerData.cosmetics, plus the club's while they are a member. Sorted. Optional like `fleet`.
+	looks: { string }?,
 }
 
 -- Driving -------------------------------------------------------------------------------------------------

@@ -24,7 +24,8 @@ local Data = {
 	--   4  owned cars remember their `energy` level (Phase 5 charging and fuel)
 	--   5  owned cars gain `caliper`, `extras` and `plateFormat` (Phase 7 Wrap & Tint shop)
 	--   6  the fleet gains `uncollected` and `lastOnlineAt` (Phase 9 robotaxi fleet)
-	schemaVersion = 6,
+	--   7  `cosmetics`: exclusive looks the player owns, id -> serial (Phase 12: Starter Pack, limited cosmetics)
+	schemaVersion = 7,
 	-- A save with no version field predates versioning and is treated as this version.
 	unversionedVersion = 1,
 

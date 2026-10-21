@@ -165,11 +165,18 @@ local function monetization(): any
 	return nil
 end
 
--- Whether the player may get the Pro routines: the pass once MonetizationService exists, else Studio only.
+-- Whether the player may get the Pro routines: the pass once MonetizationService exists and the pass has been
+-- created (Config/Monetization id not 0), else Studio only.
 local function hasPro(player: Player): boolean
 	local service = monetization()
 	if service == nil then
 		return RunService:IsStudio()
+	end
+	if type(service.passCreated) == "function" then
+		local ok, created = pcall(service.passCreated, LightShows.proPass)
+		if ok and created == false then
+			return RunService:IsStudio()
+		end
 	end
 	local ok, owned = pcall(service.hasPass, player, LightShows.proPass)
 	return ok and owned == true

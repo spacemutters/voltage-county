@@ -5,6 +5,7 @@
 -- Phase 9 adds the Fleet app (`fleet`, `fleetText`), the HUD's fleet chip (`hud.fleetChip`) and the cutscene
 -- attribute that hides the HUD, the touch controls and the phone during a pod ride (`cutsceneAttribute`).
 -- Phase 11 adds the Designer app to `apps` (its words and sizes live in UI/Designer/DesignerStyle).
+-- Phase 12 adds the Store app to `apps` (its words and sizes live in UI/Store/StoreStyle).
 --
 -- Read by Controllers/PhoneController, Controllers/HudController, UI/Hud and every file in UI/Phone. Colors,
 -- fonts, text sizes, corner radii and draw order come from UI/Theme; the driving HUD's own sizes stay in
@@ -19,7 +20,7 @@ local Theme = require(script.Parent.Parent.Theme)
 
 local spacing = Theme.spacing
 
-export type AppId = "gps" | "garage" | "designer" | "jobs" | "fleet" | "wallet" | "codes" | "settings"
+export type AppId = "gps" | "garage" | "designer" | "jobs" | "fleet" | "store" | "wallet" | "codes" | "settings"
 export type Glyph = AppId | "phone"
 export type App = { id: AppId, label: string }
 
@@ -145,13 +146,15 @@ local PhoneConfig = {
 
 	-- The apps, in the order they sit on the home screen. The Designer app (Phase 11) shows only once it is unlocked
 	-- (after the player's first visit to the Design Studio; UI/Designer/DesignerStore); UI/Phone/Phone draws its
-	-- screen (UI/Phone/DesignerApp) and its icon (UI/Designer/DesignerGlyph).
+	-- screen (UI/Phone/DesignerApp) and its icon (UI/Designer/DesignerGlyph). The Store app (Phase 12) always shows;
+	-- UI/Phone/Phone draws its screen (UI/Phone/StoreApp) and its icon (UI/Store/StoreGlyph).
 	apps = {
 		{ id = "gps", label = "GPS" },
 		{ id = "garage", label = "Garage" },
 		{ id = "designer", label = "Designer" },
 		{ id = "jobs", label = "Jobs" },
 		{ id = "fleet", label = "Fleet" },
+		{ id = "store", label = "Store" },
 		{ id = "wallet", label = "Wallet" },
 		{ id = "codes", label = "Codes" },
 		{ id = "settings", label = "Settings" },

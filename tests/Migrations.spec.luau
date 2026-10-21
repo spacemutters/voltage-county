@@ -2,7 +2,8 @@
 -- PlayerData migrations (CLAUDE.md hard rule 7; PLAN.md Phase 3 acceptance: migration specs pass; Phase 4 adds
 -- schema version 3, docs/phase-4-contracts.md "Data changes"; Phase 5 adds version 4, docs/phase-5-contracts.md
 -- "Schema v4"; Phase 7 adds version 5, docs/phase-7-contracts.md "Schema v5"; Phase 9 adds version 6,
--- docs/phase-9-contracts.md "Fleet economy"). Pure logic: runs in Edit mode.
+-- docs/phase-9-contracts.md "Fleet economy"; Phase 12 adds version 7, whose `cosmetics` step tests/Monetization.spec
+-- covers). Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -143,8 +144,8 @@ end
 
 return function(t: Harness.Api)
 	t.describe("Migrations", function()
-		t.it("is at schema version 6", function()
-			t.expect(Data.schemaVersion).toBe(6)
+		t.it("is at schema version 7", function()
+			t.expect(Data.schemaVersion).toBe(7)
 		end)
 
 		t.it("has a step from every older version up to the schema version", function()
@@ -406,7 +407,7 @@ return function(t: Harness.Api)
 		t.it("5 -> 6: the fleet gains uncollected = 0 and an unset lastOnlineAt", function()
 			local migrated, fromVersion = Migrations.run(v5Save())
 			t.expect(fromVersion).toBe(5)
-			t.expect(migrated.version).toBe(6)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(migrated.fleet.uncollected).toBe(0)
 			t.expect(migrated.fleet.lastOnlineAt).toBe(Template.UNSET_TIME)
 			-- What was there stays exactly as it was.
@@ -424,10 +425,10 @@ return function(t: Harness.Api)
 			t.expect(keysOf(migrated.fleet)).toEqual(keysOf(Template.new(rejoinAt).fleet :: any))
 		end)
 
-		t.it("5 -> 6: older saves reach version 6 with the fleet fields too", function()
+		t.it("5 -> 6: older saves reach the schema version with the fleet fields too", function()
 			for _, makeSave in { v1Save, v2Save, v3Save, v4Save } do
 				local migrated = Migrations.run(makeSave())
-				t.expect(migrated.version).toBe(6)
+				t.expect(migrated.version).toBe(Data.schemaVersion)
 				t.expect(migrated.fleet.uncollected).toBe(0)
 				t.expect(migrated.fleet.lastOnlineAt).toBe(Template.UNSET_TIME)
 				t.expect(migrated.fleet.lastCollectedAt).toBe(JOIN_TIME)
@@ -465,7 +466,7 @@ return function(t: Harness.Api)
 			local missing = v5Save()
 			missing.fleet = nil
 			local migrated = Migrations.run(missing)
-			t.expect(migrated.version).toBe(6)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(migrated.fleet).toBe(nil) -- left for Reconcile to fill from the template
 
 			local damaged = v5Save()

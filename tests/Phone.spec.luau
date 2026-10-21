@@ -266,16 +266,16 @@ return function(t: Harness.Api)
 			end
 		end)
 
-		t.it("lists the eight apps once each", function()
+		t.it("lists the nine apps once each", function()
 			local seen: { [string]: boolean } = {}
 			for _, app in PhoneConfig.apps do
 				t.expect(seen[app.id]).toBe(nil)
 				seen[app.id] = true
 			end
-			for _, id in { "gps", "garage", "designer", "jobs", "fleet", "wallet", "codes", "settings" } do
+			for _, id in { "gps", "garage", "designer", "jobs", "fleet", "wallet", "codes", "store", "settings" } do
 				t.expect(seen[id]).toBe(true)
 			end
-			t.expect(#PhoneConfig.apps).toBe(8)
+			t.expect(#PhoneConfig.apps).toBe(9)
 		end)
 
 		t.it("offers directions only to places on the map", function()

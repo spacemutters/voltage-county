@@ -17,6 +17,10 @@
 -- UI/Designer/DesignerStore says it is unlocked (after the first Design Studio visit), with an accent dot while a
 -- new design waits to be seen, and its screen (UI/Phone/DesignerApp) reads its own state, so PhoneController
 -- passes no body for it.
+--
+-- The Store app (Phase 12) is registered here the same way: its icon is UI/Store/StoreGlyph, with an accent dot while
+-- a one-time offer waits or the server says today's daily reward is ready (UI/Store/StoreState), and its screen
+-- (UI/Phone/StoreApp) reads its own state. Controllers/StoreController opens it with PhoneController.open("store").
 
 local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -28,11 +32,16 @@ local Glyph = require(script.Parent.Glyphs)
 local Kit = require(script.Parent.Kit)
 local Layout = require(script.Parent.Layout)
 local PhoneConfig = require(script.Parent.PhoneConfig)
+local StoreApp = require(script.Parent.StoreApp)
 local Theme = require(script.Parent.Parent.Theme)
 local DesignerGlyph = require(script.Parent.Parent.Designer.DesignerGlyph)
 local DesignerStore = require(script.Parent.Parent.Designer.DesignerStore)
+local StoreGlyph = require(script.Parent.Parent.Store.StoreGlyph)
+local StoreModel = require(script.Parent.Parent.Store.StoreModel)
+local StoreState = require(script.Parent.Parent.Store.StoreState)
 
 local DESIGNER_APP: PhoneConfig.AppId = "designer"
+local STORE_APP: PhoneConfig.AppId = "store"
 
 local e = React.createElement
 local colors = Theme.colors
@@ -136,6 +145,11 @@ local function AppTile(props: {
 					background = colors.panelRaised,
 					size = Vector2.new(grid.glyphSize, grid.glyphSize),
 				})
+				elseif props.app.id == STORE_APP then e(StoreGlyph, {
+					color = colors.text,
+					background = colors.panelRaised,
+					size = Vector2.new(grid.glyphSize, grid.glyphSize),
+				})
 				else e(Glyph, {
 					name = props.app.id,
 					color = colors.text,
@@ -178,6 +192,8 @@ local function Home(props: {
 	local grid = PhoneConfig.grid
 	local columns = Layout.gridColumns(props.width)
 	local designer = DesignerStore.useState()
+	local store = StoreState.useState()
+	local storeBadge = StoreModel.badge(store.offerDue, store.streak, StoreState.now())
 	local tiles: { [string]: any } = {
 		Grid = e("UIGridLayout", {
 			CellSize = UDim2.fromOffset(grid.iconSize, grid.iconSize + Theme.spacing.xs + grid.labelHeight),
@@ -196,7 +212,8 @@ local function Home(props: {
 			order = index,
 			badge = (app.id == "gps" and props.routeActive)
 				or (app.id == "fleet" and props.fleetReady)
-				or (app.id == DESIGNER_APP and designer.status == "ready"),
+				or (app.id == DESIGNER_APP and designer.status == "ready")
+				or (app.id == STORE_APP and storeBadge),
 			onOpen = props.onOpenApp,
 			tileRef = if index == 1 then props.focusRef else nil,
 		})
@@ -401,6 +418,7 @@ local function Sheet(props: Props)
 			}, {
 				Screen = if props.app == DESIGNER_APP
 					then e(DesignerApp, {})
+					elseif props.app == STORE_APP then e(StoreApp, {})
 					elseif inApp then props.body
 					else e(Home, {
 						width = Layout.width(rect),

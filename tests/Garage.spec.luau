@@ -8,10 +8,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
+local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
+local Monetization = require(ReplicatedStorage.Shared.Config.Monetization)
 local Types = require(ReplicatedStorage.Shared.Types)
 local GarageService = require(ServerScriptService.Server.Services.GarageService)
 local ProfileSyncService = require(ServerScriptService.Server.Services.ProfileSyncService)
@@ -221,10 +223,12 @@ return function(t: Harness.Api)
 				"designs",
 				"fleet",
 				"garageSlots",
+				"looks",
 				"settings",
 				"starterClaimed",
 				"vehicles",
 			})
+			t.expect(snapshot.looks).toEqual({})
 			t.expect(snapshot.fleet).toEqual(ProfileSyncService.snapshotFleet(data.fleet, false))
 			t.expect(snapshot.cash).toBe(1234)
 			t.expect(snapshot.starterClaimed).toBe(true)
@@ -268,6 +272,36 @@ return function(t: Harness.Api)
 			local snapshot = ProfileSyncService.snapshot(data)
 			t.expect(uidsOf(snapshot.vehicles)).toEqual({ "fav", "old" })
 			t.expect(snapshot.cash).toBe(0)
+		end)
+
+		t.it("counts the slots passes and the club add, without saving them", function()
+			local data = profileWith({ car("a", "ohm_spark", "standard", 35000) })
+			local plain = ProfileSyncService.snapshot(data)
+			t.expect(plain.garageSlots).toBe(data.garageSlots)
+			t.expect(plain.customSlots).toBe(data.customSlots)
+			local boosted = ProfileSyncService.snapshot(data, false, { garage = 10, custom = 4 })
+			t.expect(boosted.garageSlots).toBe(data.garageSlots + 10)
+			t.expect(boosted.customSlots).toBe(data.customSlots + 4)
+			local junk = ProfileSyncService.snapshot(data, false, { garage = -3, custom = 0 / 0 })
+			t.expect(junk.garageSlots).toBe(data.garageSlots)
+			t.expect(junk.customSlots).toBe(data.customSlots)
+			t.expect(data.garageSlots).toBe(plain.garageSlots) -- the save never changes
+		end)
+
+		t.it("lists the exclusive looks the player has, and the club's only while they are a member", function()
+			local data = profileWith({ car("a", "ohm_spark", "standard", 35000) })
+			local owned = Customization.exclusiveWraps[1].id
+			local cosmetics: any = data.cosmetics
+			cosmetics[owned] = 0
+			cosmetics.not_a_look = 3
+			cosmetics.launch_week_plate_frame = 7 -- a look the shop doesn't have yet
+			t.expect(ProfileSyncService.snapshot(data).looks).toEqual({ owned })
+			local member = ProfileSyncService.snapshot(data, false, nil, true).looks or {}
+			for _, id in Monetization.club.cosmetics do
+				t.expect(table.find(member, id) ~= nil).toBe(true)
+			end
+			t.expect(table.find(member, owned) ~= nil).toBe(true)
+			t.expect(ProfileSyncService.snapshotLooks(nil, false)).toEqual({})
 		end)
 	end)
 end

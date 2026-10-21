@@ -7,7 +7,9 @@
 --   trySpend(player, amount, reason)   takes cash only if the player has enough; cash never goes below $0
 --   getCash(player)                    the player's cash ($0 until their data has loaded)
 --   earningsMultiplier(player)         1 plus the bonus of every boost still running (expired ones are dropped
---                                      from the save); every earning path multiplies its pay by it
+--                                      from the save) and of the running events (Phase 12 EventService, as one
+--                                      more boost under the same cap); every earning path multiplies its pay by it
+--   onEarned(fn)                       Phase 12: fn(player, amount, reason) after every successful add
 --   devGrant(player, amount)           Studio only: adds cash for testing (CLAUDE.md hard rule 8)
 --
 -- Server-authoritative (CLAUDE.md hard rule 1): no remote reaches this module; only server code that has
@@ -37,7 +39,9 @@ local DEV_REASON = "dev"
 local EconomyService = {}
 
 local DataService: DataServiceModule? = nil
+local EventService: any = nil -- Phase 12 Services/EventService, when present (event earnings multipliers)
 local analyticsWarned = false -- report an analytics failure once, not on every payment
+local earnedListeners: { (player: Player, amount: number, reason: string) -> () } = {}
 
 -- Pure helpers ----------------------------------------------------------------------------------------------
 
@@ -103,13 +107,18 @@ end
 
 -- The earnings multiplier from a list of boosts at `now`: 1 plus each running boost's bonus (a 2x boost adds
 -- 1), never above Config/Economy boosts.maxMultiplier. Expired and malformed boosts add nothing.
-function EconomyService.multiplierFrom(boosts: { Types.Boost }, now: number): number
+-- `eventMultiplier` (Phase 12, EventService.earningsMultiplier) joins the boost path as one more boost: its bonus
+-- adds to the boosts' under the same cap.
+function EconomyService.multiplierFrom(boosts: { Types.Boost }, now: number, eventMultiplier: number?): number
 	local bonus = 0
 	for _, boost in EconomyService.activeBoosts(boosts, now) do
 		local factor = boost.factor
 		if type(factor) == "number" and isFinite(factor) and factor > 1 then
 			bonus += factor - 1
 		end
+	end
+	if type(eventMultiplier) == "number" and isFinite(eventMultiplier) and eventMultiplier > 1 then
+		bonus += eventMultiplier - 1
 	end
 	return math.min(1 + bonus, Economy.boosts.maxMultiplier)
 end
@@ -184,7 +193,18 @@ function EconomyService.add(player: Player, amount: number, reason: string): boo
 		return false
 	end
 	EconomyService.recordChange(player, "source", added, reason)
+	if added > 0 then
+		for _, listener in earnedListeners do
+			task.spawn(listener, player, added, reason)
+		end
+	end
 	return added > 0
+end
+
+-- Phase 12: calls fn(player, amount, reason) after every successful `add` (amount is what was really added), in
+-- its own thread. SeasonService turns "drive" and "job:<type>" earnings into season XP here.
+function EconomyService.onEarned(fn: (player: Player, amount: number, reason: string) -> ())
+	table.insert(earnedListeners, fn)
 end
 
 -- Takes cash if the player has at least `amount` (rounded down to whole dollars). True when it was taken;
@@ -225,7 +245,18 @@ local function pruneBoosts(player: Player, data: Types.PlayerData, now: number):
 	return active
 end
 
--- What the player's earnings are multiplied by right now: 1 with no boosts running.
+-- The running events' earnings multiplier (1 without EventService or when it fails). EventService reads its own
+-- clock, so a Studio test clock (EventService.setClock) reaches pay too.
+local function eventMultiplier(): number
+	local events = EventService
+	if events == nil or type(events.earningsMultiplier) ~= "function" then
+		return 1
+	end
+	local ok, result = pcall(events.earningsMultiplier)
+	return if ok and type(result) == "number" then result else 1
+end
+
+-- What the player's earnings are multiplied by right now: 1 with no boosts or events running.
 function EconomyService.earningsMultiplier(player: Player): number
 	local dataService = DataService
 	local data = if dataService ~= nil then dataService.get(player) else nil
@@ -233,7 +264,7 @@ function EconomyService.earningsMultiplier(player: Player): number
 		return 1
 	end
 	local now = os.time()
-	return EconomyService.multiplierFrom(pruneBoosts(player, data, now), now)
+	return EconomyService.multiplierFrom(pruneBoosts(player, data, now), now, eventMultiplier())
 end
 
 -- Studio only: gives the player cash for testing. Refuses (false) anywhere else.
@@ -249,6 +280,13 @@ end
 
 function EconomyService:Init()
 	DataService = require(script.Parent.DataService)
+	local events = script.Parent:FindFirstChild("EventService")
+	if events ~= nil and events:IsA("ModuleScript") then
+		local ok, module = pcall(require :: any, events)
+		if ok and type(module) == "table" then
+			EventService = module
+		end
+	end
 end
 
 function EconomyService:Start()

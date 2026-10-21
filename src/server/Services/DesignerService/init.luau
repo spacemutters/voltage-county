@@ -25,6 +25,7 @@
 --   HideDesign { designUid }         admins only (Config/Admins; anyone in Studio when studioCountsAsAdmin): hides
 --                                    a design (its car falls back to the plain kit look) or a car's mod (stock
 --                                    look), on every server (DataStore Config/Designer.hiddenStore, checked on join).
+--                                    The same path is exported as DesignerService.hide (AdminService uses it).
 --
 -- A request, step by step (PLAN.md Phase 11 "DesignerService"):
 --   1. checks: data loaded, the feature flag, one request at a time, the prompt (characters, not bytes), the class
@@ -660,7 +661,7 @@ local function featureOn(): boolean
 			return on
 		end
 	end
-	local value = (FeatureFlags :: any)[Designer.featureFlag]
+	local value = FeatureFlags.defaults[Designer.featureFlag]
 	if type(value) == "boolean" then
 		return value
 	end
@@ -1659,12 +1660,17 @@ local function applyHidden(owner: Player, uid: string): boolean
 	return design ~= nil or #refresh > 0
 end
 
-local function onHide(player: Player, payload: any): Answer
+-- Hides design or mod `uid` everywhere for admin `player`: saved in Designer.hiddenStore (every server, every
+-- join) and applied at once to its owner if they're in this server. The HideDesign remote and AdminService's
+-- hideDesign action both end here. Yields (DataStore).
+function DesignerService.hide(player: Player, uid: string): Answer
 	if not isAdmin(player) then
 		warn(`{LOG} {player.Name} ({player.UserId}) tried HideDesign without being an admin`)
 		return refuse("notAdmin", messages.notAdmin)
 	end
-	local uid: string = payload.designUid
+	if type(uid) ~= "string" or uid == "" then
+		return refuse("failed", messages.hideFailed)
+	end
 	local saved = pcall(function()
 		DataStoreService:GetDataStore(Designer.hiddenStore):SetAsync(uid, true)
 	end)
@@ -1681,6 +1687,10 @@ local function onHide(player: Player, payload: any): Answer
 		return answer(true, messages.hiddenLater)
 	end
 	return refuse("failed", messages.hideFailed)
+end
+
+local function onHide(player: Player, payload: any): Answer
+	return DesignerService.hide(player, payload.designUid)
 end
 
 -- True when saved AI text no longer passes: it names a real brand (Util/BrandNames, which may have grown) or

@@ -16,8 +16,9 @@
 export type ReportReason = { id: string, label: string }
 
 local Designer = {
-	-- Config/FeatureFlags key that switches the designer off (FeatureFlags[featureFlag] == false). A missing key
-	-- means `enabledByDefault`. The backend has its own on/off switch as well (designer_settings).
+	-- Config/FeatureFlags key that switches the designer off: FeatureFlagService.isOn(featureFlag) is false (its
+	-- live override, else FeatureFlags.defaults[featureFlag]). A missing key means `enabledByDefault`. The backend
+	-- has its own on/off switch as well (designer_settings).
 	featureFlag = "designer",
 	enabledByDefault = true,
 

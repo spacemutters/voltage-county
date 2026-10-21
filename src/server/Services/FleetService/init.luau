@@ -605,6 +605,11 @@ function FleetService:Init()
 		local ok, module = pcall(require, monetization)
 		if ok and type(module) == "table" and type((module :: any).hasPass) == "function" then
 			hasPass = (module :: any).hasPass
+			-- Phase 12: follow every change MonetizationService learns of (a purchase, a Studio test pass).
+			local onPassChanged = (module :: any).onPassChanged
+			if type(onPassChanged) == "function" then
+				onPassChanged(Fleet.pass.key, setPass)
+			end
 		end
 	end
 end

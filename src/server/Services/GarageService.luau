@@ -36,6 +36,10 @@
 --   refresh   refreshOwned(player, uid) puts a car that is out back exactly where it stands with its new look
 --             (after an AI mod, a moderator hiding it, or its generated look arriving), re-seating the driver.
 --
+-- Slots (Phase 12, docs/phase-12-contracts.md): the Garage+ pass and the Voltage Club add slots on top of the saved
+-- garageSlots / customSlots while they're owned. MonetizationService mirrors the bonus to player attributes
+-- (Config/Monetization.attributes) and roomIn / customRoomIn count it; it is never written into the save.
+--
 -- Server-authoritative (CLAUDE.md hard rule 1): a client only ever names a uid, and the server looks it up in that
 -- player's own data and nowhere else. A sale removes the car and pays for it inside one DataService.update, which
 -- re-checks that the car is still there, so a double click (or a forged burst) can never sell a car twice. No
@@ -46,6 +50,7 @@
 
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -55,6 +60,7 @@ local Data = require(ReplicatedStorage.Shared.Config.Data)
 local Designer = require(ReplicatedStorage.Shared.Config.Designer)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
+local Monetization = require(ReplicatedStorage.Shared.Config.Monetization)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Spawning = require(ReplicatedStorage.Shared.Config.Spawning)
 local Types = require(ReplicatedStorage.Shared.Types)
@@ -156,13 +162,33 @@ function GarageService.slotsUsed(data: Types.PlayerData): number
 	return used
 end
 
--- True while the garage has a free slot (a damaged slot count falls back to Config/Economy.garageSlots).
-function GarageService.roomIn(data: Types.PlayerData): boolean
+-- Slots the owner of `data` gets right now from passes and the Voltage Club (Phase 12): MonetizationService mirrors
+-- them to the player attribute `attribute` (Config/Monetization.attributes). The owner is found by their data
+-- table, so callers that only hold the data (DesignerService) count the bonus too. 0 before the services boot (the
+-- specs) and for data no player in this server owns. Never saved: the bonus ends the moment the pass or club does.
+local function bonusFor(data: Types.PlayerData, attribute: string): number
+	local dataService = DataService
+	if dataService == nil then
+		return 0
+	end
+	for _, player in Players:GetPlayers() do
+		if dataService.get(player) == data then
+			local value = player:GetAttribute(attribute)
+			return if type(value) == "number" and isFinite(value) and value > 0 then math.floor(value) else 0
+		end
+	end
+	return 0
+end
+
+-- True while the garage has a free slot (a damaged slot count falls back to Config/Economy.garageSlots). `extra`
+-- is the pass bonus; left out, it is read for the data's owner (bonusFor).
+function GarageService.roomIn(data: Types.PlayerData, extra: number?): boolean
 	local slots = data.garageSlots
 	if type(slots) ~= "number" or not isFinite(slots) or slots < 0 then
 		slots = Economy.garageSlots
 	end
-	return GarageService.slotsUsed(data) < slots
+	local bonus = if extra ~= nil then extra else bonusFor(data, Monetization.attributes.garageBonus)
+	return GarageService.slotsUsed(data) < slots + bonus
 end
 
 -- The player design with `designUid` in a player's data, and its index, or nil.
@@ -193,12 +219,14 @@ function GarageService.customSlotsUsed(data: Types.PlayerData): number
 end
 
 -- True while the player has a free custom slot (a damaged slot count falls back to Config/Economy.customSlots).
-function GarageService.customRoomIn(data: Types.PlayerData): boolean
+-- `extra` is the pass and club bonus; left out, it is read for the data's owner (bonusFor).
+function GarageService.customRoomIn(data: Types.PlayerData, extra: number?): boolean
 	local slots = data.customSlots
 	if type(slots) ~= "number" or not isFinite(slots) or slots < 0 then
 		slots = Economy.customSlots
 	end
-	return GarageService.customSlotsUsed(data) < slots
+	local bonus = if extra ~= nil then extra else bonusFor(data, Monetization.attributes.customBonus)
+	return GarageService.customSlotsUsed(data) < slots + bonus
 end
 
 -- The name a design shows: its own (already filtered when it was made), or "Custom <class>" once a moderator hid

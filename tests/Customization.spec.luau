@@ -148,6 +148,35 @@ return function(t: Harness.Api)
 			t.expect(bad).toEqual({})
 		end)
 
+		t.it("keeps exclusive wraps out of the shop list, free to put on and found by id", function()
+			local shopIds: { [string]: boolean } = {}
+			for _, wrap in Customization.wraps do
+				shopIds[wrap.id] = true
+				t.expect(Customization.isExclusive(wrap.id)).toBe(false)
+			end
+			t.expect(#duplicates(ids(Customization.exclusiveWraps))).toBe(0)
+			for _, wrap in Customization.exclusiveWraps do
+				t.expect(`{wrap.id} in the shop list: {shopIds[wrap.id] == true}`)
+					.toBe(`{wrap.id} in the shop list: false`)
+				t.expect(wrap.exclusive).toBe(true)
+				t.expect(#wrap.bands).toBeGreaterThan(0)
+				t.expect(Customization.getWrap(wrap.id)).toBe(wrap)
+				t.expect(Customization.lookExists(wrap.id)).toBe(true)
+				t.expect((Customization.priceOf({ wrap = wrap.id }, stockLook(), "sedan"))).toBe(0)
+			end
+			-- Plate frames aren't a look yet.
+			t.expect(Customization.lookExists("launch_week_plate_frame")).toBe(false)
+		end)
+
+		t.it("lists an exclusive wrap only for a player who has it, or on the car already", function()
+			local first = Customization.exclusiveWraps[1]
+			local shop = #Customization.wraps
+			t.expect(#Customization.wrapsFor(nil, nil)).toBe(shop)
+			t.expect(#Customization.wrapsFor({ [first.id] = true }, nil)).toBe(shop + 1)
+			t.expect(#Customization.wrapsFor({}, first.id)).toBe(shop + 1)
+			t.expect(#Customization.wrapsFor({ [first.id] = true }, first.id)).toBe(shop + 1)
+		end)
+
 		t.it("costs more on a higher-tier class", function()
 			local look = stockLook()
 			local economy = Customization.priceOf({ paint = "cobalt" }, look, "economy")

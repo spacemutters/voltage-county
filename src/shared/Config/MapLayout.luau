@@ -125,6 +125,22 @@ export type UsedLotLayout = {
 	pads: { CFrame }, -- numbered spaces; space N shows the day's used-lot slot N (Config/UsedLot)
 }
 
+-- A billboard (Phase 12; docs/phase-12-contracts.md "Ads, analytics, admin"): a panel on two posts beside a road.
+-- MapBuilder builds it under Generated.Billboards: the panel is tagged Config/Ads.billboards.tag, carries an AdGui on
+-- its Front face (the face `yaw` points at, toward the traffic coming at it) and its brand's poster on the Back face.
+-- Its Front face (size.X wide, size.Y tall) stays inside Roblox's ad unit limits (Config/Ads.billboards minFace and
+-- maxFace; tests/Ads.spec checks). The panel and its posts keep clear of roads, sidewalks, locations and props
+-- (MapBuilder leaves a note, which fails tests/MapBuilder.spec, if one doesn't).
+export type Billboard = {
+	id: string, -- unique; also the panel part's name
+	zone: string, -- a Zone id
+	position: Vector3, -- centre of the footprint on the ground (Y = the ground top)
+	yaw: number, -- degrees, the way the ad face looks; 0 faces north (-Z), 90 faces west (-X)
+	size: Vector3, -- the panel: X its width (the ad's width), Y its height, Z its thickness
+	clearance: number, -- studs from the ground to the panel's bottom edge (the posts' height)
+	brandId: string, -- the Config/Brands brand whose poster it shows when no ad is served
+}
+
 export type MapLayout = {
 	seed: number,
 	zones: { [string]: Zone },
@@ -137,6 +153,7 @@ export type MapLayout = {
 	landmarks: { Landmark },
 	dealership: DealershipLayout,
 	usedLot: UsedLotLayout,
+	billboards: { Billboard },
 	reservedWestOfX: number,
 	padClearance: number,
 	groundHeight: (x: number, z: number) -> number,
@@ -723,6 +740,61 @@ local usedLot: UsedLotLayout = {
 	pads = padRow(10, 450, 454, 0),
 }
 
+-- Billboards (Phase 12). Every panel is 28 x 15.75 studs (16:9, inside Roblox's 8 x 4.5 to 32 x 18 ad limits).
+-- County Loop: two per side of the ring, on its straight stretches, inside the ring and square to the highway so
+-- one direction of traffic sees the ad face and the other the poster: the panel's near end stands 8 studs past the
+-- carriageway's edge (the highway is 64 studs wide, so its edge is 32 from the centre line at ±3,400), which puts
+-- the panel's centre 32 + 8 + 14 = 54 studs in from the centre line. Each side's pair faces opposite ways. They keep
+-- well away from the interchanges (±300 and the ramps inside them), the corners (from ±2,700), the Loop Stop and the
+-- breakdown shoulders. The charging plazas: one behind the Cedar Bend plaza's stalls, facing the street they face,
+-- and one behind the Loop Stop's chargers, facing its service road; each stands 18 to 20 studs behind the stalls'
+-- back edge, clear of their charger posts and of the 10-stud margin MapBuilder keeps round every pad.
+local BILLBOARD = v3(28, 15.75, 1)
+local HIGHWAY_CLEARANCE = 12 -- studs from the ground to a highway panel's bottom edge
+local PLAZA_CLEARANCE = 10 -- a plaza panel stands lower; people walk under it
+local LOOP_IN = 3400 - 54 -- the panels' centre line inside the ring (see above)
+
+local function billboard(
+	id: string,
+	zone: string,
+	x: number,
+	z: number,
+	yaw: number,
+	clearance: number,
+	brandId: string
+): Billboard
+	return {
+		id = id,
+		zone = zone,
+		position = v3(x, 0, z),
+		yaw = yaw,
+		size = BILLBOARD,
+		clearance = clearance,
+		brandId = brandId,
+	}
+end
+
+local billboards: { Billboard } = {
+	-- South side (z = 3400): square to the road, so their faces look east or west along it.
+	billboard("bb_loop_south_1", "county_loop", -1200, LOOP_IN, 90, HIGHWAY_CLEARANCE, "halden"),
+	billboard("bb_loop_south_2", "county_loop", 1500, LOOP_IN, -90, HIGHWAY_CLEARANCE, "kaze"),
+	-- North side (z = -3400).
+	billboard("bb_loop_north_1", "county_loop", -1500, -LOOP_IN, 90, HIGHWAY_CLEARANCE, "ironwood"),
+	billboard("bb_loop_north_2", "county_loop", 1200, -LOOP_IN, -90, HIGHWAY_CLEARANCE, "montevale"),
+	-- West side (x = -3400): faces look north or south along it.
+	billboard("bb_loop_west_1", "county_loop", -LOOP_IN, -1800, 0, HIGHWAY_CLEARANCE, "aldermoor"),
+	billboard("bb_loop_west_2", "county_loop", -LOOP_IN, 1500, 180, HIGHWAY_CLEARANCE, "brannock"),
+	-- East side (x = 3400), north of the Loop Stop.
+	billboard("bb_loop_east_1", "county_loop", LOOP_IN, -1500, 0, HIGHWAY_CLEARANCE, "northline"),
+	billboard("bb_loop_east_2", "county_loop", LOOP_IN, 900, 180, HIGHWAY_CLEARANCE, "ohm"),
+	-- The Cedar Bend charging plaza: behind stalls cb_charger_1..6 (x 329..411, back edge z = 255), facing south to
+	-- the street.
+	billboard("bb_cedar_plaza", "cedar_bend", 370, 255 - 20, 180, PLAZA_CLEARANCE, "ohm"),
+	-- The Loop Stop: behind chargers loop_charger_1..4 (z 1794..1848, back edge x = 3162), facing east to the
+	-- service road.
+	billboard("bb_loop_stop", "county_loop", 3162 - 18, 1821, -90, PLAZA_CLEARANCE, "ironwood"),
+}
+
 -- Top of the ground at (x, z): the lake bed in a lake, the mesa surface on a mesa, 0 elsewhere.
 local function groundHeight(x: number, z: number): number
 	for _, lake in lakes do
@@ -828,6 +900,7 @@ local MapLayout: MapLayout = {
 	},
 	dealership = dealership,
 	usedLot = usedLot,
+	billboards = billboards,
 	-- The dev test track's ground (Config/DevTrack): nothing of the county but the County Loop west of this x.
 	reservedWestOfX = -3700,
 	-- Pads stay at least this many studs clear of every road and its sidewalks.

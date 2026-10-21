@@ -39,6 +39,7 @@ local SHAPE: { [string]: any } = {
 	settings = { units = "string", camera = "string", musicVolume = "number" },
 	firstJoinAt = "number",
 	boosts = "table",
+	cosmetics = "table", -- v7
 }
 
 -- Every field a new owned car (Types.OwnedVehicle, schema version 5) starts with. The optional fields (designUid,

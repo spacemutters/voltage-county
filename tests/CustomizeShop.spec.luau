@@ -338,6 +338,16 @@ return function(t: Harness.Api)
 			t.expect(none ~= nil and none.priceText).toBe(copy.current)
 		end)
 
+		t.it("lists an exclusive wrap only for a player who has it, free to put on", function()
+			local exclusive = Customization.exclusiveWraps[1].id
+			local without = CustomizeModel.tabView(input(stock(), stock(), { tab = "wrap" }))
+			t.expect(choiceWith(without.cards, exclusive)).toBe(nil)
+			local owned =
+				CustomizeModel.tabView(input(stock(), stock(), { tab = "wrap", looks = { [exclusive] = true } }))
+			local card = choiceWith(owned.cards, exclusive)
+			t.expect(card ~= nil and card.priceText).toBe(copy.free)
+		end)
+
 		t.it("lists only the extras the class takes", function()
 			local view = CustomizeModel.tabView(input(stock(), stock(), { tab = "extras" }))
 			local cards: { CustomizeModel.Choice } = view.cards or {}

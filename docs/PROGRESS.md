@@ -2,6 +2,58 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-21 — Phase 12: store, passes, Voltage Club, drops, season pass, events
+
+**Shipped**
+- **Store** (phone Store app, three pages):
+  - credit packs (5, 15 + 3 bonus, 40 + 12 bonus), cash packs, an extra custom-car slot, the Starter Pack
+  - passes: VIP, Fleet Manager, Garage+, Light Show Pro, Custom Plates, Season Pass
+  - the Voltage Club subscription card, private servers with the Roblox Plus prompt, daily reward, invite
+- **Prices come only from Roblox.** Nothing has a real id yet, so every item shows "Coming soon" with no buy button
+  until Davis creates it in the Creator Dashboard and pastes the id. A spec fails the build on any hard-coded
+  Robux price.
+- **Payments:** every purchase is recorded with its purchase id in the same save as the grant, and only confirmed to
+  Roblox once that save is in the DataStore, so a repeat delivery grants nothing. Credit packs go to the designer's
+  credits; the "Out of credits" sheet opens the store.
+- **Passes work:** VIP +20 % job pay and a chat tag; Fleet Manager +5 pod slots and auto-collect; Garage+ +10 garage and
+  +2 custom slots; Custom Plates; Light Show Pro.
+- **Voltage Club:** credits once per paid billing month, perks off when it lapses.
+- **Starter Pack:** offered after the first design and after the first job payout, never again once bought.
+- **Limited drops:** serial-numbered by an atomic DataStore update (Arc Flight ships only this way; the first drop is
+  scheduled in the future); a failed grant is retried on the next join. Six exclusive wraps exist for the Starter
+  Pack, the club and the first season.
+- **Season Pass v1** (30 tiers, free and premium), **daily streak**, **live events** (UTC schedule, featured car,
+  earnings multipliers, bonus-credit weekends, countdown banner; switch on without a restart), **live feature
+  flags** (a kill switch per feature, the designer included, read every 60 s).
+- **Billboards:** 10 ad-ready billboards along the County Loop and at the charging plaza, showing in-game brand posters
+  until ads are on. Rewarded video ("watch an ad for a credit a day") is built but switched off until the game is
+  eligible.
+- **Admin panel** (Davis's account only): kick, despawn a car, recent logs, hide a design. Analytics funnels for
+  onboarding, the designer and revenue. `docs/DROP_TEMPLATE.md`.
+- Data v7 (`cosmetics`), with a migration and specs.
+- Built by 4 helpers, then 2 reviewers: 12 findings (5 serious), all fixed. The serious ones:
+  - a purchase was confirmed before its save was safe
+  - club credits could pay for an unpaid cycle
+  - the Starter Pack never showed in the store
+  - items promised looks that didn't exist
+
+**Checked in Studio:**
+- Map rebuilt with the billboards (6,836 instances), MapCheck clean.
+- Tests: `TESTS: passed=1804 failed=0` (incl. receipt 3× → granted once, club once per month, Starter Pack once,
+  200 attempts on a supply of 50 → serials 1–50, an event switching on under a fake clock, no Robux prices).
+- **Store test in a playtest:**
+  - 32 items with no id all showed "Coming soon"
+  - each of the 9 products, bought with a test purchase, granted exactly its amount, and the same purchase sent
+    again granted nothing (credit bonuses included: 15 → 18, 40 → 52)
+  - the daily reward and season tier 1 could each be claimed once
+
+**For Davis (when you're ready to sell):** create the passes, products and the Voltage Club in the Creator
+Dashboard and send me the ids (or paste them in `Config/Monetization`); turn on Managed Pricing there.
+
+**Open issues**
+- Not built yet: the VIP and club lounges (map work), Boombox, plate frames (the limited frame stays "Coming soon").
+- Whether limited cars can be sold back is Davis's call.
+
 ## 2026-10-20 — Phase 11: the AI Car Designer and AI mods (end of Milestone C)
 
 **Shipped**

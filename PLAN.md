@@ -808,54 +808,54 @@ All numbers are clamped in code: `body` values run 0–1, `stance.rideHeight` ru
     - limited cosmetics (serial-numbered, sold in a fixed window)
   - Subscription: **Voltage Club** (§11).
   - Private servers on (Davis sets the price).
-- [ ] `MonetizationService`:
+- [x] `MonetizationService`:
   - Idempotent `ProcessReceipt` (record the PurchaseId in `receipts` before granting; keep the last 100).
   - Credit packs credit `CreditsService`.
   - Cached pass checks.
-- [ ] Credit store UI: pack cards with prices from MarketplaceService, what one credit buys, and your balance. Wire up the "Out of credits" sheet from Phase 11.
-- [ ] **Voltage Club** subscription (§11):
+- [x] Credit store UI: pack cards with prices from MarketplaceService, what one credit buys, and your balance. Wire up the "Out of credits" sheet from Phase 11.
+- [x] **Voltage Club** subscription (§11):
   - Purchase with `MarketplaceService:PromptSubscriptionPurchase`.
   - Check status on join and on `Players.UserSubscriptionStatusChanged`.
   - Grant the monthly credits once per billing month (tracked in `club`); perks switch off when the subscription lapses.
   - Local-currency pricing needs Davis's Roblox account verified by ID or phone.
-- [ ] **Starter Pack:** a one-time offer shown after the first free design and after the first job payout, and never again once bought (`offersSeen`).
-- [ ] **Season Pass v1** (`Config/Season.luau`, `SeasonService`):
+- [x] **Starter Pack:** a one-time offer shown after the first free design and after the first job payout, and never again once bought (`offersSeen`).
+- [x] **Season Pass v1** (`Config/Season.luau`, `SeasonService`):
   - 30 tiers with a free and a premium track, earning XP from driving and jobs.
   - Each season lasts 6–8 weeks and lines up with drops.
-- [ ] **Private servers and Roblox Plus:**
+- [x] **Private servers and Roblox Plus:**
   - Private servers for crews and car meets.
   - In the private-server menu, a "Plus members get free private servers" prompt using `PromptRobloxSubscriptionPurchase`.
-- [ ] **Highway billboards** (`AdsService`):
+- [x] **Highway billboards** (`AdsService`):
   - AdGui billboard units along the County Loop and at the charging plaza, sized within Roblox's limits.
   - When no ad is served, they show in-game posters for the game's own brands.
-- [ ] **Login streak and invites:** daily streak rewards (cash, plus an occasional credit) and an "Invite your crew" button that uses Share Links.
-- [ ] **Rewarded video ads:**
+- [x] **Login streak and invites:** daily streak rewards (cash, plus an occasional credit) and an "Invite your crew" button that uses Share Links.
+- [x] **Rewarded video ads:**
   - Code ready but switched off until the game is eligible: "watch an ad for 1 credit a day".
   - Offered only when `AdService:GetAdAvailabilityNowAsync` says an ad can show.
 - [ ] **Limited cosmetics for Robux:** serial-numbered launch-week wraps and plate frames, sold in a fixed window (never random).
-- [ ] Limited drops (`Config/Limiteds.luau`: vehicle/trim, UTC window, supply, price):
+- [x] Limited drops (`Config/Limiteds.luau`: vehicle/trim, UTC window, supply, price):
   - Serial numbers are assigned atomically via DataStore `UpdateAsync`.
   - If the profile grant fails, keep a `pendingGrants` entry and retry on the next join.
   - Arc Flight ships only this way.
-- [ ] Events (`Config/Events.luau`): a UTC schedule for banners, the featured dealership pad, earnings multipliers, bonus-credit weekends and countdown UI. Events switch on without a server restart.
-- [ ] Live feature flags, read from a DataStore key every 60 s (a kill switch per feature, including the designer).
-- [ ] Analytics (verify the current AnalyticsService API with `http_get`):
+- [x] Events (`Config/Events.luau`): a UTC schedule for banners, the featured dealership pad, earnings multipliers, bonus-credit weekends and countdown UI. Events switch on without a server restart.
+- [x] Live feature flags, read from a DataStore key every 60 s (a kill switch per feature, including the designer).
+- [x] Analytics (verify the current AnalyticsService API with `http_get`):
   - onboarding funnel: join → claim car → first drive → first job → first purchase
   - designer funnel: open studio → submit → built / refused / failed → first drive; mods used; credit packs bought
   - revenue: payer conversion, first-purchase item, credit pack mix, Robux per daily player, subscription renewals, Season Pass uptake
   - economy source and sink events
   - job progression
   - ability and light-show usage
-- [ ] Admin tools gated by `Config/Admins.luau`: kick, despawn vehicle, view logs, hide a design or mod. Cash and credit grants only in Studio.
-- [ ] `docs/DROP_TEMPLATE.md`: a checklist for shipping a new trim or vehicle in under a day (config entry, model per the contract, dealership pad, event entry, changelog, thumbnail).
+- [x] Admin tools gated by `Config/Admins.luau`: kick, despawn vehicle, view logs, hide a design or mod. Cash and credit grants only in Studio.
+- [x] `docs/DROP_TEMPLATE.md`: a checklist for shipping a new trim or vehicle in under a day (config entry, model per the contract, dealership pad, event entry, changelog, thumbnail).
 
 **Acceptance**
-- [ ] Spec: the same receipt delivered 3 times grants once, including for credit packs.
-- [ ] Spec: Voltage Club credits grant once per billing month, survive rejoins, and stop when the subscription lapses.
-- [ ] Spec: the Starter Pack can be bought once, and the offer never shows again after.
-- [ ] No Robux price is hard-coded anywhere (grep check). Every price in the UI comes from MarketplaceService, so managed pricing can change it.
-- [ ] Spec: 200 concurrent purchase attempts against a supply of 50 (mock store) sell exactly 50 serials, numbered 1–50, with no duplicates.
-- [ ] An event activates at its scheduled time under a fake clock.
+- [x] Spec: the same receipt delivered 3 times grants once, including for credit packs.
+- [x] Spec: Voltage Club credits grant once per billing month, survive rejoins, and stop when the subscription lapses.
+- [x] Spec: the Starter Pack can be bought once, and the offer never shows again after.
+- [x] No Robux price is hard-coded anywhere (grep check). Every price in the UI comes from MarketplaceService, so managed pricing can change it.
+- [x] Spec: 200 concurrent purchase attempts against a supply of 50 (mock store) sell exactly 50 serials, numbered 1–50, with no duplicates.
+- [x] An event activates at its scheduled time under a fake clock.
 
 **Stop.**
 

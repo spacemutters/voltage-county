@@ -96,6 +96,9 @@ export type PanelInput = {
 	busy: boolean, -- any call in flight
 	platePending: boolean, -- the call in flight is SetPlate
 	plateAllowed: boolean,
+	-- Phase 12: the exclusive looks the player has (the profile snapshot's `looks`, by id); the Wrap tab lists those
+	-- exclusive wraps too (Config/Customization.wrapsFor). nil: none.
+	looks: { [string]: boolean }?,
 }
 
 export type PanelView = {
@@ -710,7 +713,8 @@ function CustomizeModel.tabView(input: PanelInput): TabView
 			end),
 		}
 	elseif tab == "wrap" then
-		return { cards = cardsFor(Customization.wraps, "wrap", saved, pending, class, wrapOf) }
+		local wraps = Customization.wrapsFor(input.looks, wrapOf(saved))
+		return { cards = cardsFor(wraps, "wrap", saved, pending, class, wrapOf) }
 	elseif tab == "wheels" then
 		return {
 			cards = cardsFor(Customization.wheels, "wheels", saved, pending, class, function(look: Look): string

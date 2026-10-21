@@ -128,6 +128,11 @@ local Economy = {
 			pod = "Shop", -- buying a pod
 			fleet = "Gameplay", -- fleet earnings collected
 			hail = "Shop", -- a pod ride's fare
+			-- Phase 12 (Config/Monetization.cashReason, Config/Limiteds.reasons, Config/Season reasons).
+			purchase = "IAP", -- cash from a cash pack or the Starter Pack, bought for Robux
+			limited = "Shop", -- buying a limited drop (a sold-out drop's refund is "refund")
+			streak = "TimedReward", -- the daily login reward
+			season = "Gameplay", -- a season tier reward, earned with season XP from driving and jobs
 		} :: { [string]: string },
 	},
 

@@ -20,6 +20,16 @@ local Dealership = {
 		-- only with wider pad spacing (Config/MapLayout PAD_PITCH).
 		rotationDegreesPerSecond = 0,
 		rotationStepsPerSecond = 15, -- how often a turning car is moved (only while rotation is on)
+		-- The event spotlight (Phase 12): while a running event names a featured car (Config/Events
+		-- featuredVehicleId, Services/EventService), that car's display model gets a Highlight called
+		-- `highlightName` in this colour (0-255 RGB) and the model attribute `attribute` = true. It moves the moment
+		-- an event starts or ends.
+		featured = {
+			highlightName = "FeaturedSpotlight",
+			attribute = "Featured",
+			rgb = { 255, 196, 64 },
+			fillTransparency = 0.85,
+		},
 	},
 
 	-- The "View" prompt on every display car. The shop UI listens for it (ProximityPromptService

@@ -12,7 +12,9 @@
 --                used counts as seen (DesignerModel.disclosureNeeded), so it shows once per player.
 --   new car      the prompt (200 characters, counted), a class or "Surprise me", the cost ("Free" for the first
 --                car): Design it -> Net DesignCar { prompt, classId? }. Not enough credits opens the Out of credits
---                sheet instead (Get credits opens the store's stub until Phase 12, and fires onGetCredits).
+--                sheet instead (Get credits moves the sheet to its "store" step and fires onGetCredits:
+--                StoreController puts this sheet away and opens the phone's Store app on its Credits page; the
+--                "store" step, with "Open the Store", is only seen if the phone can't open).
 --   progress     until Net DesignResult { requestId, ok, message, design?, preview? } arrives for the request. The
 --                sheet can be closed meanwhile; the answer shows as a notice and waits in the studio.
 --   result       a preview built here with Vehicle/SpecBuilder from the spec (or the server's preview model), the

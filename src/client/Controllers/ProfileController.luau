@@ -299,6 +299,15 @@ function ProfileController.normalize(payload: any): Types.ProfileSnapshot?
 		end
 	end
 	local credits = if type(payload.credits) == "table" then payload.credits else {}
+	-- Phase 12: the exclusive looks the player may use (Services/ProfileSyncService); words only, each once.
+	local looks: { string } = {}
+	if type(payload.looks) == "table" then
+		for _, id in payload.looks do
+			if type(id) == "string" and id ~= "" and table.find(looks, id) == nil then
+				table.insert(looks, id)
+			end
+		end
+	end
 	return {
 		cash = payload.cash,
 		garageSlots = math.max(numberOr(payload.garageSlots, 0), 0),
@@ -308,6 +317,7 @@ function ProfileController.normalize(payload: any): Types.ProfileSnapshot?
 		settings = normalizeSettings(payload.settings),
 		credits = { balance = math.max(numberOr(credits.balance, 0), 0) },
 		fleet = ProfileController.normalizeFleet(payload.fleet), -- Phase 9; merge's table.clone carries it over
+		looks = looks, -- Phase 12; merge's table.clone carries it over
 	}
 end
 

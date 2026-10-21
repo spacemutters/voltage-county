@@ -40,14 +40,19 @@ local NOT_READY = "NotReady" -- ProfileStore.DataStoreState before it has checke
 local ACCESS = "Access" -- ProfileStore.DataStoreState when DataStores are reachable
 
 -- The parts of a ProfileStore profile and store this service uses (the vendored module's own types are loose).
+type Connection = { Disconnect: (self: any) -> () }
+
 type Profile = {
 	Data: Types.PlayerData,
+	LastSavedData: any, -- the data as last saved to the DataStore
 	FirstSessionTime: number,
-	OnSessionEnd: { Connect: (self: any, listener: () -> ()) -> any },
+	OnSessionEnd: { Connect: (self: any, listener: () -> ()) -> Connection },
+	OnAfterSave: { Connect: (self: any, listener: (lastSavedData: any) -> ()) -> Connection },
 	IsActive: (self: Profile) -> boolean,
 	Reconcile: (self: Profile) -> (),
 	EndSession: (self: Profile) -> (),
 	AddUserId: (self: Profile, userId: number) -> (),
+	Save: (self: Profile) -> (),
 }
 
 type SessionStore = {
@@ -364,6 +369,74 @@ function DataService.waitFor(player: Player, timeout: number?): Types.PlayerData
 		end
 		task.spawn(waiter.thread, nil)
 	end)
+	return coroutine.yield()
+end
+
+-- Asks ProfileStore to save the player's profile now and yields until the data as last saved to the DataStore
+-- passes `check` (true straight away when it already does). Returns false when the session ends first (unless its
+-- final save passes), when the player's data isn't loaded, or when `timeout` seconds pass. For ProcessReceipt
+-- (Services/MonetizationService): a purchase is acknowledged only once its receipt is saved, as Roblox and
+-- ProfileStore advise, because Roblox never delivers an acknowledged receipt again.
+function DataService.saveConfirmed(player: Player, check: (saved: any) -> boolean, timeout: number): boolean
+	local profile = profiles[player]
+	if profile == nil or not profile:IsActive() then
+		return false
+	end
+	local function passes(): boolean
+		local saved = profile.LastSavedData
+		if type(saved) ~= "table" then
+			return false
+		end
+		local ok, result = pcall(check, saved)
+		return ok and result == true
+	end
+	if passes() then
+		return true
+	end
+
+	local thread = coroutine.running()
+	local waiting = false -- the caller has yielded below and waits to be resumed
+	local result: boolean? = nil
+	local connections: { Connection } = {}
+	local timer: thread? = nil
+	local function finish(value: boolean)
+		if result ~= nil then
+			return
+		end
+		result = value
+		for _, connection in connections do
+			connection:Disconnect()
+		end
+		local pendingTimer = timer
+		if pendingTimer ~= nil and coroutine.running() ~= pendingTimer then
+			task.cancel(pendingTimer)
+		end
+		if waiting then
+			task.spawn(thread, value)
+		end
+	end
+	table.insert(
+		connections,
+		profile.OnAfterSave:Connect(function()
+			if passes() then
+				finish(true)
+			end
+		end)
+	)
+	table.insert(
+		connections,
+		profile.OnSessionEnd:Connect(function()
+			finish(passes())
+		end)
+	)
+	timer = task.delay(timeout, function()
+		finish(passes())
+	end)
+	profile:Save()
+	if result ~= nil then
+		return result :: boolean -- the save finished without yielding (the in-memory mock store)
+	end
+	waiting = true
 	return coroutine.yield()
 end
 

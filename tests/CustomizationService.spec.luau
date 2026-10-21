@@ -270,6 +270,31 @@ return function(t: Harness.Api)
 			t.expect(vehicle.wrap).toBe(nil)
 		end)
 
+		t.it("puts an exclusive wrap on only for a player who has it, free", function()
+			local exclusive = Customization.exclusiveWraps[1].id
+			local function owns(lookId: string): boolean
+				return lookId == exclusive
+			end
+			local function ownsNothing(_lookId: string): boolean
+				return false
+			end
+			local changes: any = { wrap = exclusive }
+			t.expect((CustomizationService.exclusiveAllowed(changes, nil, owns))).toBe(true)
+			local allowed, message = CustomizationService.exclusiveAllowed(changes, nil, ownsNothing)
+			t.expect(allowed).toBe(false)
+			t.expect(message).toBe(Customization.messages.lockedWrap)
+			-- Already on the car (the club lapsed since): keeping it is fine; shop wraps never need a look.
+			t.expect((CustomizationService.exclusiveAllowed(changes, exclusive, ownsNothing))).toBe(true)
+			local shopWrap: any = { wrap = Customization.wraps[2].id }
+			t.expect((CustomizationService.exclusiveAllowed(shopWrap, nil, ownsNothing))).toBe(true)
+			t.expect((CustomizationService.exclusiveAllowed({} :: any, nil, ownsNothing))).toBe(true)
+			-- It validates like any wrap, and costs nothing.
+			local vehicle = car()
+			local ok, _, cost = CustomizationService.validate(vehicle, classOf(VEHICLE_ID), changes)
+			t.expect(ok).toBe(true)
+			t.expect(cost).toBe(0)
+		end)
+
 		t.it("lists exactly the fields that changed", function()
 			local look = CustomizationService.lookOf(car(), nil)
 			local after = table.clone(look)
