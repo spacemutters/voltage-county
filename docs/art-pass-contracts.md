@@ -34,12 +34,25 @@ builder made them; only what you see changes.
 - **Wheels:** each `Wheels/FL|FR|RL|RR` part keeps its Motor6D and size (the wheel visuals spin it); it becomes
   invisible and the matching draft wheel mesh is welded to it, centred on the hub, scaled to the wheel's diameter and
   width, axle along X, mirrored correctly for the right side.
-- **Lights:** the `Lights` folder's lamp parts keep their positions and light instances. Brake and reverse still
+- **Lights:** the `Lights` folder's lamp parts keep their light instances and their sides. Brake and reverse still
   light up: map them so the brake lamp glow is visible on the tail-light mesh (e.g. a thin Neon overlay part the
   lamp logic already toggles, sized to the tail-light mesh's rear face) — read `VehicleVisualsController` and
-  `DriveController` lamp code first.
+  `DriveController` lamp code first. As built: every lamp is a glow overlay (see-through until lit); HeadL/HeadR and
+  TailL/TailR are each their own side's half of the light mesh (cut out with solid modeling, the Light at that
+  lamp), so light-show left/right cues stay apart; Brake is the whole tail mesh; Reverse (and any lamp whose mesh is
+  missing or misplaced) is the greybox box moved onto the art surface.
 - **Mount points:** recompute `Mount_Roof` (top of the body mesh), `Mount_Hood`, `Mount_Spoiler`, bumpers, plates and
-  `CameraHood` from the mesh bounds so extras, plates and the hood camera sit on the real body.
+  `CameraHood` from the mesh bounds so extras, plates and the hood camera sit on the real body. As built: raycasts at
+  full collision detail from the greybox place and the nearest places around it; each point the fit placed is
+  stamped `OnArt`, and `checkArt` fails a model with an unstamped one.
+- **Kept pieces:** Hitch, Underlift, FifthWheel(Base), the Arc's nozzles and a trailer's landing-gear tubes stay
+  (physics points sit on them) and stretch from their outer end until they meet the art surface (stamped `OnArt`).
+- **Trailers:** the art never hangs below the kingpin plane over the front (from the front to 3.5 studs behind the
+  kingpin), where a coupled tractor's fifth wheel and rear swing under it; the measured clearance is stamped
+  `KingpinClearance` and checked.
+- **Greybox reference:** `fit` stores each trim's greybox in `ServerStorage.GreyboxReference` (and
+  `VehicleBuilder.buildAll` rebuilds those for art trims), so `VehicleBuilder.spec` keeps comparing fresh builds with
+  stored ones.
 - **Contract:** `VehicleBuilder.check` (or `BodyKit.check`) passes on every art model; ≤ 60 parts; nothing but the
   Chassis takes part in physics.
 
@@ -48,8 +61,12 @@ builder made them; only what you see changes.
 - Wheels: the art wheel meshes are the stock look. Choosing a Phase 7 wheel style in Wrap & Tint hides the art wheel
   and builds that style's wheel faces on the wheel part, as today; "stock" brings the art wheel back.
 - Wraps and stripes are parts laid on greybox panels and won't sit on a mesh body. On art models, hide the wrap
-  options that can't apply (paint-only), unless a clean projection onto the mesh bounds is possible.
-- Specs cover all of it.
+  options that can't apply (paint-only), unless a clean projection onto the mesh bounds is possible. As built:
+  every exclusive (paid or earned) wrap has an `artColor` and goes on an art car as a full-body color wrap; shop
+  wraps with stripes are hidden there and `CustomizationService` refuses them unpaid; AI mods on an art car leave off
+  stripes and the secondary color before anything is charged (`Validate.fitPaint`), and the backend is told
+  (`paintOnly`).
+- Specs cover all of it, including a full look on a copy of one stored art car per brand.
 
 ## Checks (lead runs them in Studio)
 - `ArtPass.fitAll()` builds all 80 trims; the spec harness passes; `MapBuilder` showrooms/dealership pads show art.

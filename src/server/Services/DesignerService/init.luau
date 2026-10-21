@@ -40,7 +40,9 @@
 --   4. re-validates the reply against the kit (Validate; the backend isn't trusted either) and forces the class
 --      the player asked for (or a surprise class they may design). A mod loses the extras the car can't carry
 --      (Config/Customization classes and body styles; the backend is told which fit, as current.extrasThatFit) or
---      has no room for (the part budget: VehicleService.extrasAfterMods builds the car to see) before anything is
+--      has no room for (the part budget: VehicleService.extrasAfterMods builds the car to see), and on a catalog
+--      car whose model is final art (one painted mesh: VehicleService.paintOnly; the backend is told, as
+--      current.paintOnly) the stripes and secondary color it can't show (Validate.fitPaint), before anything is
 --      paid, so a mod left with nothing to change is refunded as empty.
 --   5. checks the name, tagline, mod summary, refusal and mesh prompt for real brand names (Util/BrandNames; the
 --      backend checks too, but it isn't trusted) and filters the shown text with TextService; text that names a
@@ -152,6 +154,9 @@ export type ModInput = {
 	kind: Validate.Kind,
 	classId: string,
 	bodyStyle: string?, -- the car's Config/Vehicles body style (nil: extras are checked by class alone)
+	-- The car's body is one painted mesh (final art: Vehicle/Appearance.takesWraps is false): stripes and a secondary
+	-- color are left off before anything is charged (Validate.fitPaint).
+	paintOnly: boolean?,
 	current: { [string]: any }, -- the car's current spec or look, for the backend
 }
 
@@ -196,6 +201,7 @@ type ModPlan = {
 	kind: Validate.Kind,
 	classId: string,
 	bodyStyle: string, -- Config/Vehicles body style (a design's: its template's)
+	paintOnly: boolean, -- a catalog car whose model is final art (ModInput.paintOnly)
 	current: { [string]: any },
 	previous: Validate.ModSpec?, -- the car's mods before this one (nil: none, or hidden)
 }
@@ -623,6 +629,14 @@ function DesignerService.modPipeline(deps: Deps, input: ModInput): ModOutcome
 	local mod, dropped = Validate.fitExtras(checked, kit, input.classId, input.bodyStyle)
 	if #dropped > 0 then
 		deps.log(`left off extras a {input.classId} can't carry: {table.concat(dropped, ", ")}`)
+	end
+	-- The same for stripes and a secondary color on a car whose body is one painted mesh (final art).
+	if input.paintOnly == true then
+		local unshown: { string }
+		mod, unshown = Validate.fitPaint(mod, kit)
+		if #unshown > 0 then
+			deps.log(`left off paint a paint-only car can't show: {table.concat(unshown, ", ")}`)
+		end
 	end
 	if Validate.isEmptyMod(mod, kit) then
 		return modOutcome("empty")
@@ -1287,6 +1301,7 @@ function DesignerService.modPlan(data: Types.PlayerData, vehicle: Types.OwnedVeh
 			kind = "kit",
 			classId = spec.class,
 			bodyStyle = bodyStyle,
+			paintOnly = false,
 			previous = previous,
 			current = {
 				kind = "kit",
@@ -1303,15 +1318,21 @@ function DesignerService.modPlan(data: Types.PlayerData, vehicle: Types.OwnedVeh
 		return nil, "cantMod"
 	end
 	local previous = savedMods(vehicle, "catalog")
+	-- A catalog car whose model is final art takes no stripes or secondary color; the backend is told so it doesn't
+	-- offer them (Validate.fitPaint leaves them off before charging either way).
+	local vehicleService = VehicleService
+	local paintOnly = vehicleService ~= nil and vehicleService.paintOnly(vehicle.vehicleId, vehicle.trim)
 	return {
 		kind = "catalog",
 		classId = entry.class,
 		bodyStyle = entry.bodyStyle,
+		paintOnly = paintOnly,
 		previous = previous,
 		current = {
 			kind = "catalog",
 			classId = entry.class,
 			bodyStyle = entry.bodyStyle,
+			paintOnly = if paintOnly then true else nil,
 			look = {
 				paint = vehicle.paint,
 				finish = vehicle.finish,
@@ -1414,6 +1435,7 @@ local function runMod(player: Player, job: ModJob, prompt: string, plan: ModPlan
 		kind = plan.kind,
 		classId = plan.classId,
 		bodyStyle = plan.bodyStyle,
+		paintOnly = plan.paintOnly,
 		current = plan.current,
 	}
 	local ran, result = xpcall(DesignerService.modPipeline, debug.traceback, depsFor(player), input)

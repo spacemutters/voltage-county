@@ -12,6 +12,7 @@
 --   Validate.keepMod(kit) / mergeMods(old, new, kit) / withMods(spec, mods, kit) / isEmptyMod(mod, kit)
 --   Validate.extrasThatFit(kit, classId, bodyStyle?)   the kit extras a car of that class (and body style) can carry
 --   Validate.fitExtras(mod, kit, classId, bodyStyle?)  the mod without the extras that car can't carry
+--   Validate.fitPaint(mod, kit)        the mod without the stripes and secondary color a paint-only car can't show
 --   Validate.statsInBand(stats, classId)    built stats inside the class band (Config/Classes)
 --   Validate.prompt(raw, limit) / visibleChars(text) / clientSpec(spec)
 --
@@ -716,6 +717,33 @@ function Validate.fitExtras(mod: ModSpec, kit: any, classId: string, bodyStyle: 
 	end
 	local fitted = table.clone(mod)
 	fitted.extras = if #fitting > 0 then fitting else kit.mod.keep
+	return fitted, dropped
+end
+
+-- The paint fields a car whose body is one painted mesh (final art: Vehicle/Appearance.takesWraps is false) can't
+-- show: stripes and the secondary color (ModBuilder lays them on flat panels and roof panels it doesn't have).
+Validate.paintOnlyDrops = { "secondary", "stripe" }
+
+-- The mod without the paint changes a paint-only car can't show (paintOnlyDrops), and the fields it left off.
+-- ModBuilder would skip them, so they must never count as a change the player pays for: a mod that asked only for
+-- those is empty. Never changes `mod`.
+function Validate.fitPaint(mod: ModSpec, kit: any): (ModSpec, { string })
+	local keep = kit.mod.keep
+	local dropped: { string } = {}
+	for _, field in Validate.paintOnlyDrops do
+		if (mod.paint :: any)[field] ~= keep then
+			table.insert(dropped, field)
+		end
+	end
+	if #dropped == 0 then
+		return mod, dropped
+	end
+	local fitted = table.clone(mod)
+	local paint: any = table.clone(mod.paint)
+	for _, field in dropped do
+		paint[field] = keep
+	end
+	fitted.paint = paint
 	return fitted, dropped
 end
 

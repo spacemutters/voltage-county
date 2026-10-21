@@ -132,6 +132,10 @@ local Controls = {
 	lamps = {
 		pedalThreshold = 0.1, -- pedal travel (0..1) that counts as braking
 		onMaterial = Enum.Material.Neon, -- a lit lamp part glows; the part's own material returns when off
+		-- Art models (Dev/ArtPass) carry their lamps as glow overlays on the light meshes: a lamp part with this
+		-- attribute set true is see-through while dark and shows at overlayLitTransparency while lit.
+		overlayAttribute = "LampOverlay",
+		overlayLitTransparency = 0,
 	},
 
 	-- Other players' cars, animated on this client by VehicleVisualsController.

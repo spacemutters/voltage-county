@@ -42,6 +42,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
 local AntiExploit = require(ReplicatedStorage.Shared.Config.AntiExploit)
+local Appearance = require(ReplicatedStorage.Shared.Vehicle.Appearance)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local DesignKit = require(ReplicatedStorage.Shared.Config.DesignKit)
 local Designer = require(ReplicatedStorage.Shared.Config.Designer)
@@ -699,6 +700,14 @@ function VehicleService.extrasAfterMods(vehicleId: string, trimId: string, optio
 	local ids = if applied then ModBuilder.extrasOn(model) else nil
 	model:Destroy()
 	return ids
+end
+
+-- Whether a catalog trim's model takes paint but no wrap bands, stripes or secondary color (its body is one painted
+-- mesh: final art, Vehicle/Appearance.takesWraps). False when the model is missing (nothing to judge by).
+function VehicleService.paintOnly(vehicleId: string, trimId: string): boolean
+	local folder = ServerStorage:FindFirstChild(Spawning.modelsFolder)
+	local template = if folder then folder:FindFirstChild(Catalog.modelName(vehicleId, trimId)) else nil
+	return template ~= nil and template:IsA("Model") and not Appearance.takesWraps(template)
 end
 
 -- Public API: spawning -------------------------------------------------------------------------------------

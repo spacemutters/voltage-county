@@ -295,6 +295,21 @@ return function(t: Harness.Api)
 			t.expect(cost).toBe(0)
 		end)
 
+		t.it("refuses stripes on a final-art body, and lets every exclusive look and plain paint through", function()
+			local striped: any = { wrap = "rally" }
+			t.expect((CustomizationService.wrapFits(striped, nil, true))).toBe(true) -- a greybox or designed body
+			local fits, message = CustomizationService.wrapFits(striped, nil, false)
+			t.expect(fits).toBe(false)
+			t.expect(message).toBe(Customization.messages.wrapDoesntFit)
+			-- Already on the car (bought before the art came): keeping it is fine.
+			t.expect((CustomizationService.wrapFits(striped, "rally", false))).toBe(true)
+			t.expect((CustomizationService.wrapFits({ wrap = "none" } :: any, "rally", false))).toBe(true)
+			t.expect((CustomizationService.wrapFits({} :: any, nil, false))).toBe(true)
+			for _, wrap in Customization.exclusiveWraps do
+				t.expect((CustomizationService.wrapFits({ wrap = wrap.id } :: any, nil, false))).toBe(true)
+			end
+		end)
+
 		t.it("lists exactly the fields that changed", function()
 			local look = CustomizationService.lookOf(car(), nil)
 			local after = table.clone(look)

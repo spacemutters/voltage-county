@@ -60,6 +60,10 @@ export type Wrap = {
 	bands: { Band },
 	trimColor: Color3?, -- recolors every Trim-tagged part (bumpers, mirrors, cladding); nil keeps the car's own
 	exclusive: boolean?, -- an exclusive look (exclusiveWraps): only for players who have it, never sold for cash
+	-- A body that takes no bands (final art: one curved painted mesh, Vehicle/Appearance.takesWraps) wears the wrap
+	-- as a full-body color wrap in this color instead (paint-matched extras too). nil: the wrap can't go on such a
+	-- body (wrapFitsMesh), unless it has no bands.
+	artColor: Color3?,
 }
 
 -- A wheel style: the rim parts Vehicle/Appearance builds on each tire. Diameters and lengths are shares of the
@@ -406,7 +410,8 @@ local Customization = {
 	-- club's, while they are a Voltage Club member (Services/MonetizationService.ownsCosmetic; the profile
 	-- snapshot's `looks`), and Services/CustomizationService refuses it to anyone else. Putting one on is free. Ids are
 	-- the look ids Config/Monetization, Config/Limiteds and Config/Season grant (lookExists; tests/Monetization.spec
-	-- fails when something grants a look that isn't here).
+	-- fails when something grants a look that isn't here). Every one has an artColor, so it goes on every catalog
+	-- car: as its stripes on greybox and designed bodies, as a full-body color wrap on final art.
 	exclusiveWraps = {
 		{
 			id = "starter_wrap", -- the Starter Pack (Config/Monetization grants.starterPack)
@@ -417,6 +422,7 @@ local Customization = {
 				{ face = "side", center = 0.38, width = 0.05, color = rgb(255, 190, 60) },
 				{ face = "side", center = 0.46, width = 0.02, color = VINYL_WHITE },
 			},
+			artColor = rgb(255, 190, 60),
 		},
 		{
 			id = "club_wrap", -- Voltage Club members, while subscribed (Config/Monetization club.cosmetics)
@@ -429,6 +435,7 @@ local Customization = {
 				{ face = "side", center = 0.2, width = 0.03, color = rgb(40, 200, 190) },
 			},
 			trimColor = rgb(20, 22, 26),
+			artColor = rgb(40, 200, 190),
 		},
 		{
 			id = "launch_week_wrap", -- the serial-numbered launch-week limited (Config/Limiteds launch_wrap)
@@ -440,6 +447,7 @@ local Customization = {
 				{ face = "top", center = -0.27, width = 0.02, color = VINYL_WHITE },
 				{ face = "top", center = 0.27, width = 0.02, color = VINYL_WHITE },
 			},
+			artColor = rgb(232, 72, 48),
 		},
 		{
 			id = "season1_wrap", -- Season 1 premium track (Config/Season)
@@ -451,6 +459,7 @@ local Customization = {
 				{ face = "side", center = 0.33, width = 0.035, color = rgb(160, 120, 240) },
 				{ face = "side", center = 0.4, width = 0.02, color = rgb(200, 170, 255) },
 			},
+			artColor = rgb(120, 80, 220),
 		},
 		{
 			id = "season1_arc_wrap", -- Season 1 premium track (Config/Season)
@@ -462,6 +471,7 @@ local Customization = {
 				{ face = "side", center = 0.5, width = 0.03, color = rgb(60, 140, 255) },
 			},
 			trimColor = VINYL_WHITE,
+			artColor = rgb(60, 140, 255),
 		},
 		{
 			id = "season1_finale_wrap", -- Season 1 premium track, the last tier (Config/Season)
@@ -472,6 +482,7 @@ local Customization = {
 				{ face = "top", center = 0, width = 1, color = rgb(204, 164, 72), minHeight = 0.8 },
 				{ face = "side", center = 0.5, width = 0.02, color = rgb(204, 164, 72) },
 			},
+			artColor = rgb(204, 164, 72),
 		},
 	} :: { Wrap },
 
@@ -621,6 +632,10 @@ local Customization = {
 	-- Rim parts stand this far proud of each tire face, in layers from the tire out (studs). The brake disc sits
 	-- under the spokes and the cap over everything, so an aero cap hides the disc.
 	wheelLayers = { rim = 0.02, brake = 0.035, spokes = 0.05, cap = 0.065 },
+	-- Art models' stock wheels are textured meshes (Vehicle/Appearance.artWheelName) with no brake disc to color, so a
+	-- caliper other than the stock one shows as a disc on the hub: this share of the tire diameter, standing this far
+	-- proud of the tire faces.
+	artWheelCaliper = { diameter = 0.24, proud = 0.03 },
 
 	-- Ride height: OwnedVehicle.rideHeight is -1 (lowest) .. 1 (highest) in `step`s. At -1 the body sits `lower`
 	-- studs down, at 1 `raise` studs up (by class). Only the visual body moves: the chassis, the wheels' hub
@@ -923,6 +938,7 @@ local Customization = {
 		unknownFinish = "That finish isn't in the shop.",
 		unknownWrap = "That wrap isn't in the shop.",
 		lockedWrap = "That's an exclusive wrap you don't have.",
+		wrapDoesntFit = "Stripes don't fit this car's body. Pick a paint color instead.",
 		unknownWheels = "Those wheels aren't in the shop.",
 		badRideHeight = "That ride height isn't available.",
 		badTint = "That tint level isn't available.",
@@ -988,15 +1004,35 @@ function Customization.lookExists(lookId: string): boolean
 	return Customization.isExclusive(lookId)
 end
 
+-- Whether a wrap can go on a body that takes no vinyl bands (final art, Vehicle/Appearance.takesWraps): it has no
+-- bands, or a full-body color for such a body (artColor).
+function Customization.wrapFitsMesh(wrap: Wrap): boolean
+	return #wrap.bands == 0 or wrap.artColor ~= nil
+end
+
 -- The wraps the Wrap tab lists for a player: every shop wrap, then the exclusive wraps they have (`owned`, by look
 -- id) and the one already on the car (`onCar`), so a look they no longer have (the club lapsed) still shows as
--- current.
-function Customization.wrapsFor(owned: { [string]: boolean }?, onCar: string?): { Wrap }
-	local list = table.clone(Customization.wraps)
+-- current. `paintOnly` (a car whose body is one painted mesh, Vehicle/Appearance.takesWraps) leaves out every wrap
+-- that can't go on it (wrapFitsMesh): bands are laid on flat panels, so only wraps without bands and those with a
+-- full-body color for final art (every exclusive look) are left.
+function Customization.wrapsFor(owned: { [string]: boolean }?, onCar: string?, paintOnly: boolean?): { Wrap }
+	local list: { Wrap } = {}
+	for _, wrap in Customization.wraps do
+		table.insert(list, wrap)
+	end
 	for _, wrap in Customization.exclusiveWraps do
 		if (owned ~= nil and owned[wrap.id] == true) or wrap.id == onCar then
 			table.insert(list, wrap)
 		end
+	end
+	if paintOnly == true then
+		local fits: { Wrap } = {}
+		for _, wrap in list do
+			if Customization.wrapFitsMesh(wrap) then
+				table.insert(fits, wrap)
+			end
+		end
+		return fits
 	end
 	return list
 end

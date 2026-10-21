@@ -6,8 +6,10 @@
 -- catalog model must come out exactly as before. "matches its stored model" compares a fingerprint of each fresh
 -- build (every instance's path, class, size, CFrame from the pivot, color, material, joints, attachments, lights,
 -- tags and attributes) with the greybox model of the same name already in ServerStorage.VehicleModels (read only),
--- which the builder made before the move. After a deliberate change to the greybox art or Config/Vehicles geometry,
--- rebuild the stored models (VehicleBuilder.buildAll) and this keeps checking that they are up to date.
+-- which the builder made before the move, or, for a trim whose stored model is final art, its greybox reference in
+-- ServerStorage.GreyboxReference (the greybox Dev/ArtPass fitted it to). After a deliberate change to the greybox
+-- art or Config/Vehicles geometry, rebuild the stored models (VehicleBuilder.buildAll, which rebuilds the
+-- references too) and this keeps checking that they are up to date.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -147,12 +149,17 @@ end
 
 type Stored = { vehicleId: string, trimId: string, model: Model }
 
--- The greybox models stored in ServerStorage.VehicleModels for current catalog trims.
+-- The greybox models stored for current catalog trims: in ServerStorage.VehicleModels, or for a trim whose model
+-- there is final art, its greybox reference in ServerStorage.GreyboxReference (Dev/ArtPass.fit,
+-- VehicleBuilder.storeReference).
 local function storedModels(): { Stored }
 	local stored: { Stored } = {}
-	local folder = ServerStorage:FindFirstChild(MODELS_FOLDER)
-	if folder == nil then
-		return stored
+	local folders: { Instance } = {}
+	for _, name in { MODELS_FOLDER, VehicleBuilder.referenceFolder } do
+		local folder = ServerStorage:FindFirstChild(name)
+		if folder ~= nil then
+			table.insert(folders, folder)
+		end
 	end
 	for _, vehicleId in Catalog.vehicleIds() do
 		local vehicle = Catalog.getVehicle(vehicleId)
@@ -160,9 +167,12 @@ local function storedModels(): { Stored }
 			continue
 		end
 		for _, trim in vehicle.trims do
-			local model = folder:FindFirstChild(Catalog.modelName(vehicleId, trim.id))
-			if model ~= nil and model:IsA("Model") and model:GetAttribute(GREYBOX_ATTRIBUTE) == true then
-				table.insert(stored, { vehicleId = vehicleId, trimId = trim.id, model = model })
+			for _, folder in folders do
+				local model = folder:FindFirstChild(Catalog.modelName(vehicleId, trim.id))
+				if model ~= nil and model:IsA("Model") and model:GetAttribute(GREYBOX_ATTRIBUTE) == true then
+					table.insert(stored, { vehicleId = vehicleId, trimId = trim.id, model = model })
+					break
+				end
 			end
 		end
 	end
@@ -341,7 +351,7 @@ return function(t: Harness.Api)
 	t.describe("VehicleBuilder after the body kit move", function()
 		local stored = storedModels()
 		if #stored == 0 then
-			t.it("has no stored greybox models in ServerStorage.VehicleModels to compare (nothing checked)", function()
+			t.it("has no stored greybox models (VehicleModels, GreyboxReference) to check (nothing checked)", function()
 				print("  VehicleBuilder.spec: no stored greybox models, so the before/after comparison did not run")
 			end)
 		end

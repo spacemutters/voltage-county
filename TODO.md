@@ -16,7 +16,14 @@ for an OK; stop only for things that are his.
    Studio's mesh generation, within 20,000 triangles per mesh; Ohm Motors gets the clean modern EV look. Original
    designs only: no real carmaker names, logos or signature shapes (CLAUDE.md hard rule 4).
 
+5. **Two new Montevale supercars** (Davis, 2026-10-21: "add some lamborgini cars"). Original designs in that wild
+   spirit: sharp wedge bodies, scissor doors, big rear wings, loud colours. No real brand names, logos or signature
+   shapes. Catalog entries priced in the exotic band, EconSim, dealership pads, realistic art drafts.
+
 ## Waiting on Davis
+- Paid and earned wraps on the new realistic cars: stripes can't sit on their curved bodies, so each exclusive wrap
+  (Starter Pack, Voltage Club, launch week, season rewards) now goes on those cars as a full-body color in the wrap's
+  main color, and keeps its stripes on designed cars. Say if those looks should work differently.
 - AI Car Designer keys: run `tools\open_designer_setup.bat`, paste the database key, click Save and go live, then
   copy the game password into the experience's Secrets as `designer_key` (and Studio's Local Secrets).
 - Check the touch controls and phone screens on a real phone.

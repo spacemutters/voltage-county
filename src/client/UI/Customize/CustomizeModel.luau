@@ -99,6 +99,10 @@ export type PanelInput = {
 	-- Phase 12: the exclusive looks the player has (the profile snapshot's `looks`, by id); the Wrap tab lists those
 	-- exclusive wraps too (Config/Customization.wrapsFor). nil: none.
 	looks: { [string]: boolean }?,
+	-- The car's body takes paint but no wrap bands (final art: Vehicle/Appearance.takesWraps is false), so the Wrap
+	-- tab lists only the wraps that fit it (Config/Customization.wrapFitsMesh: no bands, or a full-color look for
+	-- final art) and says why.
+	paintOnly: boolean?,
 }
 
 export type PanelView = {
@@ -713,8 +717,11 @@ function CustomizeModel.tabView(input: PanelInput): TabView
 			end),
 		}
 	elseif tab == "wrap" then
-		local wraps = Customization.wrapsFor(input.looks, wrapOf(saved))
-		return { cards = cardsFor(wraps, "wrap", saved, pending, class, wrapOf) }
+		local wraps = Customization.wrapsFor(input.looks, wrapOf(saved), input.paintOnly)
+		return {
+			cards = cardsFor(wraps, "wrap", saved, pending, class, wrapOf),
+			note = if input.paintOnly == true then copy.paintOnlyWraps else nil,
+		}
 	elseif tab == "wheels" then
 		return {
 			cards = cardsFor(Customization.wheels, "wheels", saved, pending, class, function(look: Look): string

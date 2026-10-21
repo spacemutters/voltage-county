@@ -79,6 +79,7 @@ ${classLines(k)}
 ${extraLines(k)}
   Leave extras empty when the player didn't ask for any.
 - When <current_car> has extrasThatFit, pick extras only from that list: the others don't fit this car and the game leaves them off. If the player asks for one that doesn't fit, use the closest extra from the list or leave it out, and don't mention it in the summary.
+- When <current_car> has paintOnly true, the car's body is one painted piece: paint.secondary and paint.stripe are always "${keep}" (the game can't show them and leaves them off). For two-tone or stripes, change only paint.primary and say so in the summary.
 - accessoryPrompt is always "none". For an add-on the kit doesn't have, use the closest kit extra, or leave it out.
 - summary: at most ${L.summary} characters saying what changed. Mention only what this answer really changes.`;
 	return ANTHROPIC_CHILD_SAFETY_PROMPT === "" ? rules : `${ANTHROPIC_CHILD_SAFETY_PROMPT}\n\n${rules}`;

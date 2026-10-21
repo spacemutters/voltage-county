@@ -15,6 +15,7 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local Appearance = require(ReplicatedStorage.Shared.Vehicle.Appearance)
 local Chassis = require(ReplicatedStorage.Shared.Vehicle.Chassis)
 local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local Net = require(ReplicatedStorage.Shared.Net)
@@ -101,7 +102,8 @@ end
 
 -- Lamp switching for any car that follows the model contract: Lights/<name> is a part holding a Light named
 -- "Light". A lit lamp turns that Light on and makes the part glow; turning it off restores the part's own
--- material. Also used by VehicleVisualsController for other players' brake lamps.
+-- material (and hides an art model's overlay again). Also used by VehicleVisualsController for other players'
+-- brake lamps.
 function DriveController.newLamps(car: Model): Lamps
 	local lit: { [string]: boolean } = {}
 
@@ -123,6 +125,11 @@ function DriveController.newLamps(car: Model): Lamps
 			if off ~= nil then
 				part.Material = off
 			end
+		end
+		-- An art model's lamp is a glow overlay: it shows only while lit (Vehicle/Appearance).
+		local transparency = Appearance.lampOverlayTransparency(part, if on then 1 else 0)
+		if transparency ~= nil then
+			part.Transparency = transparency
 		end
 	end
 

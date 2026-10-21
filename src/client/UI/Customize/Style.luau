@@ -154,6 +154,9 @@ local Style = {
 		raised = "Raised %d",
 		rideHeight = "Ride height",
 
+		-- Wraps.
+		paintOnlyWraps = "Stripes don't fit this car's curved body. Exclusive wraps go on as a full color.",
+
 		-- Extras.
 		noExtras = "No kit extras fit this car.",
 		extrasHint = "Tap to add or take off. A spoiler, roof carrier or front piece swaps for another.",

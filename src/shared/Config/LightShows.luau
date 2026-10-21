@@ -313,6 +313,10 @@ local LightShows = {
 		doorsFolder = "Doors",
 		hingeName = "Hinge",
 		openAngleAttribute = "OpenAngle", -- degrees, signed per door (Dev/VehicleBuilder)
+		-- Art models (Dev/ArtPass): the body mesh draws the closed doors, so the door parts are hidden until they
+		-- swing. A door part (or a part on it) with this number attribute shows at that transparency while open.
+		doorShowAttribute = "ShowWhenOpen",
+		doorShowAmount = 0.02, -- how open (0..1) a door must be before it shows
 		onMaterial = Enum.Material.Neon, -- a lit lamp part glows; its own material returns when dark
 		minBrightness = 2, -- a lamp's Light shines at least this bright during a show
 		glowThreshold = 0.3, -- lamp level (0..1) above which the part glows

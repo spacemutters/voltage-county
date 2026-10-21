@@ -1133,4 +1133,34 @@ return function(t: Harness.Api)
 			t.expect(Validate.isEmptyMod(fitted, kit)).toBe(true)
 		end)
 	end)
+
+	-- Final-art catalog cars (one painted mesh) can't show stripes or a secondary color: never paid for.
+	t.describe("paint a paint-only car can show", function()
+		t.it("leaves off stripes and the secondary color and keeps the rest", function()
+			local raw = validMod()
+			raw.paint = { primary = "#C2A27A", secondary = "#202020", finish = "matte", stripe = "center" }
+			local modSpec, reasons = mod(raw, "catalog")
+			expectAccepted(t, modSpec, reasons)
+			local fitted, dropped = Validate.fitPaint(modSpec, kit)
+			t.expect(dropped).toEqual({ "secondary", "stripe" })
+			t.expect(fitted.paint).toEqual({ primary = "#C2A27A", secondary = KEEP, finish = "matte", stripe = KEEP })
+			t.expect(modSpec.paint.stripe).toBe("center") -- the mod given is never changed
+			local same, none = Validate.fitPaint(fitted, kit)
+			t.expect(same).toBe(fitted)
+			t.expect(none).toEqual({})
+		end)
+
+		t.it("turns a stripes-only mod into an empty one", function()
+			local raw = validMod()
+			raw.parts.wheels = KEEP
+			raw.paint = { primary = KEEP, secondary = "#202020", finish = KEEP, stripe = "side" }
+			raw.stance = { rideHeight = unchanged(), wheelSize = unchanged() }
+			raw.extras = {}
+			local modSpec, reasons = mod(raw, "catalog")
+			expectAccepted(t, modSpec, reasons)
+			t.expect(Validate.isEmptyMod(modSpec, kit)).toBe(false)
+			local fitted = Validate.fitPaint(modSpec, kit)
+			t.expect(Validate.isEmptyMod(fitted, kit)).toBe(true)
+		end)
+	end)
 end

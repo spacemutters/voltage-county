@@ -11,7 +11,8 @@
 --                                      DataService.update, then puts the look on the car. Answers
 --                                      { ok, message, cost }. An exclusive wrap (Phase 12,
 --                                      Customization.exclusiveWraps) goes on free, and only for a player who has
---                                      it (MonetizationService.ownsCosmetic; exclusiveAllowed).
+--                                      it (MonetizationService.ownsCosmetic; exclusiveAllowed). A wrap that can't
+--                                      go on the car's body (stripes on final art: wrapFits) is refused unpaid.
 --   SetPlate { uid, text }             function: custom plate text (the Custom Plates pass; Studio only until that
 --                                      pass exists). Empty text goes back to the free standard plate. Answers
 --                                      { ok, message, cost = 0 }.
@@ -42,7 +43,7 @@
 -- server looks the car up in that player's own data, checks every value, prices it and decides. No polling:
 -- everything runs on remote calls, prompt triggers and CollectionService signals.
 --
--- The rules are exported as pure helpers (lookOf, changedFields, validate, exclusiveAllowed, canCustomize,
+-- The rules are exported as pure helpers (lookOf, changedFields, validate, exclusiveAllowed, wrapFits, canCustomize,
 -- insideFootprint, checkPlateText, customTextAllowed) so tests/CustomizationService.spec can check them in Edit mode.
 
 local CollectionService = game:GetService("CollectionService")
@@ -248,6 +249,22 @@ function CustomizationService.exclusiveAllowed(
 		return true, nil
 	end
 	return false, Customization.messages.lockedWrap
+end
+
+-- Whether `changes` may put its wrap on a car whose saved wrap is `currentWrap` and whose body does or doesn't take
+-- vinyl bands (`takesWraps`: Vehicle/Appearance.takesWraps on the car). A body that is one painted mesh (final art)
+-- takes only the wraps that fit it (Customization.wrapFitsMesh); keeping the wrap already on the car is always
+-- fine, and unknown wraps are left to validate. Pure.
+function CustomizationService.wrapFits(changes: Changes, currentWrap: string?, takesWraps: boolean): (boolean, string?)
+	local wrapId = changes.wrap
+	if takesWraps or wrapId == nil or wrapId == (currentWrap or Customization.defaults.wrap) then
+		return true, nil
+	end
+	local wrap = Customization.getWrap(wrapId)
+	if wrap == nil or Customization.wrapFitsMesh(wrap) then
+		return true, nil
+	end
+	return false, Customization.messages.wrapDoesntFit
 end
 
 -- Writes a validated look onto a saved car (the look fields only; plate text, energy and the rest untouched).
@@ -524,6 +541,11 @@ function CustomizationService.buy(player: Player, uid: string, changes: Changes)
 	end)
 	if not allowed then
 		return reply(false, locked or Customization.messages.lockedWrap)
+	end
+	-- Stripes can't go on a final-art body: refused before anything is charged (the Wrap tab doesn't offer them).
+	local fits, misfit = CustomizationService.wrapFits(changes, vehicle.wrap, Appearance.takesWraps(car))
+	if not fits then
+		return reply(false, misfit or Customization.messages.wrapDoesntFit)
 	end
 
 	-- Charge and save in one update, validated and priced again against the live data, so the cash and the look

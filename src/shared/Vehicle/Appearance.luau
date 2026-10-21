@@ -7,6 +7,8 @@
 --   Appearance.findExtra(model, id) an extra's Model (light shows look for the light bar's PointLight)
 --   Appearance.wheelFaceParts(wheelId)     the parts apply builds on one wheel for that wheel style
 --   Appearance.addedParts(model, wheelId)  how many parts apply adds on the wheels and plates (the part budget)
+--   Appearance.isArt(model), Appearance.takesWraps(model)   final art (Dev/ArtPass); whether wrap bands can go on
+--   Appearance.lampOverlayTransparency(part, level)          an art model's lamp overlay at a light level
 --
 -- Works on any model that follows the vehicle model contract (docs/phase-1-contracts.md): Body parts tagged
 -- Paint, Trim and Glass, Wheels FL/FR/RL/RR, Lights, optional Doors, and the PlateFront, PlateRear and Mount_*
@@ -25,6 +27,12 @@
 --     wheel, so rims spin and steer with it). Applying again removes them first, so applying the same look
 --     twice leaves exactly the same instances.
 --   * Physics never changes: no Chassis property, no mass, no collision.
+--   * Art models (Dev/ArtPass) work the same way: the painted body mesh takes paint and finish, the window mesh
+--     the tint. Their stock wheels are wheel meshes (artWheelName): the stock style shows them (a non-stock caliper
+--     as a disc on the hub), any other style hides them and builds its face on the wheel part as on a greybox.
+--     Wrap bands need flat panels, so none go on a mesh body (Appearance.takesWraps): a wrap with a full-body color
+--     (Config/Customization artColor: every exclusive look) goes on as that color, and the Wrap tab and the server
+--     refuse the others.
 --
 -- The first apply records each part's factory state in attributes (LookBase, LookBaseColor, ...), so every
 -- later apply works from the factory state and never drifts. Plate text: `look.plateText` must already be
@@ -35,6 +43,7 @@ local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
 
 local Catalog = require(script.Parent.Catalog)
+local Controls = require(script.Parent.Parent.Config.Controls)
 local Customization = require(script.Parent.Parent.Config.Customization)
 
 export type Look = Customization.Look
@@ -44,6 +53,13 @@ local Appearance = {}
 -- A model attribute (a number, 1 = as built) that scales every wheel face this module builds inside its tire. Set
 -- by Vehicle/ModBuilder for an AI mod's wheel size, so every later look (a spawn, a shop purchase) keeps it.
 Appearance.wheelScaleAttribute = "ModWheelScale"
+
+-- Art models (Dev/ArtPass, docs/art-pass-contracts.md): final art in place of the greybox. The model carries the
+-- attribute artAttribute = true, and each wheel part (invisible) carries its stock wheel mesh as a child named
+-- artWheelName. The stock wheel style shows that mesh; any other style hides it, shows the wheel part as the tire
+-- and builds the style's face on it as usual.
+Appearance.artAttribute = "Art"
+Appearance.artWheelName = "ArtWheel"
 
 -- Model structure names (vehicle model contract).
 local WHEEL_NAMES = { "FL", "FR", "RL", "RR" }
@@ -174,12 +190,19 @@ local function resolve(model: Model, look: Look): Resolved
 	local paintId = if Customization.paintColor(full.paint) ~= nil then full.paint else defaults.paint
 	local factoryPaint = Customization.isFactoryPaint(paintId)
 	local swatch = need(Customization.paintColor(paintId), "paint")
+	local wrap = need(Customization.getWrap(full.wrap) or Customization.getWrap(defaults.wrap), "wrap")
+	local paint = if factoryPaint then factoryColor(model) or swatch else swatch
+	-- A body that takes no bands wears a wrap with a full-body color (every exclusive look) as that color.
+	local fullWrap = wrap.artColor
+	if fullWrap ~= nil and not Appearance.takesWraps(model) then
+		paint, factoryPaint = fullWrap, false
+	end
 	return {
 		look = full,
-		paint = if factoryPaint then factoryColor(model) or swatch else swatch,
+		paint = paint,
 		factoryPaint = factoryPaint,
 		finish = need(Customization.getFinish(full.finish) or Customization.getFinish(defaults.finish), "finish"),
-		wrap = need(Customization.getWrap(full.wrap) or Customization.getWrap(defaults.wrap), "wrap"),
+		wrap = wrap,
 		wheel = need(Customization.getWheel(full.wheels) or Customization.getWheel(defaults.wheels), "wheels"),
 		caliper = need(Customization.getCaliper(full.caliper) or Customization.getCaliper(defaults.caliper), "caliper"),
 		tint = Customization.nearestTintLevel(full.tint),
@@ -737,6 +760,42 @@ local function buildWheel(wheel: BasePart, style: Customization.Wheel, caliper: 
 	newDisc("Cap", width + 2 * layers.cap, diameter * style.cap, cframe, style.capColor, material, wheel, wheel)
 end
 
+-- The stock wheel mesh an art model's wheel carries (Appearance.artWheelName), if any.
+local function artWheelOf(wheel: BasePart): BasePart?
+	local art = wheel:FindFirstChild(Appearance.artWheelName)
+	return if art ~= nil and art:IsA("BasePart") and not isLookPart(art) then art else nil
+end
+
+-- An art wheel in the stock style: the wheel mesh shows (the wheel part stays as built: invisible), and a caliper
+-- color other than the stock one shows as a disc on the hub, the one place on a textured wheel mesh it can.
+local function showArtWheel(wheel: BasePart, art: BasePart, caliper: Customization.Caliper, scale: number)
+	wheel.Transparency = baseTransparency(wheel)
+	art.Transparency = baseTransparency(art)
+	if caliper.id == Customization.defaults.caliper then
+		return
+	end
+	local disc = Customization.artWheelCaliper
+	local diameter = math.min(wheel.Size.Y, wheel.Size.Z) * scale * disc.diameter
+	newDisc(
+		"Caliper",
+		wheel.Size.X + 2 * disc.proud,
+		diameter,
+		wheel.CFrame,
+		caliper.color,
+		Enum.Material.SmoothPlastic,
+		wheel,
+		wheel
+	)
+end
+
+-- Any other style on an art wheel: the mesh hides and the wheel part shows as the tire under the style's face.
+local function hideArtWheel(wheel: BasePart, art: BasePart)
+	baseTransparency(art)
+	baseTransparency(wheel)
+	art.Transparency = 1
+	wheel.Transparency = 0
+end
+
 local function buildWheels(model: Model, r: Resolved)
 	local wheels = model:FindFirstChild("Wheels")
 	if wheels == nil then
@@ -744,10 +803,19 @@ local function buildWheels(model: Model, r: Resolved)
 	end
 	local stored = model:GetAttribute(Appearance.wheelScaleAttribute)
 	local scale = if type(stored) == "number" and stored > 0 and stored < math.huge then stored else 1
+	local stock = r.wheel.id == Customization.defaults.wheels
 	for _, name in WHEEL_NAMES do
 		local wheel = wheels:FindFirstChild(name)
 		if wheel and wheel:IsA("BasePart") then
-			buildWheel(wheel, r.wheel, r.caliper, scale)
+			local art = artWheelOf(wheel)
+			if art ~= nil and stock then
+				showArtWheel(wheel, art, r.caliper, scale)
+			else
+				if art ~= nil then
+					hideArtWheel(wheel, art)
+				end
+				buildWheel(wheel, r.wheel, r.caliper, scale)
+			end
 		end
 	end
 end
@@ -1007,6 +1075,8 @@ end
 function Appearance.addedParts(model: Model, wheelId: string?): number
 	local added = 0
 	local perWheel = Appearance.wheelFaceParts(wheelId)
+	local style = Customization.getWheel(wheelId) or Customization.getWheel(Customization.defaults.wheels)
+	local stock = style ~= nil and style.id == Customization.defaults.wheels
 	local wheels = model:FindFirstChild("Wheels")
 	if wheels ~= nil then
 		for _, name in WHEEL_NAMES do
@@ -1020,7 +1090,9 @@ function Appearance.addedParts(model: Model, wheelId: string?): number
 					cleared += 1
 				end
 			end
-			added += perWheel - cleared
+			-- An art wheel in the stock style keeps its mesh and gains at most the caliper disc.
+			local builds = if stock and artWheelOf(wheel) ~= nil then 1 else perWheel
+			added += builds - cleared
 		end
 	end
 	local chassis = model:FindFirstChild("Chassis")
@@ -1035,6 +1107,46 @@ function Appearance.addedParts(model: Model, wheelId: string?): number
 		end
 	end
 	return added
+end
+
+-- The transparency a lamp part shows at `level` (0 dark .. 1 fully lit), or nil for an ordinary lamp, whose
+-- transparency never changes. Art models' lamps (Dev/ArtPass) are glow overlays on the light meshes, marked with
+-- Config/Controls.lamps.overlayAttribute: see-through while dark, so the textured light mesh under them shows.
+-- DriveController and LightShowController write it whenever they light or darken a lamp.
+function Appearance.lampOverlayTransparency(part: BasePart, level: number): number?
+	if part:GetAttribute(Controls.lamps.overlayAttribute) ~= true then
+		return nil
+	end
+	if level <= 0 then
+		return 1
+	end
+	local lit = Controls.lamps.overlayLitTransparency
+	return lit + (1 - lit) * (1 - math.min(level, 1))
+end
+
+-- Whether `model` is final art (Dev/ArtPass) rather than a greybox or a player design's kit body.
+function Appearance.isArt(model: Model): boolean
+	return model:GetAttribute(Appearance.artAttribute) == true
+end
+
+-- Whether a wrap's vinyl bands can go on `model`: they are laid on flat painted panels (blocks and wedges), so a
+-- body that is one painted mesh (an art model) takes no bands. The Wrap tab then lists only the wraps that fit it
+-- (Config/Customization.wrapFitsMesh), and one with a full-body color (artColor) goes on as that color.
+function Appearance.takesWraps(model: Model): boolean
+	local body = model:FindFirstChild("Body")
+	if body == nil or Appearance.isArt(model) then
+		return false
+	end
+	for _, part in body:GetDescendants() do
+		if
+			(part:IsA("Part") or part:IsA("WedgePart"))
+			and not isLookPart(part)
+			and CollectionService:HasTag(part, "Paint")
+		then
+			return true
+		end
+	end
+	return false
 end
 
 -- The Model an extra was built as on `model` (its parts, and a PointLight named Light on lamp pieces), or nil

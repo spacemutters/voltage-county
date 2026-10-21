@@ -48,6 +48,7 @@ local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Monetization = require(ReplicatedStorage.Shared.Config.Monetization)
 local Net = require(ReplicatedStorage.Shared.Net)
+local Appearance = require(ReplicatedStorage.Shared.Vehicle.Appearance)
 local CameraController = require(script.Parent.CameraController)
 local DriveController = require(script.Parent.DriveController)
 local HudController = require(script.Parent.HudController)
@@ -94,6 +95,7 @@ type Session = {
 	title: string, -- the car's name
 	class: string, -- its Config/Classes id (prices and which extras fit)
 	bodyStyle: string, -- its Config/Vehicles bodyStyle (some extras fit only some bodies)
+	paintOnly: boolean, -- its body takes no wrap bands (final art: Vehicle/Appearance.takesWraps)
 	bay: Location?, -- the bay it opened in; driving out of it closes the shop
 	saved: Look, -- what the car wears
 	pending: Look, -- what the player is trying on
@@ -253,6 +255,7 @@ local function App(props: { view: View })
 				platePending = current.busy == "plate",
 				plateAllowed = customPlatesAllowed(),
 				looks = ownedLooks(),
+				paintOnly = session.paintOnly,
 			}),
 			screen = current.screen,
 			gamepad = inputKind == "gamepad",
@@ -484,6 +487,7 @@ tryOpen = function(bay: Location?, quiet: boolean)
 		title = info.name,
 		class = info.class,
 		bodyStyle = info.bodyStyle,
+		paintOnly = not Appearance.takesWraps(car),
 		bay = openBay,
 		saved = saved,
 		pending = CustomizeModel.cloneLook(saved),

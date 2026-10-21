@@ -40,6 +40,7 @@ local Workspace = game:GetService("Workspace")
 
 local React = require(ReplicatedStorage.Packages.React)
 local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
+local Appearance = require(ReplicatedStorage.Shared.Vehicle.Appearance)
 local Hail = require(ReplicatedStorage.Shared.Config.Hail)
 local LightShows = require(ReplicatedStorage.Shared.Config.LightShows)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
@@ -81,6 +82,7 @@ type Lamp = {
 
 type Door = {
 	motor: Motor6D,
+	part: BasePart, -- the door (an art model's door and the parts on it show only while open)
 	original: CFrame, -- the hinge's Transform before the show
 	angle: number, -- radians, fully open
 	from: number, -- 0 shut .. 1 open
@@ -176,7 +178,13 @@ local function partLamp(part: BasePart): Lamp
 			light.Enabled = level > 0
 			light.Brightness = showBrightness * level
 		end
-		part.Material = if level > look.glowThreshold then look.onMaterial else originalMaterial
+		local glowing = level > look.glowThreshold
+		part.Material = if glowing then look.onMaterial else originalMaterial
+		-- An art model's lamp is a glow overlay: it shows only while it glows (Vehicle/Appearance).
+		local transparency = Appearance.lampOverlayTransparency(part, if glowing then level else 0)
+		if transparency ~= nil then
+			part.Transparency = transparency
+		end
 	end
 
 	local function restore()
@@ -185,6 +193,10 @@ local function partLamp(part: BasePart): Lamp
 			light.Brightness = originalBrightness
 		end
 		part.Material = originalMaterial
+		local transparency = Appearance.lampOverlayTransparency(part, 0)
+		if transparency ~= nil then
+			part.Transparency = transparency
+		end
 	end
 
 	return { steady = false, pulseAt = nil, pulseLength = 0, written = -1, write = write, restore = restore }
@@ -243,8 +255,22 @@ local function renderLamp(lamp: Lamp, elapsed: number): boolean
 	return pulsing
 end
 
+-- Art models (Dev/ArtPass): the body mesh draws the closed door, so the door part and the parts on it carry
+-- look.doorShowAttribute and show (at that transparency) only while the door stands open.
+local function showDoor(door: Door, open: boolean)
+	local parts: { Instance } = door.part:GetDescendants()
+	table.insert(parts, door.part)
+	for _, part in parts do
+		local shown = part:GetAttribute(look.doorShowAttribute)
+		if part:IsA("BasePart") and type(shown) == "number" then
+			part.Transparency = if open then shown else 1
+		end
+	end
+end
+
 local function writeDoor(door: Door)
 	door.motor.Transform = door.original * CFrame.Angles(0, 0, door.angle * door.amount)
+	showDoor(door, door.amount > look.doorShowAmount)
 end
 
 -- Draws a door at show time `elapsed`. Returns true while it is still swinging.
@@ -302,9 +328,10 @@ local function doorsOf(car: Car): { Door }
 		for _, part in folder:GetChildren() do
 			local motor = part:FindFirstChild(look.hingeName)
 			local angle = part:GetAttribute(look.openAngleAttribute)
-			if motor ~= nil and motor:IsA("Motor6D") and type(angle) == "number" then
+			if part:IsA("BasePart") and motor ~= nil and motor:IsA("Motor6D") and type(angle) == "number" then
 				table.insert(doors, {
 					motor = motor,
+					part = part,
 					original = motor.Transform,
 					angle = math.rad(angle),
 					from = 0,
@@ -406,6 +433,7 @@ local function restoreCar(show: Show, car: Car)
 		for _, door in doors do
 			show.animDoors[door] = nil
 			door.motor.Transform = door.original
+			showDoor(door, false)
 		end
 	end
 	car.doors = nil

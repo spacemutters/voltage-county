@@ -673,6 +673,47 @@ return function(t: Harness.Api)
 			t.expect((made.mod :: any).extras).toBe(KEEP)
 		end)
 
+		-- A final-art catalog car (one painted mesh) can't show stripes or a secondary color, so they're never paid for.
+		t.it("leaves off stripes and a secondary color on a paint-only car, and refunds a mod of only those", function()
+			local function run(spec: { [string]: any }): (DesignerService.ModOutcome, Credits)
+				local wallet = credits(3)
+				assert(Ledger.reserve(wallet, PRICES.mod, "m", NOW), "the mod reservation failed")
+				local outcome = DesignerService.modPipeline(fakeDeps({ status = "ok", spec = spec }), {
+					prompt = "racing stripes and a black roof",
+					kind = "catalog",
+					classId = "sports",
+					bodyStyle = "coupe",
+					paintOnly = true,
+					current = { kind = "catalog", classId = "sports", paintOnly = true },
+				})
+				if DesignerService.settles(outcome.status) == "hold" then
+					Ledger.spend(wallet, "m")
+				else
+					Ledger.refund(wallet, "m")
+				end
+				return outcome, wallet
+			end
+			local stripesOnly = backendMod()
+			stripesOnly.parts.wheels = KEEP
+			stripesOnly.paint = { primary = KEEP, secondary = "#101010", finish = KEEP, stripe = "center" }
+			stripesOnly.stance.rideHeight = { change = false, value = 0 }
+			stripesOnly.extras = {}
+			local refused, kept = run(stripesOnly)
+			t.expect(refused.status).toBe("empty")
+			t.expect(kept.balance).toBe(3)
+
+			local withPaint = backendMod()
+			withPaint.paint = { primary = "#C2A27A", secondary = "#101010", finish = KEEP, stripe = "side" }
+			withPaint.extras = {}
+			local made, paid = run(withPaint)
+			t.expect(made.status).toBe("ok")
+			t.expect(paid.balance).toBe(3 - PRICES.mod)
+			local paint = (made.mod :: any).paint
+			t.expect(paint.primary).toBe("#C2A27A")
+			t.expect(paint.secondary).toBe(KEEP)
+			t.expect(paint.stripe).toBe(KEEP)
+		end)
+
 		t.it("replaces a summary that names a real brand", function()
 			local mod = backendMod()
 			mod.summary = `Paint like a {BrandNames.phrases()[4]}`

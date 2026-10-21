@@ -13,6 +13,7 @@
 --   build(vehicleId, trimId, options?)  rebuilds one model and returns it
 --   assemble(vehicleId, trimId)         builds a model without parenting it anywhere (for specs)
 --   assembleGeneric(vehicleId, trimId)  same, but always the generic body for the vehicle's bodyStyle
+--   storeReference(vehicleId, trimId)   builds a trim's greybox into ServerStorage.GreyboxReference (art trims)
 --   bodyStyles(): {string}              every bodyStyle with a generic body
 --   check(model): {string}              lists every way a model breaks the contract (empty = good)
 --
@@ -41,6 +42,8 @@ local Vehicles = require(ReplicatedStorage.Shared.Config.Vehicles)
 
 local MODELS_FOLDER = "VehicleModels"
 local GREYBOX_ATTRIBUTE = "Greybox" -- marks models this builder owns; artist models never carry it
+-- Where the greybox of a trim whose stored model is art (Dev/ArtPass) is kept, for tests/VehicleBuilder.spec.
+local REFERENCE_FOLDER = "GreyboxReference"
 
 -- Gull-wing doors (feature "gullwing"): hinged near the roof centerline, opened by rotating the Hinge motor.
 local GULLWING = {
@@ -813,15 +816,36 @@ export type BuildOptions = {
 	replaceArt: boolean?, -- also replace a model that was not built here (artist-made)
 }
 
-local function modelsFolder(): Folder
-	local existing = ServerStorage:FindFirstChild(MODELS_FOLDER)
+local function folderNamed(name: string): Folder
+	local existing = ServerStorage:FindFirstChild(name)
 	if existing then
 		if existing:IsA("Folder") then
 			return existing
 		end
-		error(`ServerStorage.{MODELS_FOLDER} must be a Folder`, 0)
+		error(`ServerStorage.{name} must be a Folder`, 0)
 	end
-	return newFolder(MODELS_FOLDER, ServerStorage)
+	return newFolder(name, ServerStorage)
+end
+
+local function modelsFolder(): Folder
+	return folderNamed(MODELS_FOLDER)
+end
+
+VehicleBuilder.referenceFolder = REFERENCE_FOLDER
+
+-- Builds one trim's greybox into ServerStorage.GreyboxReference (replacing the one there) and returns it: the
+-- greybox a trim's art model was fitted to (Dev/ArtPass.fit), which tests/VehicleBuilder.spec compares fresh
+-- builds with, as it does the greybox models in VehicleModels.
+function VehicleBuilder.storeReference(vehicleId: string, trimId: string): Model
+	requireEditMode()
+	local folder = folderNamed(REFERENCE_FOLDER)
+	local model = VehicleBuilder.assemble(vehicleId, trimId)
+	local existing = folder:FindFirstChild(model.Name)
+	if existing then
+		existing:Destroy()
+	end
+	model.Parent = folder
+	return model
 end
 
 -- Rebuilds one trim's model in ServerStorage.VehicleModels and returns it. The old model is replaced only
@@ -844,7 +868,10 @@ function VehicleBuilder.build(vehicleId: string, trimId: string, options: BuildO
 end
 
 -- Rebuilds every trim of every catalog vehicle and removes greybox models whose trim no longer exists.
--- Artist-made models and vehicles without a shape are skipped with a warning. Returns the names built.
+-- Artist-made models and vehicles without a shape are skipped with a warning; an art model's greybox reference
+-- (ServerStorage.GreyboxReference) is rebuilt instead, so a deliberate builder change is taken into the stored
+-- builds as it is for greybox models (tests/ArtPass.spec then says whether the art needs fitting again). Returns
+-- the names built.
 function VehicleBuilder.buildAll(): { string }
 	requireEditMode()
 	local folder = modelsFolder()
@@ -860,9 +887,13 @@ function VehicleBuilder.buildAll(): { string }
 			local name = Catalog.modelName(vehicleId, trim.id)
 			wanted[name] = true
 			local existing = folder:FindFirstChild(name)
+			local shaped = shapeFor(vehicleId, vehicle, false) ~= nil
 			if existing and existing:GetAttribute(GREYBOX_ATTRIBUTE) ~= true then
-				warn(`[VehicleBuilder] kept {name}: it is not a greybox model`)
-			elseif shapeFor(vehicleId, vehicle, false) == nil then
+				if shaped then
+					VehicleBuilder.storeReference(vehicleId, trim.id)
+				end
+				warn(`[VehicleBuilder] kept {name}: it is not a greybox model (its greybox reference was rebuilt)`)
+			elseif not shaped then
 				warn(`[VehicleBuilder] skipped {name}: no greybox shape for {vehicleId} ({vehicle.bodyStyle})`)
 			else
 				VehicleBuilder.build(vehicleId, trim.id)
@@ -873,6 +904,12 @@ function VehicleBuilder.buildAll(): { string }
 
 	for _, child in folder:GetChildren() do
 		if not wanted[child.Name] and child:GetAttribute(GREYBOX_ATTRIBUTE) == true then
+			child:Destroy()
+		end
+	end
+	local references = ServerStorage:FindFirstChild(REFERENCE_FOLDER)
+	for _, child in if references then references:GetChildren() else {} do
+		if not wanted[child.Name] then
 			child:Destroy()
 		end
 	end
