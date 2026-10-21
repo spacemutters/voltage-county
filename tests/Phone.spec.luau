@@ -6,7 +6,8 @@
 -- kilometres (GpsController). Phase 9: the snapshot's fleet checks (ProfileController.normalizeFleet), the Fleet
 -- app's words and sums (UI/Phone/FleetApp) and the HUD's fleet chip (when it shows, and where: never over a
 -- driving control). Phase 11: the Designer app is one of the phone's apps (its own logic is in
--- tests/DesignerUi.spec). Pure logic on fixtures: runs in Edit mode and never touches module state.
+-- tests/DesignerUi.spec). Phase 13: the Home, Feed and Emotes apps are among them (the house rules are in
+-- tests/Houses.spec). Pure logic on fixtures: runs in Edit mode and never touches module state.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
@@ -266,16 +267,31 @@ return function(t: Harness.Api)
 			end
 		end)
 
-		t.it("lists the nine apps once each", function()
+		t.it("lists every app once each", function()
+			-- Phase 13 adds Home (houses) and Feed and Emotes (social).
+			local expected = {
+				"gps",
+				"garage",
+				"home",
+				"designer",
+				"jobs",
+				"fleet",
+				"store",
+				"feed",
+				"emotes",
+				"wallet",
+				"codes",
+				"settings",
+			}
 			local seen: { [string]: boolean } = {}
 			for _, app in PhoneConfig.apps do
 				t.expect(seen[app.id]).toBe(nil)
 				seen[app.id] = true
 			end
-			for _, id in { "gps", "garage", "designer", "jobs", "fleet", "wallet", "codes", "store", "settings" } do
+			for _, id in expected do
 				t.expect(seen[id]).toBe(true)
 			end
-			t.expect(#PhoneConfig.apps).toBe(9)
+			t.expect(#PhoneConfig.apps).toBe(#expected)
 		end)
 
 		t.it("offers directions only to places on the map", function()

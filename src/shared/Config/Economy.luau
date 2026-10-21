@@ -133,6 +133,8 @@ local Economy = {
 			limited = "Shop", -- buying a limited drop (a sold-out drop's refund is "refund")
 			streak = "TimedReward", -- the daily login reward
 			season = "Gameplay", -- a season tier reward, earned with season XP from driving and jobs
+			-- Phase 13 (Config/Houses.economyReason; a house upgrade that couldn't be saved is refunded as "refund").
+			house = "Shop", -- buying a house upgrade
 		} :: { [string]: string },
 	},
 

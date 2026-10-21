@@ -1,8 +1,8 @@
 # Phase 13 contracts
 
 Houses and social roleplay (PLAN.md "Phase 13" is the spec). Read `CLAUDE.md` and the earlier contracts
-(`docs/phase-1..12-contracts.md`). The map already has 20 `HousePlot` locations on four courts in Riverside and the
-`MeetSpot`s from Phase 7.
+(`docs/phase-1..12-contracts.md`). The map already has 26 `HousePlot` locations in Riverside (four courts plus
+Sycamore Lane and Elm Street; all claimable) and the `MeetSpot`s from Phase 7.
 
 ## Houses (owner: house helper)
 - `Config/Houses.luau`: the house greybox (built per plot at runtime, outside `Workspace.Map.Generated`), the
@@ -37,3 +37,8 @@ and sign, charges the owner's car at the home charger and checks a second (dev-s
 charge there, then leaves the claim and checks the plot is free; `meet()` parks dev cars at a MeetSpot one by one
 (dev-only server helper `DevSocial { action = "parkDummyCar" | "clearDummies", meetSpotId }`) and checks the Feed
 announcement arrives at the 4th and not the 3rd.
+
+## Net (declared by the lead before the build)
+`ClaimHouse { plotId }`, `LeaveHouse`, `BuyHouseUpgrade { upgrade }` (functions), `HouseUpdate` (server → client),
+`FeedUpdate` (server → all clients), Studio-only `DevSocial { action = "parkDummyCar" | "clearDummies", meetSpotId? }`.
+Emotes need no remote (`Humanoid:PlayEmote` on the client replicates).

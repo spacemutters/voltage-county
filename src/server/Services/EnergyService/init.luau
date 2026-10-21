@@ -21,15 +21,17 @@
 --            billed for the energy added in whole dollars through EconomyService.trySpend (reason "charge" or
 --            "fuel"; cents carry over within the stop); it stops at full, when the car leaves the pad, or with a
 --            notice once the player can't pay for more (they get what their cash covers first, and it doesn't
---            restart on that pad until the car has left it). While it runs the car carries Charging = true and
---            ChargeRate (fraction per second) for the client's charging card. A car on the wrong kind of pad, or
+--            restart on that pad until the car has left it). While it runs the car carries Charging = true,
+--            ChargeRate (fraction per second) and Config/Energy attributes.chargeCostPerFull (the stop's price per
+--            full charge) for the client's charging card. A car on the wrong kind of pad, or
 --            a dealership test drive on any pad, gets one friendly notice per visit and no charge.
 --   drain    otherwise a car with someone in its Driver seat drains Energy.drainPerSecond. A car with nobody in
 --            the Driver seat is parked (VehicleService anchors it): it is switched off and drains nothing, not
 --            even the idle trickle, so a car left at a meet or by the road keeps its level. Idle drain applies to
 --            a car someone sits in while it stands still. A move the server made (a reset; AntiExploitService
 --            .lastServerMove) or a respawn drains nothing; any other jump is billed as the travel it is.
---   publish  `Energy` (0..1, rounded to Config sampling.attributeStep) and `EnergyKind` ("battery" | "fuel").
+--   publish  `Energy` (0..1, rounded to Config sampling.attributeStep) and `EnergyKind` ("battery" | "fuel"), and
+--            Config/Energy attributes.still (true at or under sampling.stationStillMph; set only when it flips).
 --   limp     at 0 the car gets Limp = true (the client caps its speed at Config/Energy.limpMph); it clears once
 --            the level is above limpClearLevel. AntiExploit judges the car by the limp speed
 --            (AntiExploitService.setTopSpeed) once it has slowed to it, at once when it is parked, and at the
@@ -46,6 +48,13 @@
 -- While at least hangout.minPlayers different players charge at stalls of the same plaza, each of them earns
 -- the hangout bonus for that time; it is paid every Config/Energy hangout.interval seconds (EconomyService.add,
 -- reason "hangout").
+--
+-- Home chargers (Phase 13, docs/phase-13-contracts.md "Houses"): Services/HouseService paints a charger bay on the
+-- floor of every claimed house's garage, tagged Config/Houses charger.tag (under Workspace.Houses, outside the
+-- map) with the owner's UserId, its kW and its price per full charge as attributes. A car standing on one charges
+-- like a ChargerStall of that kW, at that price (never above Config/Energy home.costPerFull), but only when it is
+-- the owner's own car (Rules.homeChargeAllowed): anyone else's car, a test drive or a car with no owner gets one
+-- friendly notice per visit (owners only) and no charge. No hangout bonus at home.
 --
 -- Remote: DevSetEnergy { level } (Studio only) sets the caller's current car's level, for Dev/EnergyTests.
 --
@@ -67,6 +76,7 @@ local Energy = require(Shared.Vehicle.Energy)
 local EnergyConfig = require(Shared.Config.Energy)
 local Garage = require(Shared.Config.Garage)
 local Gps = require(Shared.Config.Gps)
+local Houses = require(Shared.Config.Houses)
 local MapLayout = require(Shared.Config.MapLayout)
 local Net = require(Shared.Net)
 local Pathfind = require(Shared.Road.Pathfind)
@@ -92,6 +102,8 @@ local KIND_ATTRIBUTE = "EnergyKind"
 local LIMP_ATTRIBUTE = "Limp"
 local CHARGING_ATTRIBUTE = "Charging"
 local CHARGE_RATE_ATTRIBUTE = "ChargeRate"
+local CHARGE_COST_ATTRIBUTE = EnergyConfig.attributes.chargeCostPerFull
+local STILL_ATTRIBUTE = EnergyConfig.attributes.still
 local OWNER_ATTRIBUTE = "OwnerUserId"
 local VEHICLE_ID_ATTRIBUTE = "VehicleId"
 local TRIM_ATTRIBUTE = "Trim"
@@ -100,6 +112,8 @@ local DRIVER_SEAT = "Driver"
 local PLAZA_ATTRIBUTE = "plaza" -- a ChargerStall's plaza (Config/MapLayout)
 local STATION_KINDS: { StationKind } =
 	{ "ChargerStall" :: StationKind, "TruckCharger" :: StationKind, "FuelPump" :: StationKind }
+-- A home charger charges like a stall: battery cars only, on the stall's charging curve at its own kW.
+local HOME_KIND: StationKind = "ChargerStall"
 local PERCENT = 100
 local LOG = "[EnergyService]"
 
@@ -128,6 +142,7 @@ local messages = {
 		truck = "Truck chargers are for semis. Use a charging stall.",
 	},
 	testDrive = "Test drives can't charge or fuel up. Buy the car to use stations.",
+	homeNotYours = "This home charger is just for the owner's car. Public chargers are on the GPS.",
 	noCash = {
 		battery = "Charging stopped: you need %s for the next percent.",
 		fuel = "Fueling stopped: you need %s for the next percent.",
@@ -150,6 +165,8 @@ local messages = {
 type Session = {
 	station: BasePart,
 	kind: StationKind,
+	home: boolean, -- at a house's home charger (Phase 13)
+	costPerFull: number, -- $ for a full charge at this station (the kind's price, or the home charger's own)
 	reason: string, -- REASON_CHARGE or REASON_FUEL
 	owed: number, -- $ for percents already added that hasn't made a whole dollar yet
 	spent: number, -- whole $ paid this session
@@ -175,6 +192,7 @@ type Record = {
 	history: { Rules.MotionSample }, -- recent samples, oldest first
 	movedAt: number, -- os.clock() of the last sample at which the chassis had moved (or of registering)
 	speed: number, -- studs/s across the ground at the last sample
+	still: boolean?, -- the Still attribute last set (nil before the first sample)
 	-- Smoothed speed (studs/s) and climb (studs/s) that drain is billed on: the server's view of a client-driven
 	-- car wobbles from sample to sample, and unsmoothed that wobble read as constant launches and climbs.
 	smoothSpeed: number?,
@@ -195,6 +213,7 @@ local DataService: DataServiceModule? = nil
 local records: { [Model]: Record } = {}
 local pending: { [Model]: boolean } = {} -- cars that arrived since the last sample (registered at the next one)
 local stations: { [BasePart]: StationKind } = {}
+local homeChargers: { [BasePart]: boolean } = {} -- Phase 13: the charger bays in claimed houses' garages
 local sinceSample = 0
 local sinceHangout = 0
 -- Seconds each player has charged together with enough others at a plaza since the last hangout payout.
@@ -268,24 +287,58 @@ local function watchStations()
 			end
 		end)
 	end
-end
 
--- The station pad the car's chassis stands on, and its kind; nil when it is on none.
-local function stationUnder(record: Record): (BasePart?, StationKind?)
-	local folder = locationsFolder()
-	if folder == nil then
-		return nil, nil
-	end
-	local position = record.chassis.Position
-	for part: BasePart, kind: StationKind in stations do
-		if
-			part:IsDescendantOf(folder)
-			and Rules.insideFootprint(part.CFrame, part.Size, position, record.heightAbove)
-		then
-			return part, kind
+	-- Home chargers come and go as houses are claimed and released (Services/HouseService).
+	local homeTag = Houses.charger.tag
+	local function addHome(instance: Instance)
+		if instance:IsA("BasePart") then
+			homeChargers[instance] = true
 		end
 	end
-	return nil, nil
+	for _, instance in CollectionService:GetTagged(homeTag) do
+		addHome(instance)
+	end
+	CollectionService:GetInstanceAddedSignal(homeTag):Connect(addHome)
+	CollectionService:GetInstanceRemovedSignal(homeTag):Connect(function(instance: Instance)
+		if instance:IsA("BasePart") then
+			homeChargers[instance] = nil
+		end
+	end)
+end
+
+-- The station pad the car's chassis stands on, its kind, and whether it is a home charger (Phase 13: it charges
+-- like a ChargerStall); nil when it is on none.
+local function stationUnder(record: Record): (BasePart?, StationKind?, boolean)
+	local position = record.chassis.Position
+	local folder = locationsFolder()
+	if folder ~= nil then
+		for part: BasePart, kind: StationKind in stations do
+			if
+				part:IsDescendantOf(folder)
+				and Rules.insideFootprint(part.CFrame, part.Size, position, record.heightAbove)
+			then
+				return part, kind, false
+			end
+		end
+	end
+	for part in homeChargers do
+		if
+			part:IsDescendantOf(Workspace)
+			and Rules.insideFootprint(part.CFrame, part.Size, position, record.heightAbove)
+		then
+			return part, HOME_KIND, true
+		end
+	end
+	return nil, nil, false
+end
+
+-- What a station tells the charging curve (Vehicle/Energy.chargeRatePerSecond reads `kW` or `rate`): a public
+-- station's own attributes, or a home charger's kW (Config/Energy home.kW when it has none).
+local function stationAttributes(station: BasePart, home: boolean): { [string]: any }
+	if home then
+		return { kW = Rules.homeKW(station:GetAttribute(Houses.charger.kWAttribute), EnergyConfig.home.kW) }
+	end
+	return station:GetAttributes()
 end
 
 -- Every station location players can be sent to, by kind (MapLayout; built once).
@@ -372,9 +425,11 @@ end
 
 -- Charging ------------------------------------------------------------------------------------------------------
 
-local function setChargingAttributes(record: Record, rate: number?)
+-- `rate` nil: not charging. `costPerFull` is the running stop's price per full charge (what the client shows per %).
+local function setChargingAttributes(record: Record, rate: number?, costPerFull: number?)
 	record.model:SetAttribute(CHARGING_ATTRIBUTE, rate ~= nil)
 	record.model:SetAttribute(CHARGE_RATE_ATTRIBUTE, rate or 0)
+	record.model:SetAttribute(CHARGE_COST_ATTRIBUTE, if rate ~= nil then costPerFull else nil)
 end
 
 -- Ends the car's session. `why` picks the notice: "full", "noCash" (with the price of a percent), "left" or
@@ -393,7 +448,7 @@ local function stopSession(record: Record, why: string)
 		notify(record.owner, string.format(messages.full[kind], Economy.formatCash(session.spent)), "success")
 	elseif why == "noCash" then
 		record.blockedStation = session.station
-		local need = Economy.formatCash(math.ceil(Energy.costPerFraction(session.kind) / PERCENT))
+		local need = Economy.formatCash(math.ceil(session.costPerFull / PERCENT))
 		notify(record.owner, string.format(messages.noCash[kind], need), "warning")
 	elseif why == "left" and session.spent > 0 then
 		local text = string.format(messages.stopped[kind], percentOf(record.level), Economy.formatCash(session.spent))
@@ -405,10 +460,10 @@ end
 -- bills it in whole dollars. Stops the session at full, or once the player can't pay for more.
 local function chargeStep(record: Record, session: Session, dt: number)
 	local owner = record.owner
-	local attributes = session.station:GetAttributes()
+	local attributes = stationAttributes(session.station, session.home)
 	local rate = Energy.chargeRatePerSecond(session.kind, attributes, record.vehicleId, record.trim, record.level)
 	local budget = if owner ~= nil then EconomyService.getCash(owner) else 0
-	local step = Rules.chargeStep(record.level, rate, dt, Energy.costPerFraction(session.kind), session.owed, budget)
+	local step = Rules.chargeStep(record.level, rate, dt, session.costPerFull, session.owed, budget)
 	if step.bill > 0 then
 		if owner == nil or not EconomyService.trySpend(owner, step.bill, session.reason) then
 			stopSession(record, "noCash")
@@ -427,9 +482,16 @@ local function chargeStep(record: Record, session: Session, dt: number)
 	end
 end
 
--- Starts, continues or stops charging for a car at `station` (nil when it is on no pad). Returns true while it
--- charged this sample (so it doesn't also drain).
-local function handleStation(record: Record, station: BasePart?, kind: StationKind?, speed: number, dt: number): boolean
+-- Starts, continues or stops charging for a car at `station` (nil when it is on no pad; `home` for a house's home
+-- charger). Returns true while it charged this sample (so it doesn't also drain).
+local function handleStation(
+	record: Record,
+	station: BasePart?,
+	kind: StationKind?,
+	home: boolean,
+	speed: number,
+	dt: number
+): boolean
 	local session = record.session
 	if session ~= nil and session.station ~= station then
 		stopSession(record, "left")
@@ -458,6 +520,21 @@ local function handleStation(record: Record, station: BasePart?, kind: StationKi
 			end
 			return false
 		end
+		if
+			home
+			and not Rules.homeChargeAllowed(
+				station:GetAttribute(Houses.charger.ownerAttribute),
+				record.model:GetAttribute(OWNER_ATTRIBUTE),
+				record.testDrive
+			)
+		then
+			-- Someone else's home charger: only the house's owner charges here.
+			if record.wrongStation ~= station then
+				record.wrongStation = station
+				notify(record.owner, messages.homeNotYours, "info")
+			end
+			return false
+		end
 		if not Rules.canStartCharging(record.level, EnergyConfig.charging.startBelow) then
 			return false
 		end
@@ -474,15 +551,24 @@ local function handleStation(record: Record, station: BasePart?, kind: StationKi
 		local fresh: Session = {
 			station = station,
 			kind = kind,
+			home = home,
+			costPerFull = if home
+				then Rules.homeCostPerFull(
+					station:GetAttribute(Houses.charger.costAttribute),
+					EnergyConfig.home.costPerFull
+				)
+				else Energy.costPerFraction(kind),
 			reason = if kind == "FuelPump" then REASON_FUEL else REASON_CHARGE,
 			owed = 0,
 			spent = 0,
 		}
 		record.session = fresh
 		session = fresh
+		local attributes = stationAttributes(station, home)
 		setChargingAttributes(
 			record,
-			Energy.chargeRatePerSecond(kind, station:GetAttributes(), record.vehicleId, record.trim, record.level)
+			Energy.chargeRatePerSecond(kind, attributes, record.vehicleId, record.trim, record.level),
+			fresh.costPerFull
 		)
 		return true -- the first step adds energy at the next sample
 	end
@@ -618,6 +704,7 @@ local function register(model: Model): Record?
 		history = {},
 		movedAt = os.clock(),
 		speed = 0,
+		still = nil,
 		limp = false,
 		limpSince = nil,
 		limpCapped = false,
@@ -694,11 +781,17 @@ local function sampleCar(record: Record, now: number)
 	local dt = if previous ~= nil then now - previous.t else 0
 	local driving = isDriving(record)
 	record.speed = motion.speed
+	-- Still or moving, published only when it flips (MeetService counts a still car with its driver in it).
+	local still = motion.speed <= stillSpeed
+	if still ~= record.still then
+		record.still = still
+		record.model:SetAttribute(STILL_ATTRIBUTE, still)
+	end
 	-- Only look for a pad under a car that could start or is charging, or that was told about a pad it's on.
-	local station: BasePart?, kind: StationKind? = nil, nil
+	local station: BasePart?, kind: StationKind?, home = nil, nil, false
 	local onPad = record.session ~= nil or record.wrongStation ~= nil or record.blockedStation ~= nil
 	if onPad or motion.speed <= stillSpeed then
-		station, kind = stationUnder(record)
+		station, kind, home = stationUnder(record)
 	end
 	-- Smooth speed and climb (exponential, time constant Config sampling.smoothingSeconds) and take acceleration
 	-- from the smoothed speed, so sample-to-sample wobble isn't billed as launches and climbs. A restart (spawn,
@@ -713,7 +806,7 @@ local function sampleCar(record: Record, now: number)
 	record.smoothSpeed = smoothSpeed
 	record.smoothClimb = smoothClimb
 
-	local charging = handleStation(record, station, kind, motion.speed, dt)
+	local charging = handleStation(record, station, kind, home, motion.speed, dt)
 	if not charging and driving and not motion.jumped then
 		local perSecond = Energy.drainPerSecond(record.vehicleId, record.trim, smoothSpeed, smoothAccel, smoothClimb)
 		record.level = math.max(record.level - perSecond * motion.seconds, 0)
@@ -733,7 +826,13 @@ local function countHangout(dt: number)
 	local charging: { [Player]: string } = {}
 	for _, record in records do
 		local session, owner = record.session, record.owner
-		if session ~= nil and owner ~= nil and not record.testDrive and session.kind == "ChargerStall" then
+		if
+			session ~= nil
+			and owner ~= nil
+			and not record.testDrive
+			and not session.home
+			and session.kind == "ChargerStall"
+		then
 			local plaza = session.station:GetAttribute(PLAZA_ATTRIBUTE)
 			if type(plaza) == "string" and plaza ~= "" then
 				charging[owner] = plaza

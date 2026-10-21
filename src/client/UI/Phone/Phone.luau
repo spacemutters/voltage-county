@@ -21,6 +21,14 @@
 -- The Store app (Phase 12) is registered here the same way: its icon is UI/Store/StoreGlyph, with an accent dot while
 -- a one-time offer waits or the server says today's daily reward is ready (UI/Store/StoreState), and its screen
 -- (UI/Phone/StoreApp) reads its own state. Controllers/StoreController opens it with PhoneController.open("store").
+--
+-- The Feed and Emotes apps (Phase 13) are registered here the same way: their icons are FeedApp.Glyph and
+-- EmotesApp.Glyph, the Feed icon has an accent dot while new entries wait to be seen (Controllers/FeedController),
+-- and both screens read their own state; they get the sheet's onClose to put the phone away (after Directions, or once
+-- an emote starts).
+--
+-- The Home app (Phase 13) is registered the same way: its icon is HomeApp.Glyph and its screen (HomeApp.App) reads its
+-- own state (Controllers/HouseController).
 
 local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -28,7 +36,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React = require(ReplicatedStorage.Packages.React)
 
 local DesignerApp = require(script.Parent.DesignerApp)
+local EmotesApp = require(script.Parent.EmotesApp)
+local FeedApp = require(script.Parent.FeedApp)
 local Glyph = require(script.Parent.Glyphs)
+local HomeApp = require(script.Parent.HomeApp)
 local Kit = require(script.Parent.Kit)
 local Layout = require(script.Parent.Layout)
 local PhoneConfig = require(script.Parent.PhoneConfig)
@@ -39,9 +50,13 @@ local DesignerStore = require(script.Parent.Parent.Designer.DesignerStore)
 local StoreGlyph = require(script.Parent.Parent.Store.StoreGlyph)
 local StoreModel = require(script.Parent.Parent.Store.StoreModel)
 local StoreState = require(script.Parent.Parent.Store.StoreState)
+local FeedController = require(script.Parent.Parent.Parent.Controllers.FeedController)
 
 local DESIGNER_APP: PhoneConfig.AppId = "designer"
 local STORE_APP: PhoneConfig.AppId = "store"
+local FEED_APP: PhoneConfig.AppId = "feed"
+local EMOTES_APP: PhoneConfig.AppId = "emotes"
+local HOME_APP: PhoneConfig.AppId = "home"
 
 local e = React.createElement
 local colors = Theme.colors
@@ -150,6 +165,21 @@ local function AppTile(props: {
 					background = colors.panelRaised,
 					size = Vector2.new(grid.glyphSize, grid.glyphSize),
 				})
+				elseif props.app.id == FEED_APP then e(FeedApp.Glyph, {
+					color = colors.text,
+					background = colors.panelRaised,
+					size = Vector2.new(grid.glyphSize, grid.glyphSize),
+				})
+				elseif props.app.id == EMOTES_APP then e(EmotesApp.Glyph, {
+					color = colors.text,
+					background = colors.panelRaised,
+					size = Vector2.new(grid.glyphSize, grid.glyphSize),
+				})
+				elseif props.app.id == HOME_APP then e(HomeApp.Glyph, {
+					color = colors.text,
+					background = colors.panelRaised,
+					size = Vector2.new(grid.glyphSize, grid.glyphSize),
+				})
 				else e(Glyph, {
 					name = props.app.id,
 					color = colors.text,
@@ -194,6 +224,7 @@ local function Home(props: {
 	local designer = DesignerStore.useState()
 	local store = StoreState.useState()
 	local storeBadge = StoreModel.badge(store.offerDue, store.streak, StoreState.now())
+	local feed = FeedController.useFeed()
 	local tiles: { [string]: any } = {
 		Grid = e("UIGridLayout", {
 			CellSize = UDim2.fromOffset(grid.iconSize, grid.iconSize + Theme.spacing.xs + grid.labelHeight),
@@ -213,7 +244,8 @@ local function Home(props: {
 			badge = (app.id == "gps" and props.routeActive)
 				or (app.id == "fleet" and props.fleetReady)
 				or (app.id == DESIGNER_APP and designer.status == "ready")
-				or (app.id == STORE_APP and storeBadge),
+				or (app.id == STORE_APP and storeBadge)
+				or (app.id == FEED_APP and feed.unseen > 0),
 			onOpen = props.onOpenApp,
 			tileRef = if index == 1 then props.focusRef else nil,
 		})
@@ -419,6 +451,9 @@ local function Sheet(props: Props)
 				Screen = if props.app == DESIGNER_APP
 					then e(DesignerApp, {})
 					elseif props.app == STORE_APP then e(StoreApp, {})
+					elseif props.app == FEED_APP then e(FeedApp.App, { onClose = props.onClose })
+					elseif props.app == EMOTES_APP then e(EmotesApp.App, { onClose = props.onClose })
+					elseif props.app == HOME_APP then e(HomeApp.App, { onClose = props.onClose })
 					elseif inApp then props.body
 					else e(Home, {
 						width = Layout.width(rect),

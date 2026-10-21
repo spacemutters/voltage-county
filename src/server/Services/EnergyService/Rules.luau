@@ -2,7 +2,8 @@
 -- The pure decisions EnergyService makes (docs/phase-5-contracts.md "Server"): how a car moved between two
 -- samples, whether it stands in a station's footprint, one step of charging with its bill, which low-energy
 -- alert a new level sets off, limp mode, who earns the plaza hangout bonus, and which station is nearest by
--- road. No Roblox services and no state of their own, so tests/EnergyService.spec checks them in Edit mode.
+-- road. Phase 13 adds the home charger's rules (only the owner's car, its kW and price; tests/Houses.spec). No
+-- Roblox services and no state of their own, so tests/EnergyService.spec checks them in Edit mode.
 
 local PERCENT = 100
 -- Levels are float fractions: a level that is a whole percent up to float rounding counts as that percent.
@@ -234,6 +235,43 @@ end
 -- began at `limpSince`, whichever comes first. A client that ignores limp mode gets no longer than that.
 function Rules.limpCapDue(speed: number, capSpeed: number, limpSince: number, now: number, grace: number): boolean
 	return speed <= capSpeed or now - limpSince >= grace
+end
+
+-- Home chargers (Phase 13) -----------------------------------------------------------------------------------
+
+-- A usable positive number from an attribute, or nil.
+local function positive(value: any): number?
+	if type(value) == "number" and finite(value) and value > 0 then
+		return value
+	end
+	return nil
+end
+
+-- Whether a car may charge at a home charger (docs/phase-13-contracts.md "Houses"): only a car whose owner
+-- (`carOwner`, the car's OwnerUserId) is the charger's owner (`chargerOwner`, the UserId of the player who claimed
+-- the house), never a dealership test drive, and never a car with no owner (a stand-in the server spawned). Any
+-- real, non-zero UserId counts: Studio's Local Server playtests give players negative ones (-1, -2, ...).
+function Rules.homeChargeAllowed(chargerOwner: any, carOwner: any, testDrive: boolean): boolean
+	if testDrive or type(chargerOwner) ~= "number" or not finite(chargerOwner) or chargerOwner == 0 then
+		return false
+	end
+	return carOwner == chargerOwner
+end
+
+-- A home charger's power (kW): its own `kW` attribute (HouseService sets it from the owner's upgrades) when it is a
+-- usable number, else `baseKW` (Config/Energy home.kW).
+function Rules.homeKW(value: any, baseKW: number): number
+	return positive(value) or baseKW
+end
+
+-- What a full charge costs at a home charger: its own price (its CostPerFull attribute, from the owner's upgrades)
+-- when it is a usable number, never more than `basePrice` (Config/Energy home.costPerFull); else basePrice. A
+-- price of 0 (free) is allowed.
+function Rules.homeCostPerFull(value: any, basePrice: number): number
+	if type(value) == "number" and finite(value) and value >= 0 then
+		return math.min(value, basePrice)
+	end
+	return basePrice
 end
 
 -- Alerts and limp mode ---------------------------------------------------------------------------------------
