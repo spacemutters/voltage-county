@@ -98,6 +98,7 @@ local function attributes(fields: {
 	limp: boolean?,
 	charging: boolean?,
 	chargeRate: number?,
+	chargeCost: number?,
 }): EnergyController.Attributes
 	return {
 		vehicleId = fields.vehicleId or "ohm_spark",
@@ -107,6 +108,7 @@ local function attributes(fields: {
 		limp = fields.limp == true,
 		charging = fields.charging == true,
 		chargeRate = fields.chargeRate,
+		chargeCost = fields.chargeCost,
 	}
 end
 
@@ -364,6 +366,23 @@ return function(t: Harness.Api)
 
 			local noLevel = EnergyController.viewFor(attributes({ charging = true }), "mph", nil)
 			t.expect(noLevel.charging).toBe(nil)
+		end)
+
+		t.it("shows the price the server bills for the stop over the nearest station's (a home charger)", function()
+			local home = EnergyConfig.home.costPerFull
+			local view = EnergyController.viewFor(
+				attributes({ energy = 0.42, charging = true, chargeRate = 0.01, chargeCost = home }),
+				"mph",
+				"ChargerStall" -- the nearest public stall, which costs more
+			)
+			assert(view.charging, "a charging card")
+			t.expect(view.charging.costText).toBe(EnergyController.costText(home))
+			t.expect(home < Energy.costPerFraction("ChargerStall")).toBe(true)
+
+			local noStation =
+				EnergyController.viewFor(attributes({ energy = 0.42, charging = true, chargeCost = home }), "mph", nil)
+			assert(noStation.charging, "a charging card")
+			t.expect(noStation.charging.costText).toBe(EnergyController.costText(home))
 		end)
 	end)
 

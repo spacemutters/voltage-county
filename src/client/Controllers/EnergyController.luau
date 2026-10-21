@@ -9,8 +9,9 @@
 --                   or kilometres per ProfileController), amber under Config/Energy.warningLevel, red under
 --                   criticalLevel, and "Limp mode" once the car is empty (Vehicle/Chassis does the limiting).
 --   charging card   while the car's Charging attribute is set: the level filling, the rate (ChargeRate, a fraction
---                   per second) and the cost per % (Vehicle/Energy.costPerFraction for the station the car stands
---                   at: the nearest compatible MapLayout station).
+--                   per second) and the cost per %: the price the server bills for this stop (Config/Energy
+--                   attributes.chargeCostPerFull, which also covers a house's home charger), or, while that is
+--                   missing, Vehicle/Energy.costPerFraction for the nearest compatible MapLayout station.
 --   on empty        Net "EnergyAlert" { level, stationId? }: the GPS routes to the nearest compatible station
 --                   (GpsController.setDestination) and a notice says so (NotifyController). The server sends its
 --                   own "out of energy" notice too; this one names where the GPS is going.
@@ -46,6 +47,7 @@ local ATTRIBUTES = {
 	limp = "Limp", -- true while the car is held to the limp speed
 	charging = "Charging", -- true while the car charges or fuels at a station
 	chargeRate = "ChargeRate", -- fraction per second while charging
+	chargeCost = EnergyConfig.attributes.chargeCostPerFull, -- $ per full charge of the stop, while charging
 	vehicleId = "VehicleId",
 	trim = "Trim",
 }
@@ -74,6 +76,7 @@ export type Attributes = {
 	limp: boolean,
 	charging: boolean,
 	chargeRate: number?,
+	chargeCost: number?, -- $ per full charge the server bills for this stop (nil: not published)
 }
 
 -- What the HUD shows for the driven car right now.
@@ -193,7 +196,8 @@ local function kindOf(attributes: Attributes): EnergyKind?
 end
 
 -- What the HUD shows for a car with these attributes, in the player's `units` ("mph" | "kph"), charging at a
--- `station` kind (for the cost; nil: unknown). The energy is nil for a car the catalog doesn't know; the level
+-- `station` kind (for the cost when the attributes carry none; nil: unknown). The cost the server published
+-- (chargeCost) wins over the station kind's. The energy is nil for a car the catalog doesn't know; the level
 -- (and range) stay nil until the server publishes Energy; the charging card shows only while Charging is set
 -- and the level is known.
 function EnergyController.viewFor(attributes: Attributes, units: string, station: StationKind?): State
@@ -219,11 +223,15 @@ function EnergyController.viewFor(attributes: Attributes, units: string, station
 
 	local charging: Hud.Charging? = nil
 	if attributes.charging and shown ~= nil then
+		local published = finiteNumber(attributes.chargeCost)
 		charging = {
 			kind = kind,
 			level = shown,
 			rateText = EnergyController.rateText(finiteNumber(attributes.chargeRate) or 0),
-			costText = if station then EnergyController.costText(Energy.costPerFraction(station)) else nil,
+			costText = if published ~= nil
+				then EnergyController.costText(published)
+				elseif station then EnergyController.costText(Energy.costPerFraction(station))
+				else nil,
 		}
 	end
 	return { energy = energy, charging = charging }
@@ -243,6 +251,7 @@ local function readAttributes(model: Model): Attributes
 		limp = model:GetAttribute(ATTRIBUTES.limp) == true,
 		charging = model:GetAttribute(ATTRIBUTES.charging) == true,
 		chargeRate = finiteNumber(model:GetAttribute(ATTRIBUTES.chargeRate)),
+		chargeCost = finiteNumber(model:GetAttribute(ATTRIBUTES.chargeCost)),
 	}
 end
 
@@ -288,8 +297,8 @@ local function refresh()
 	end
 	local attributes = readAttributes(model)
 	if attributes.charging then
-		-- Which station this is decides the cost per %; look it up once per charging stop.
-		if stationKind == nil and attributes.vehicleId then
+		-- Without a published price, which station this is decides the cost per %; look it up once per stop.
+		if stationKind == nil and attributes.chargeCost == nil and attributes.vehicleId then
 			stationKind = EnergyController.stationKindAt(model:GetPivot().Position, attributes.vehicleId)
 		end
 	else
@@ -316,6 +325,7 @@ for _, name: string in
 		ATTRIBUTES.limp,
 		ATTRIBUTES.charging,
 		ATTRIBUTES.chargeRate,
+		ATTRIBUTES.chargeCost,
 		ATTRIBUTES.vehicleId,
 		ATTRIBUTES.trim,
 	}

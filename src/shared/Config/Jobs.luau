@@ -99,6 +99,9 @@ export type Level = {
 	xp: number,
 	payMultiplier: number,
 	unlocks: { string }, -- unlock ids (see unlockNames)
+	-- Phase 13: the job title a player at this level wears on their nametag ("Freight Hauler II"), when this job is
+	-- their best (Config/Social.bestTitle). Without one the nametag shows the job's displayName.
+	title: string?,
 }
 
 export type Range = { min: number, max: number }
@@ -198,35 +201,36 @@ local freightPayPerStud = freightRate / Units.mphToStuds(FREIGHT_MPH)
 
 -- Levels: the same ladder for both job types for now. "extraOffer" lists one more offer of that type;
 -- "longFares" (rideshare) adds cross-county fares; "extraStop" (delivery) adds a drop to every route.
+-- Each level's `title` is what the nametag shows when that job is the player's best (Phase 13).
 local RIDESHARE_LEVELS: { Level } = {
-	{ xp = 0, payMultiplier = 1, unlocks = {} },
-	{ xp = 500, payMultiplier = 1.05, unlocks = { "longFares" } },
-	{ xp = 1500, payMultiplier = 1.1, unlocks = { "extraOffer" } },
-	{ xp = 3500, payMultiplier = 1.15, unlocks = {} },
-	{ xp = 7000, payMultiplier = 1.25, unlocks = {} },
+	{ xp = 0, payMultiplier = 1, unlocks = {}, title = "Rideshare Driver" },
+	{ xp = 500, payMultiplier = 1.05, unlocks = { "longFares" }, title = "Rideshare Driver II" },
+	{ xp = 1500, payMultiplier = 1.1, unlocks = { "extraOffer" }, title = "Rideshare Driver III" },
+	{ xp = 3500, payMultiplier = 1.15, unlocks = {}, title = "Rideshare Driver IV" },
+	{ xp = 7000, payMultiplier = 1.25, unlocks = {}, title = "Rideshare Driver V" },
 }
 local DELIVERY_LEVELS: { Level } = {
-	{ xp = 0, payMultiplier = 1, unlocks = {} },
-	{ xp = 500, payMultiplier = 1.05, unlocks = { "extraStop" } },
-	{ xp = 1500, payMultiplier = 1.1, unlocks = { "extraOffer" } },
-	{ xp = 3500, payMultiplier = 1.15, unlocks = {} },
-	{ xp = 7000, payMultiplier = 1.25, unlocks = {} },
+	{ xp = 0, payMultiplier = 1, unlocks = {}, title = "Courier" },
+	{ xp = 500, payMultiplier = 1.05, unlocks = { "extraStop" }, title = "Courier II" },
+	{ xp = 1500, payMultiplier = 1.1, unlocks = { "extraOffer" }, title = "Courier III" },
+	{ xp = 3500, payMultiplier = 1.15, unlocks = {}, title = "Courier IV" },
+	{ xp = 7000, payMultiplier = 1.25, unlocks = {}, title = "Courier V" },
 }
 -- Towing and freight use the same thresholds, so "level 3" means the same XP in every job the freight license
 -- counts (tests/FreightJobs.spec checks it).
 local TOWING_LEVELS: { Level } = {
-	{ xp = 0, payMultiplier = 1, unlocks = {} },
-	{ xp = 500, payMultiplier = 1.05, unlocks = {} },
-	{ xp = 1500, payMultiplier = 1.1, unlocks = { "extraOffer" } },
-	{ xp = 3500, payMultiplier = 1.15, unlocks = {} },
-	{ xp = 7000, payMultiplier = 1.25, unlocks = {} },
+	{ xp = 0, payMultiplier = 1, unlocks = {}, title = "Tow Operator" },
+	{ xp = 500, payMultiplier = 1.05, unlocks = {}, title = "Tow Operator II" },
+	{ xp = 1500, payMultiplier = 1.1, unlocks = { "extraOffer" }, title = "Tow Operator III" },
+	{ xp = 3500, payMultiplier = 1.15, unlocks = {}, title = "Tow Operator IV" },
+	{ xp = 7000, payMultiplier = 1.25, unlocks = {}, title = "Tow Operator V" },
 }
 local FREIGHT_LEVELS: { Level } = {
-	{ xp = 0, payMultiplier = 1, unlocks = {} },
-	{ xp = 500, payMultiplier = 1.05, unlocks = {} },
-	{ xp = 1500, payMultiplier = 1.1, unlocks = { "extraOffer" } },
-	{ xp = 3500, payMultiplier = 1.15, unlocks = {} },
-	{ xp = 7000, payMultiplier = 1.25, unlocks = {} },
+	{ xp = 0, payMultiplier = 1, unlocks = {}, title = "Freight Hauler" },
+	{ xp = 500, payMultiplier = 1.05, unlocks = {}, title = "Freight Hauler II" },
+	{ xp = 1500, payMultiplier = 1.1, unlocks = { "extraOffer" }, title = "Freight Hauler III" },
+	{ xp = 3500, payMultiplier = 1.15, unlocks = {}, title = "Freight Hauler IV" },
+	{ xp = 7000, payMultiplier = 1.25, unlocks = {}, title = "Freight Hauler V" },
 }
 
 local rideshare: JobDef = {

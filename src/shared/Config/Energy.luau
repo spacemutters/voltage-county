@@ -137,6 +137,27 @@ local Energy = {
 		FuelPump = 400,
 	} :: { [StationKind]: number },
 
+	-- Phase 13: the home charger on the floor of a claimed house's garage (Config/Houses, Services/HouseService).
+	-- Only the owner's own car charges there (Services/EnergyService); it charges like a ChargerStall of `kW`. The
+	-- rate sits between the county's public stalls: faster than the slowest (150 kW), slower than the fastest
+	-- (350 kW DC): 10→80 % in about 80 s at 200 kW (Config/Houses' faster-charger upgrade raises the kW, still
+	-- under 350). It is cheaper than a public stall: $200 a full charge ($2 per %, a multiple of 100 like
+	-- costPerFull); Config/Houses' solar roof scales that down. No hangout bonus at home.
+	home = {
+		kW = 200,
+		costPerFull = 200,
+	},
+
+	-- Phase 13: car attributes Services/EnergyService publishes besides docs/phase-5-contracts.md's.
+	attributes = {
+		-- $ for a full charge at the station of the stop that is running (a home charger's own price, or the public
+		-- station kind's), set with Charging and cleared when it ends; Controllers/EnergyController shows it per %.
+		chargeCostPerFull = "ChargeCostPerFull",
+		-- true while the car stands still (at or under sampling.stationStillMph), false while it moves; set only when
+		-- that flips. Services/MeetService counts a still car with its driver in it as parked.
+		still = "Still",
+	},
+
 	-- The charging-plaza hangout bonus: while at least minPlayers players charge at stalls with the same
 	-- `plaza` attribute, each earns cashPerMinute for the time they charge together, paid every interval
 	-- seconds (EconomyService.add, reason "hangout"). A small trickle: a 60-90 s top-up earns back a quarter to

@@ -1,8 +1,8 @@
 # Phase 13 contracts
 
 Houses and social roleplay (PLAN.md "Phase 13" is the spec). Read `CLAUDE.md` and the earlier contracts
-(`docs/phase-1..12-contracts.md`). The map already has 20 `HousePlot` locations on four courts in Riverside and the
-`MeetSpot`s from Phase 7.
+(`docs/phase-1..12-contracts.md`). The map already has 26 `HousePlot` locations in Riverside (four courts plus
+Sycamore Lane and Elm Street; all claimable) and the `MeetSpot`s from Phase 7.
 
 ## Houses (owner: house helper)
 - `Config/Houses.luau`: the house greybox (built per plot at runtime, outside `Workspace.Map.Generated`), the
