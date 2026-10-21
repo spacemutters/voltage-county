@@ -16,9 +16,11 @@
 --                                    mods add uid (the car), design (the car's mods after this one, its summary on
 --                                    top) and preview = { before, after } (mod specs; before is nil for a first mod).
 --   DesignChoice { requestId, choice }   for the design waiting: "build" saves it (answers { ok, message, uid,
---                                    designUid }: uid is the new car, for SpawnOwned), "reroll" asks again (free
---                                    while rerollsLeft > 0, else a new paid design; answers { ok, message,
---                                    requestId } and a DesignResult follows), "discard" lets it go.
+--                                    designUid }: uid is the new car, for SpawnOwned), "reroll" asks again from the
+--                                    same words, only while rerollsLeft > 0 (it's free; answers { ok, message,
+--                                    requestId } and a DesignResult follows; with none left it is refused as
+--                                    "noReroll": nothing paid ever draws again, see docs/COMPLIANCE.md section 2),
+--                                    "discard" lets it go.
 --   ReportDesign { uid, reason }     reports a custom or modded car: a car out in the world (its OwnedUid or
 --                                    DesignUid), one of the player's own cars, or their design still waiting (its
 --                                    requestId). Logged; once per car per player, Config/Designer.report limits.
@@ -169,7 +171,6 @@ export type Answer = { [string]: any }
 type Pending = {
 	requestId: string,
 	reservationId: string, -- what this design is paid with
-	nextReservation: string?, -- a paid re-roll's reservation while it runs
 	free: boolean,
 	cost: number,
 	classId: string?,
@@ -227,7 +228,7 @@ local generations: { [string]: Generation } = {} -- by design uid
 local reportedBy: { [Player]: { [string]: boolean } } = {}
 local reportCounts: { [Player]: number } = {}
 local recentReports: { ReportEntry } = {}
-local random = Random.new()
+local triedHide: { [Player]: boolean } = {} -- warned once about a non-admin HideDesign (no log flood)
 
 local salt: string? = nil
 local saltLoading = false
@@ -257,9 +258,18 @@ function DesignerService.rerollsFor(free: boolean): number
 	return if free then Designer.prices.rerollsFree else Designer.prices.rerollsPaid
 end
 
--- What re-rolling costs with `rerollsLeft` free re-rolls left: nothing while one is left, else a new paid design.
-function DesignerService.rerollCost(rerollsLeft: number): number
-	return if rerollsLeft > 0 then FREE else Designer.prices.newCar
+-- Whether a design with `rerollsLeft` free re-rolls left may be re-rolled. Re-rolls are only ever free: a re-roll
+-- skips the design service's cache and can change the personality (so the stats), so a paid one would be a paid
+-- random draw (CLAUDE.md hard rule 6). Different words are a new design (DesignCar), and the same words again give
+-- the same car (the cache).
+function DesignerService.canReroll(rerollsLeft: number): boolean
+	return rerollsLeft > 0
+end
+
+-- The salted player hash sent to the design service (Config/Designer.salt): SHA-256 of the salt and the UserId.
+-- Dev/ForgetPlayer uses the same to find a player's rows there.
+function DesignerService.hashFor(saltValue: string, userId: number): string
+	return Sha256.hex(saltValue .. tostring(userId))
 end
 
 -- What the player reads for a request that ended with `status`. `refusal` is the designer's own friendly words
@@ -345,18 +355,16 @@ function DesignerService.canDesign(data: any, classId: any, kit: any): (boolean,
 	return false, "classLocked"
 end
 
--- A "surprise me" class the player may design, picked at random from kit.surpriseClasses.
-function DesignerService.surpriseClass(data: any, kit: any, rng: Random): string
-	local options: { string } = {}
+-- The class a design falls back to when the AI picked one the player may not design: the first in
+-- kit.surpriseClasses order they may, else the first there. Never random: a paid design never lands on a class by
+-- chance (CLAUDE.md hard rule 6).
+function DesignerService.surpriseClass(data: any, kit: any): string
 	for _, classId in kit.surpriseClasses do
 		if DesignerService.canDesign(data, classId, kit) then
-			table.insert(options, classId)
+			return classId
 		end
 	end
-	if #options == 0 then
-		return kit.surpriseClasses[1]
-	end
-	return options[rng:NextInteger(1, #options)]
+	return kit.surpriseClasses[1]
 end
 
 local function fallbackName(classId: string): string
@@ -844,7 +852,7 @@ local function depsFor(player: Player): Deps
 		end,
 		userHash = function(): string?
 			local value = loadSalt()
-			return if value ~= nil then Sha256.hex(value .. tostring(player.UserId)) else nil
+			return if value ~= nil then DesignerService.hashFor(value, player.UserId) else nil
 		end,
 		call = callBackend,
 		stats = SpecBuilder.stats,
@@ -856,7 +864,7 @@ local function depsFor(player: Player): Deps
 		pickClass = function(): string
 			local dataService = DataService
 			local data = if dataService ~= nil then dataService.get(player) else nil
-			return DesignerService.surpriseClass(data, DesignKit, random)
+			return DesignerService.surpriseClass(data, DesignKit)
 		end,
 		log = function(message: string)
 			warn(`{LOG} {player.Name}: {message}`)
@@ -985,6 +993,10 @@ local function startGeneration(player: Player, pending: Pending)
 			print(`{LOG} {player.Name}: design {designUid} keeps its kit look ({why})`)
 			return
 		end
+		if why ~= nil then
+			-- Config/Perf meshes.rejectUncounted is off and the triangles couldn't be counted (see Config/Perf).
+			print(`{LOG} {player.Name}: design {designUid} takes its generated look uncounted ({why})`)
+		end
 		record.look = look
 		if record.built then
 			deliverLook(designUid, record)
@@ -1079,18 +1091,8 @@ local function runDesign(player: Player, pending: Pending, reroll: boolean)
 		pending.prompt = outcome.prompt
 		pending.filtered = true
 	end
-	local nextReservation = pending.nextReservation
-	pending.nextReservation = nil
 
 	if DesignerService.settles(outcome.status) == "hold" and outcome.spec ~= nil then
-		if nextReservation ~= nil then
-			-- A paid re-roll worked: the last result's credits are spent, the new reservation pays for this one.
-			CreditsService.spend(player, pending.reservationId)
-			pending.reservationId = nextReservation
-			pending.free = false
-			pending.cost = Designer.prices.newCar
-			pending.rerollsLeft = DesignerService.rerollsFor(false)
-		end
 		dropDesign(pending.designUid)
 		pending.spec = outcome.spec
 		pending.stats = outcome.stats
@@ -1101,12 +1103,8 @@ local function runDesign(player: Player, pending: Pending, reroll: boolean)
 	end
 
 	if reroll and pending.spec ~= nil then
-		-- The re-roll failed: the last result stays, and so does what it was paid with.
-		if nextReservation ~= nil then
-			CreditsService.refund(player, nextReservation)
-		else
-			pending.rerollsLeft += 1
-		end
+		-- The re-roll failed: the last result stays, and so does what it was paid with and the free re-roll.
+		pending.rerollsLeft += 1
 		sendDesign(player, pending, messages.rerollFailed)
 		return
 	end
@@ -1161,7 +1159,6 @@ local function onDesignCar(player: Player, payload: any): Answer
 	local pending: Pending = {
 		requestId = HttpService:GenerateGUID(false),
 		reservationId = reservationId,
-		nextReservation = nil,
 		free = free,
 		cost = cost,
 		classId = classId,
@@ -1230,17 +1227,11 @@ local function onDesignChoice(player: Player, payload: any): Answer
 		if not DesignerService.backendReady() then
 			return refuse("closed", messages.closed)
 		end
-		local cost = DesignerService.rerollCost(pending.rerollsLeft)
-		if pending.rerollsLeft > 0 then
-			pending.rerollsLeft -= 1
-		else
-			-- No free re-roll left: a re-roll is a new paid design, paid only if it works.
-			local nextReservation = CreditsService.reserve(player, cost, "design")
-			if nextReservation == nil then
-				return outOfCredits(cost)
-			end
-			pending.nextReservation = nextReservation
+		if not DesignerService.canReroll(pending.rerollsLeft) then
+			-- No free re-roll left, and none is ever sold: the player discards and changes the words instead.
+			return refuse("noReroll", messages.noReroll)
 		end
+		pending.rerollsLeft -= 1
 		pending.busy = true
 		task.spawn(runDesign, player, pending, true)
 		return answer(true, messages.rerolling, { requestId = pending.requestId })
@@ -1687,6 +1678,11 @@ end
 -- hideDesign action both end here. Yields (DataStore).
 function DesignerService.hide(player: Player, uid: string): Answer
 	if not isAdmin(player) then
+		-- Warn once per player: each warning goes into AdminService's log, so a flood would push real entries out.
+		if triedHide[player] then
+			return refuse("notAdmin", messages.notAdmin)
+		end
+		triedHide[player] = true
 		warn(`{LOG} {player.Name} ({player.UserId}) tried HideDesign without being an admin`)
 		return refuse("notAdmin", messages.notAdmin)
 	end
@@ -1859,9 +1855,6 @@ local function onRelease(player: Player)
 	if pending ~= nil or job ~= nil then
 		dataService.update(player, function(data: Types.PlayerData)
 			if pending ~= nil then
-				if pending.nextReservation ~= nil then
-					CreditsService.refundIn(data, pending.nextReservation)
-				end
 				-- A result already shown (even with a re-roll still running) is theirs: build it.
 				local refusal = if pending.spec ~= nil
 					then saveDesign(data, pending, HttpService:GenerateGUID(false), os.time())
@@ -1925,6 +1918,7 @@ function DesignerService:Start()
 	Players.PlayerRemoving:Connect(function(player: Player)
 		reportedBy[player] = nil
 		reportCounts[player] = nil
+		triedHide[player] = nil
 	end)
 end
 

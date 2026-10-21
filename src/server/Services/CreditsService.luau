@@ -30,6 +30,7 @@
 -- remote. No polling: everything runs on requests and the join.
 
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -51,9 +52,12 @@ local CreditsService = {}
 
 local DataService: DataServiceModule? = nil
 
--- Reservations this server made and hasn't settled yet, so the join clean-up never refunds a request that started
--- in the moment between a player's data loading and the clean-up running.
-local reservedHere: { [string]: boolean } = {}
+-- Reservations this server made and hasn't settled yet: id -> the Player it was made for. The join clean-up keeps
+-- the joining Player's own (a request that started in the moment between their data loading and the clean-up
+-- running) and refunds everything else in the save, including what an earlier session of theirs on this same server
+-- left unsettled: that session's requests belong to a Player who has left, so they can never settle (DataService
+-- refuses updates for them). An entry goes when it settles or its Player leaves.
+local reservedHere: { [string]: Player } = {}
 
 -- Ledger: pure rules on one credits table -------------------------------------------------------------------
 
@@ -250,7 +254,7 @@ local function reserveAs(player: Player, amount: number, id: string, what: strin
 	if not ok then
 		return nil
 	end
-	reservedHere[id] = true
+	reservedHere[id] = player
 	print(`{LOG} {player.Name}: reserved {what} for {why} ({id})`)
 	return id
 end
@@ -336,6 +340,17 @@ local function onDevCredits(player: Player, payload: any): Reply
 	return { ok = true, message = string.format(Designer.messages.devCredits, balance), balance = balance }
 end
 
+-- The ids of the reservations this server made for `player` (this Player object) and hasn't settled yet.
+local function heldBy(player: Player): { [string]: boolean }
+	local own: { [string]: boolean } = {}
+	for id, owner in reservedHere do
+		if owner == player then
+			own[id] = true
+		end
+	end
+	return own
+end
+
 -- Boot ------------------------------------------------------------------------------------------------------
 
 function CreditsService:Init()
@@ -352,11 +367,18 @@ function CreditsService:Start()
 	dataService.onLoaded(function(player: Player, _data: Types.PlayerData)
 		local refunded = 0
 		change(player, function(credits: Credits): boolean
-			refunded = Ledger.clearStale(credits, reservedHere)
+			refunded = Ledger.clearStale(credits, heldBy(player))
 			return true
 		end)
 		if refunded > 0 then
 			print(`{LOG} {player.Name}: refunded {refunded} reservation(s) left by an earlier session`)
+		end
+	end)
+	-- Leave: forget what this Player still held (DesignerService refunds it into the save as they go; anything it
+	-- couldn't is refunded by the clean-up on their next join, on this server or another).
+	Players.PlayerRemoving:Connect(function(player: Player)
+		for id in heldBy(player) do
+			reservedHere[id] = nil
 		end
 	end)
 end

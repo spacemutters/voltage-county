@@ -5,10 +5,26 @@
 --
 --   GeneratedAdapter.build(meshPrompt, kitModel) -> (Model?, why?)   yields up to
 --       Config/Designer.generation.timeoutSeconds: asks GenerationService for a body and fits it onto a copy of
---       the design's kit build. nil (and why) on any error, a moderation refusal, a missing part or the time
---       running out: the caller then keeps the kit build. Never errors.
+--       the design's kit build. nil (and why) on any error, a moderation refusal, a missing part, a body over the
+--       triangle budget or the time running out: the caller then keeps the kit build. Never errors.
 --   GeneratedAdapter.generate(prompt, timeoutSeconds) -> (Model?, why?)   the raw GenerationService call
+--   GeneratedAdapter.accept(generated, kitModel, countMesh?) -> (Model?, why?)
+--       the triangle budget, then fit: what build does with a generated model. A look with a why was taken
+--       without a triangle count (Config/Perf meshes.rejectUncounted off); the why says which mesh.
 --   GeneratedAdapter.fit(generated, kitModel) -> (Model?, why?)            the mapping onto the model contract
+--   GeneratedAdapter.triangles(generated, countMesh?) -> (number?, why?)   the triangles the look would keep
+--   GeneratedAdapter.withinBudget(generated, countMesh?) -> (boolean, why?)
+--   GeneratedAdapter.meshTriangles(part) -> number?                        one MeshPart's triangles (nil: unreadable)
+--   GeneratedAdapter.editableTriangles(editableMesh) -> number?            an EditableMesh's triangles
+--   countMesh (default meshTriangles) counts one MeshPart; tests/GeneratedAdapter.spec passes its own.
+--
+-- The triangle budget (Config/Perf meshes; PLAN.md Phase 14 "Budgets"): the meshes the look keeps (every MeshPart
+-- but the four generated wheels) may have at most Config/Perf meshes.maxTriangles triangles together, at the
+-- mesh's full detail. They are counted through the EditableMesh behind a freshly generated MeshPart
+-- (MeshContent.Object), or an editable copy loaded just to count (AssetService:CreateEditableMeshAsync); a face
+-- with n corners is n - 2 triangles. Plain parts count as none (a block or cylinder is a few dozen). A look over
+-- the budget is refused before it is fitted, and so is one with a mesh that can't be read while
+-- Config/Perf meshes.rejectUncounted is on (while it's off, that look is taken and accept/build still say why).
 --
 -- How the generated body is mapped (the Phase 1 spike: Car5 results have a "body" and four named wheels with
 -- usable centres, and come out about 2 studs long):
@@ -31,13 +47,18 @@
 -- 2026-10-20) and in src/server/Dev/GenerationSpike.luau: GenerateModelAsync(inputs, schema) with
 -- { TextPrompt = ... } and { PredefinedSchema = "Car5" }, called inside pcall.
 
+local AssetService = game:GetService("AssetService")
 local RunService = game:GetService("RunService")
 
 local Designer = require(script.Parent.Parent.Config.Designer)
+local Perf = require(script.Parent.Parent.Config.Perf)
+
+export type MeshCounter = (part: MeshPart) -> number?
 
 local GeneratedAdapter = {}
 
 local CONFIG = Designer.generation
+local MESHES = Perf.meshes
 local BODY_FOLDER = "Body"
 local LIGHTS_FOLDER = "Lights"
 -- Car5's guaranteed wheel part names, by the contract's wheel ids, and the contract's hub attachments.
@@ -122,6 +143,84 @@ local function isWheelPart(part: Instance, wheels: { [string]: Instance }): bool
 		end
 	end
 	return false
+end
+
+-- The triangles in an EditableMesh: n - 2 for each face with n corners (generated and imported meshes are all
+-- triangles; a face made with AddFace may not be). Falls back to one triangle a face when the corners can't be
+-- read; nil when nothing can.
+function GeneratedAdapter.editableTriangles(editableMesh: any): number?
+	local ok, total = pcall(function(): number
+		local count = 0
+		for _, face in editableMesh:GetFaces() do
+			count += math.max(#editableMesh:GetFaceVertices(face) - 2, 0)
+		end
+		return count
+	end)
+	if ok then
+		return total
+	end
+	local okFaces, faces = pcall(function(): number
+		return #editableMesh:GetFaces()
+	end)
+	return if okFaces then faces else nil
+end
+
+-- One MeshPart's triangles at full detail: the EditableMesh behind a freshly generated part (MeshContent.Object),
+-- else an editable copy of its saved mesh loaded just to count (yields; destroyed after). nil for a part with no
+-- readable mesh behind it.
+function GeneratedAdapter.meshTriangles(part: MeshPart): number?
+	local okObject, object = pcall(function(): any
+		local content = (part :: any).MeshContent
+		return if content ~= nil then content.Object else nil
+	end)
+	if okObject and object ~= nil and typeof(object) == "Instance" and object:IsA("EditableMesh") then
+		return GeneratedAdapter.editableTriangles(object)
+	end
+	if part.MeshId == "" then
+		return nil
+	end
+	local okCopy, copy = pcall(function(): any
+		return (AssetService :: any):CreateEditableMeshAsync((part :: any).MeshContent)
+	end)
+	if not okCopy or copy == nil then
+		return nil
+	end
+	local count = GeneratedAdapter.editableTriangles(copy)
+	pcall(function()
+		copy:Destroy()
+	end)
+	return count
+end
+
+-- The triangles of every mesh the look keeps from `generated` (all its MeshParts but the four generated wheels,
+-- when they can be found). nil and why when one of them can't be counted.
+function GeneratedAdapter.triangles(generated: Model, countMesh: MeshCounter?): (number?, string?)
+	local counter: MeshCounter = countMesh or GeneratedAdapter.meshTriangles
+	local wheels = generatedWheels(generated)
+	local total = 0
+	for _, descendant in generated:GetDescendants() do
+		if not descendant:IsA("MeshPart") or (wheels ~= nil and isWheelPart(descendant, wheels)) then
+			continue
+		end
+		local count = counter(descendant :: MeshPart)
+		if count == nil then
+			return nil, `couldn't count the triangles in "{descendant.Name}"`
+		end
+		total += count
+	end
+	return total, nil
+end
+
+-- Whether the generated body is inside the triangle budget (see the header), and why not.
+function GeneratedAdapter.withinBudget(generated: Model, countMesh: MeshCounter?): (boolean, string?)
+	local total, why = GeneratedAdapter.triangles(generated, countMesh)
+	if total == nil then
+		return not MESHES.rejectUncounted, why
+	end
+	if total > MESHES.maxTriangles then
+		return false, `the generated body has {total} triangles; the budget is {MESHES.maxTriangles}`
+	end
+	return true, nil
 end
 
 -- Asks GenerationService for a Car5 model. Yields until it answers or `timeoutSeconds` pass, whichever is first;
@@ -265,8 +364,26 @@ function GeneratedAdapter.fit(generated: Model, kitModel: Model): (Model?, strin
 	return look, nil
 end
 
+-- What build does with a generated model: refuses it when it is over the triangle budget (or can't be counted, see
+-- the header), else fits it onto a copy of `kitModel`. Never errors; `generated` is left for the caller to destroy.
+function GeneratedAdapter.accept(generated: Model, kitModel: Model, countMesh: MeshCounter?): (Model?, string?)
+	local okCount, within, budgetWhy = pcall(GeneratedAdapter.withinBudget, generated, countMesh)
+	if not okCount then
+		return nil, tostring(within)
+	end
+	if not within then
+		return nil, budgetWhy
+	end
+	local ok, look, fitWhy = pcall(GeneratedAdapter.fit, generated, kitModel)
+	if not ok then
+		return nil, tostring(look)
+	end
+	-- fit gives a why only without a look; a look taken uncounted keeps the budget's why, so the server log shows it.
+	return look, fitWhy or budgetWhy
+end
+
 -- Generates a body from `meshPrompt` and fits it onto a copy of `kitModel`. Never errors: nil and why on any
--- failure (including generation switched off in Config/Designer).
+-- failure (including generation switched off in Config/Designer, and a body over the triangle budget).
 function GeneratedAdapter.build(meshPrompt: string, kitModel: Model): (Model?, string?)
 	if not CONFIG.enabled then
 		return nil, "generation is switched off"
@@ -278,12 +395,9 @@ function GeneratedAdapter.build(meshPrompt: string, kitModel: Model): (Model?, s
 	if generated == nil then
 		return nil, why
 	end
-	local ok, look, fitWhy = pcall(GeneratedAdapter.fit, generated, kitModel)
+	local look, acceptWhy = GeneratedAdapter.accept(generated, kitModel)
 	generated:Destroy()
-	if not ok then
-		return nil, tostring(look)
-	end
-	return look, fitWhy
+	return look, acceptWhy
 end
 
 return GeneratedAdapter

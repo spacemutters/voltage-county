@@ -31,7 +31,7 @@
 --   * Body folder (visual parts), Lights folder: TailL, TailR, Brake, Reverse, each holding a disabled SpotLight
 --     named Light (DriveController's lamp switching works on them).
 --   * Every part but the Chassis is Massless, unanchored, CanCollide/CanTouch/CanQuery off, and welded to the
---     Chassis or to the wheel or leg it is parented to. At most 60 parts.
+--     Chassis or to the wheel or leg it is parented to. At most Config/Perf parts.model parts.
 --
 -- Building is idempotent: a rebuild replaces the old model and produces the same instances every time. A model
 -- without the Greybox attribute (artist-made) is never overwritten unless build() gets { replaceArt = true }.
@@ -51,7 +51,7 @@ local Driving = require(ReplicatedStorage.Shared.Config.Driving)
 local Trailers = require(ReplicatedStorage.Shared.Config.Trailers)
 
 local GREYBOX_ATTRIBUTE = "Greybox" -- marks models this builder owns; artist models never carry it
-local MAX_PARTS = 60 -- greybox budget per model (PLAN.md Phase 14)
+local MAX_PARTS = require(ReplicatedStorage.Shared.Config.Perf).parts.model -- the part budget per model (Config/Perf)
 local TOLERANCE = 1e-3
 
 -- Chassis surface, like a car's (Dev/VehicleBuilder).

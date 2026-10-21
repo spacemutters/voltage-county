@@ -88,8 +88,10 @@ local StoreStyle = {
 		usesTitle = "What credits buy",
 		useMod = "%s: an AI mod on a car you own", -- "1 credit"
 		useCar = "%s: a brand-new car the AI designs for you", -- "2 credits"
-		rerollOne = "%s, with a free re-roll",
-		rerollMany = "%s, with %d free re-rolls",
+		-- "Redesign", never "re-roll". A redesign only ever comes free with a design; none is sold on its own
+		-- (docs/COMPLIANCE.md section 2).
+		rerollOne = "%s, with a free redesign",
+		rerollMany = "%s, with %d free redesigns",
 		packsTitle = "Credit packs",
 		bonus = "+%s bonus",
 		packNote = "Credits change how your cars look. They never make a car faster than its class.",

@@ -1,5 +1,6 @@
 # Quality gate. Run before every commit: .\scripts\check.ps1
-# Steps: --!strict on every file -> brand names -> StyLua check -> Selene -> Rojo build.
+# Steps: --!strict on every file -> brand names -> security table -> streaming settings -> StyLua check -> Selene ->
+# Rojo build.
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 $env:PATH = "$HOME\.rokit\bin;$env:PATH"
@@ -55,6 +56,12 @@ if ($missing) {
 	$missing | ForEach-Object { Write-Host "  no phrase in $brandModule for the pattern: $_" }
 	Fail "brand list in step (add the missing names to $brandModule, ROT13-encoded)"
 }
+
+# Every remote in src/shared/Net.luau has its row in docs/SECURITY.md, and no row names a remote that isn't there.
+Run "security table" { & "$PSScriptRoot\check-security-table.ps1" }
+
+# default.project.json's Workspace streaming values match Config/Perf.streaming (scripts can't read them in a place).
+Run "streaming settings" { & "$PSScriptRoot\check-streaming.ps1" }
 
 if (-not (Test-Path Packages)) { Run "wally install" { wally install } }
 Run "stylua" { stylua --check src tests }

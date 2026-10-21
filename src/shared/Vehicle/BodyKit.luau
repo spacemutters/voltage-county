@@ -31,7 +31,7 @@ local Driving = require(Shared.Config.Driving)
 local Trailers = require(Shared.Config.Trailers)
 local Vehicles = require(Shared.Config.Vehicles)
 
-local MAX_PARTS = 60 -- greybox budget per model (PLAN.md Phase 14)
+local MAX_PARTS = require(Shared.Config.Perf).parts.model -- the part budget per model (Config/Perf)
 
 -- Chassis surface (model contract). The suspension is raycast, so the box only touches the world in a crash or
 -- a rollover. Its density comes from Config/Driving.chassisDensity.

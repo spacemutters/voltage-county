@@ -11,8 +11,9 @@
 --   hideDesign  hides design or mod `ref` everywhere through DesignerService's own hide path (DesignerService.hide,
 --               the one the HideDesign remote uses; the panel falls back to that remote only if this answers
 --               "unavailable").
--- Every action an admin takes, allowed or refused, goes into the log. Cash and credit grants are not here: they stay
--- Studio-only through the dev remotes (DevSetCash, DevCredits), which the admin panel offers only in Studio.
+-- Every action an admin takes, allowed or refused, goes into the log; a non-admin's first try does too (and warns),
+-- their later tries are refused without a line, so nobody can flush the log. Cash and credit grants are not here:
+-- they stay Studio-only through the dev remotes (DevSetCash, DevCredits), which the admin panel offers only in Studio.
 --
 -- The rules are pure (isAdminFor, decide, Ring) so tests/Admin.spec checks them in Edit mode. No polling: the log
 -- fills from LogService.MessageOut and the actions themselves.
@@ -167,6 +168,7 @@ end
 -- The live log ------------------------------------------------------------------------------------------------
 
 local ring = AdminService.newRing(LOGS_KEPT)
+local triedWithoutRights: { [Player]: boolean } = {} -- non-admins already logged trying AdminAction (once each)
 
 local function log(kind: string, text: string)
 	ring.push({ at = os.time(), kind = kind, text = AdminService.clip(text) })
@@ -232,6 +234,11 @@ local function onAdminAction(player: Player, payload: any): Reply
 	local subject = if target ~= nil then `{target.Name} ({target.UserId})` else tostring(targetUserId or ref or "")
 	if not allowed then
 		if code == "notAdmin" then
+			-- Their first try is enough to know: logging every one would let a player push the real entries out.
+			if triedWithoutRights[player] then
+				return reply(false, code)
+			end
+			triedWithoutRights[player] = true
 			warn(`{LOG} {player.Name} ({player.UserId}) tried AdminAction {action} without being an admin`)
 		end
 		log("admin", `{player.Name} ({player.UserId}): {action} {subject} refused ({code})`)
@@ -290,6 +297,9 @@ end
 
 function AdminService:Start()
 	Net.onServerInvoke("AdminAction", onAdminAction)
+	Players.PlayerRemoving:Connect(function(player: Player)
+		triedWithoutRights[player] = nil
+	end)
 	LogService.MessageOut:Connect(function(message: string, messageType: Enum.MessageType)
 		if messageType == Enum.MessageType.MessageWarning then
 			log("warning", message)

@@ -16,7 +16,8 @@
 --            releases the lock.
 --   elsewhere if another server takes the session (the player joined somewhere else), we kick them here.
 --   shutdown game:BindToClose runs the beforeRelease listeners for everyone, then ends every open session;
---            ProfileStore holds the server open until they've saved.
+--            ProfileStore holds the server open until they've saved. This close handler is bound before
+--            ProfileStore loads, so it runs ahead of ProfileStore's own (which would end the sessions first).
 --
 -- Stores: live servers use Config/Data.storeName. Studio uses studioStoreName so playtests never touch live
 -- player data, and when DataStores aren't reachable (Studio with API access off, or no internet) it uses
@@ -32,8 +33,22 @@ local RunService = game:GetService("RunService")
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 local Types = require(ReplicatedStorage.Shared.Types)
 local Migrations = require(script.Migrations)
-local ProfileStore = require(script.Parent.Parent.Vendor.ProfileStore)
 local Template = require(script.Template)
+
+-- Shutdown order. This service's close handler is bound here, before ProfileStore is even loaded (ProfileStore binds
+-- its own close handler as it loads), so it is the first to run: every beforeRelease listener writes while the
+-- sessions are still open, then this service ends each session itself. Bound after ProfileStore's, it could find
+-- every session already ended by ProfileStore, and those last writes (a car's energy level, a design waiting to be
+-- built) would be refused. Start sets the handler; until then closing leaves everything to ProfileStore.
+local closeHandler: (() -> ())? = nil
+game:BindToClose(function()
+	local handler = closeHandler
+	if handler ~= nil then
+		handler()
+	end
+end)
+
+local ProfileStore = require(script.Parent.Parent.Vendor.ProfileStore)
 
 local LOG = "[DataService]"
 local NOT_READY = "NotReady" -- ProfileStore.DataStoreState before it has checked DataStore access
@@ -302,9 +317,12 @@ end
 
 local function onClose()
 	-- Last writes first (beforeRelease), while every session is still open.
+	local open = 0
 	for player in profiles do
+		open += 1
 		runBeforeRelease(player)
 	end
+	print(`{LOG} closing: last writes done for {open} player(s); saving and releasing their sessions`)
 	closing = true
 	-- ProfileStore saves and releases every active session on close and keeps the server open until they're
 	-- done. Ending them here as well makes the order explicit: no update lands after its final save, and
@@ -478,7 +496,7 @@ end
 
 function DataService:Start()
 	Players.PlayerRemoving:Connect(onPlayerRemoving)
-	game:BindToClose(onClose)
+	closeHandler = onClose -- bound at the top of this module, ahead of ProfileStore's own close handler
 
 	resolveStore() -- may wait briefly in Studio; players who join meanwhile are picked up below
 	Players.PlayerAdded:Connect(loadPlayer)

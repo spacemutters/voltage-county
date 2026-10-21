@@ -70,7 +70,8 @@ local Designer = {
 	salt = { store = "DesignerSalt", key = "salt" },
 
 	-- Prices in Design Credits (PLAN.md §4). The first new car is free; after that a new car costs `newCar` with
-	-- `rerollsPaid` free re-rolls included, and an AI mod on a car you own costs `mod`. Credits are reserved when a
+	-- `rerollsPaid` free re-rolls ("redesigns") included, and an AI mod on a car you own costs `mod`. Re-rolls are
+	-- never sold on their own (docs/COMPLIANCE.md section 2). Credits are reserved when a
 	-- request starts, spent once a design comes back (whether it is then built or discarded) and refunded on a
 	-- refusal, a moderation failure, an error or a timeout.
 	prices = {
@@ -134,9 +135,11 @@ local Designer = {
 	},
 
 	-- Shown before the first request, in the Design Studio and on the mod screen (PLAN.md "Disclosure").
-	disclosure = "An AI designs these cars. Describe your idea and an AI turns it into an original car. "
+	-- Roblox's Creator Terms ("AI Technologies & AI Tools") ask for: not a person, AI-made, may be inaccurate.
+	disclosure = "An AI designs these cars, not a person. Describe your idea and the AI turns it into an original car. "
+		.. "It can get things wrong, so your car may not match every word. "
 		.. "What you type is checked for safety first and sent to our design service without your name. "
-		.. "Designs are always original: no real car brands.",
+		.. "Never type personal info like your real name or address. Designs are always original: no real car brands.",
 
 	-- What the player reads. Plain words. %s / %d fill-ins are noted on each line.
 	messages = {
@@ -144,7 +147,7 @@ local Designer = {
 		off = "The design studio is closed right now. Try again later.",
 		closed = "The design studio is opening soon. Check back later!",
 		busy = "Your last request is still being worked on. Wait for it to finish first.",
-		pendingChoice = "Build, re-roll or discard your last design first.",
+		pendingChoice = "Build, redesign or discard your last design first.",
 		working = "Designing your car...",
 		modWorking = "Working on your mod...",
 		empty = "Describe your car first.",
@@ -166,9 +169,9 @@ local Designer = {
 		ready = "Your design is ready!",
 		built = "Your %s is in your garage.", -- the design's name
 		discarded = "Design discarded.",
-		rerolling = "Re-rolling your design...",
-		noReroll = "There's no free re-roll left for this design.",
-		rerollFailed = "The re-roll didn't work, so here's your design again. Your free re-roll is still there.",
+		rerolling = "Redesigning your car...",
+		noReroll = "There's no free redesign left for this design.",
+		rerollFailed = "The redesign didn't work, so here's your design again. Your free redesign is still there.",
 		noPending = "That design isn't waiting anymore.",
 		modReady = "Mod done: %s", -- the mod's summary
 		modNothing = "The designer didn't find anything to change. Try describing it differently. "

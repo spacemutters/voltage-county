@@ -30,6 +30,11 @@ export type UsageStats = {
 export const HOUR_MS = 60 * 60 * 1000;
 export const DAY_MS = 24 * HOUR_MS;
 
+// How long the usage log keeps a request (docs/privacy.html promises 90 days; backend/README.md "How long records
+// are kept"). Each warm instance deletes older rows at most once every PRUNE_EVERY_MS (handler.ts).
+export const USAGE_RETENTION_DAYS = 90;
+export const PRUNE_EVERY_MS = HOUR_MS;
+
 export type Windows = { hourAgo: Date; dayAgo: Date; dayStart: Date };
 
 export function windowsAt(nowMs: number): Windows {

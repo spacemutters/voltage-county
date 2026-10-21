@@ -29,7 +29,7 @@
       "$ignoreUnknownInstances": true,
       "$properties": {
         "StreamingEnabled": true,
-        "StreamingMinRadius": 256,
+        "StreamingMinRadius": 512,
         "StreamingTargetRadius": 2048,
         "StreamOutBehavior": "Opportunistic",
         "StreamingIntegrityMode": "Disabled"

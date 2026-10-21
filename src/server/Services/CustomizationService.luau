@@ -658,7 +658,9 @@ function CustomizationService.setPlate(player: Player, uid: string, text: string
 	if not updated or not saved then
 		return reply(false, if updated then messages.notOwned else messages.saveFailed)
 	end
-	if shown ~= nil and normalized ~= nil then
+	-- The filter yielded: a car put away meanwhile is gone for good (its Destroying already fired, so an entry made
+	-- now would never be cleared). It shows the saved text when it next comes out.
+	if shown ~= nil and normalized ~= nil and car.Parent ~= nil then
 		rememberPlate(car, normalized, shown)
 	end
 	refresh(player, car, uid)

@@ -4,7 +4,7 @@
 --   * the free new car works exactly once per player (and comes back when its request fails)
 --   * reservations are spent on success and refunded on a refusal, a moderation failure, an error, a timeout or an
 --     unusable reply, each exactly once
---   * the re-roll is free once per paid design; after that a re-roll is a new paid design
+--   * the re-roll is free once per paid design; after that there is none (re-rolls are never sold)
 --   * nothing can drive the balance below zero (or past the cap), and damaged saves are repaired
 -- It drives the real rules: CreditsService.Ledger on a credits table and DesignerService's request pipelines with
 -- fake text filters and a fake backend (no Roblox services, no network), settled the way the service settles them
@@ -490,12 +490,12 @@ return function(t: Harness.Api)
 	end)
 
 	t.describe("Re-rolls", function()
-		t.it("come free once with a paid design, then cost a new design", function()
+		t.it("come free once with a paid design, and are never sold", function()
 			t.expect(DesignerService.rerollsFor(false)).toBe(PRICES.rerollsPaid)
 			t.expect(PRICES.rerollsPaid).toBe(1)
 			t.expect(DesignerService.rerollsFor(true)).toBe(PRICES.rerollsFree)
-			t.expect(DesignerService.rerollCost(1)).toBe(0)
-			t.expect(DesignerService.rerollCost(0)).toBe(PRICES.newCar)
+			t.expect(DesignerService.canReroll(1)).toBe(true)
+			t.expect(DesignerService.canReroll(0)).toBe(false)
 
 			-- A paid design and its free re-roll cost the price of one design.
 			local wallet = credits(10)
@@ -504,7 +504,7 @@ return function(t: Harness.Api)
 			local rerollsLeft = DesignerService.rerollsFor(false)
 			local first = DesignerService.designPipeline(deps, DESIGN_INPUT)
 			t.expect(first.status).toBe("ok")
-			t.expect(DesignerService.rerollCost(rerollsLeft)).toBe(0)
+			t.expect(DesignerService.canReroll(rerollsLeft)).toBe(true)
 			rerollsLeft -= 1
 			local again = DesignerService.designPipeline(
 				deps,
@@ -516,8 +516,8 @@ return function(t: Harness.Api)
 			-- The re-roll sends the already-filtered prompt and says it's a re-roll.
 			t.expect(calls[2].body.prompt).toBe(first.prompt)
 			t.expect(calls[2].body.reroll).toBe(true)
-			-- The next re-roll is a new paid design.
-			t.expect(DesignerService.rerollCost(rerollsLeft)).toBe(PRICES.newCar)
+			-- No paid re-roll after that (a re-roll skips the cache, so a paid one would be a paid draw).
+			t.expect(DesignerService.canReroll(rerollsLeft)).toBe(false)
 		end)
 	end)
 

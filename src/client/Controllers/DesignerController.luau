@@ -19,9 +19,11 @@
 --                sheet can be closed meanwhile; the answer shows as a notice and waits in the studio.
 --   result       a preview built here with Vehicle/SpecBuilder from the spec (or the server's preview model), the
 --                name, tagline and stats (SpecBuilder.stats): Build / Re-roll / Discard -> Net DesignChoice.
---                Re-roll is free while the design has a free one (the server's `rerollFree`; else Config/Designer
---                prices.rerollsPaid with a paid design, rerollsFree with the free car); after that it makes a new
---                paid design, so it needs the credits. Discard asks first. After Build, Drive it spawns the car (Net SpawnOwned) when the server said which.
+--                Re-roll ("Free redesign") shows only while the design has a free one (the server's `rerollFree`;
+--                else Config/Designer prices.rerollsPaid with a paid design, rerollsFree with the free car). It is
+--                never sold: after that the note says to discard and change the words (a new design). Discard asks
+--                first and keeps the prompt. After Build, Drive it spawns the car (Net SpawnOwned) when the server
+--                said which.
 --   mods         "Mod with AI": the car as it is (the player's car out in the world, or a design rebuilt from its
 --                spec), the prompt and the cost -> Net ModCar { uid, prompt }; the result shows before and after
 --                (Vehicle/ModBuilder on a copy of the car, or the server's preview).
@@ -395,7 +397,7 @@ local function contentFor(sheet: Sheet, widths: StudioSheet.Widths): (Primitives
 				model = finished.model,
 				stats = finished.stats,
 				rerollFree = finished.rerollFree,
-				rerollCost = DesignerModel.creditsText(DesignerModel.prices().newCar),
+				newDesignCost = DesignerModel.creditsText(DesignerModel.prices().newCar),
 				busy = resultBusy,
 				widths = widths,
 				onBuild = DesignerController.build,
@@ -1198,17 +1200,8 @@ function DesignerController.reroll()
 	if finished == nil or view.busy ~= nil then
 		return
 	end
-	local free = finished.rerollFree
-	if not free and not DesignerModel.canAfford("design", credits(), DesignerModel.prices()) then
-		-- Once the free re-roll is used, a re-roll is a new paid design.
-		local sheet = view.sheet
-		if sheet ~= nil then
-			sheet.step = "outOfCredits"
-			sheet.kind = "design"
-			sheet.back = "result"
-			render()
-		end
-		return
+	if not finished.rerollFree then
+		return -- re-rolls are only ever free (the button isn't shown once it's used)
 	end
 	choose("reroll", function(ok: boolean, reply: { [string]: any }?)
 		if not ok or view.finished ~= finished then
@@ -1218,8 +1211,8 @@ function DesignerController.reroll()
 		local request: Request = {
 			kind = "design",
 			requestId = nil,
-			paid = if free then finished.paid else true,
-			rerolls = if free then finished.rerolls + 1 else 0,
+			paid = finished.paid,
+			rerolls = finished.rerolls + 1,
 			uid = nil,
 			carName = "",
 			modKind = "kit",

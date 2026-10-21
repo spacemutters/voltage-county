@@ -33,6 +33,7 @@ export interface Store {
 	getSettings(): Promise<Settings>;
 	usageStats(query: UsageQuery): Promise<UsageStats>;
 	recordUsage(row: UsageRow): Promise<void>;
+	pruneUsage(before: Date): Promise<void>; // deletes usage rows created before `before` (the 90-day cleanup)
 	getCached(kind: RequestKind, promptHash: string, carKey: string): Promise<unknown>; // null when not cached
 	putCached(kind: RequestKind, promptHash: string, carKey: string, spec: unknown): Promise<void>;
 	isBlocked(promptHash: string): Promise<boolean>;
@@ -71,6 +72,10 @@ export class MemoryStore implements Store {
 
 	async recordUsage(row: UsageRow): Promise<void> {
 		this.usage.push(row);
+	}
+
+	async pruneUsage(before: Date): Promise<void> {
+		this.usage = this.usage.filter((row) => row.createdAt.getTime() >= before.getTime());
 	}
 
 	async getCached(kind: RequestKind, promptHash: string, carKey: string): Promise<unknown> {
@@ -196,6 +201,12 @@ export class SupabaseStore implements Store {
 			created_at: row.createdAt.toISOString(),
 		});
 		fail(`${TABLES.usage} insert`, error);
+	}
+
+	// The vc_designer_usage_time index (created_at) covers this delete.
+	async pruneUsage(before: Date): Promise<void> {
+		const { error } = await this.client.from(TABLES.usage).delete().lt("created_at", before.toISOString());
+		fail(`${TABLES.usage} delete`, error);
 	}
 
 	async getCached(kind: RequestKind, promptHash: string, carKey: string): Promise<unknown> {

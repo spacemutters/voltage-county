@@ -878,26 +878,26 @@ All numbers are clamped in code: `body` values run 0–1, `stance.rideHeight` ru
 ### Phase 14 — Performance, security, soft launch
 
 **Tasks**
-- [ ] Budgets:
+- [ ] Budgets (desktop 60 fps, the part and triangle budgets and the streaming values done; the phone check and setting the streaming values in Studio are Davis's):
   - 60 fps on desktop and 30+ fps on a mid-range phone.
   - Greybox cars ≤ 60 parts; final and generated car meshes ≤ 20k triangles at the highest LOD.
   - Streaming radius tuned for the highway.
-- [ ] `docs/SECURITY.md`:
+- [x] `docs/SECURITY.md`:
   - every remote and backend endpoint, with its validator, its rate limit, and the abuse it prevents
   - fuzz each remote with random payloads via `execute_luau`
-- [ ] Backend review:
+- [x] Backend review (rotation is built and live; the first real rotation is Davis's, LAUNCH step 11):
   - no secrets in the repo
   - shared secret rotated
   - limits and spend cap verified
   - Supabase tables locked to the service role (RLS on)
-- [ ] Data safety review: migrations, ProfileStore session locks, `pendingGrants` recovery, credit reservations.
-- [ ] Compliance pass:
+- [x] Data safety review: migrations, ProfileStore session locks, `pendingGrants` recovery, credit reservations.
+- [x] Compliance pass:
   - all player and AI text filtered
   - no paid random items
   - no off-platform links
   - licensed audio only
   - confirm paid AI generation fits Roblox's monetization policies, and that the store shows exactly what a credit buys
-- [ ] Launch checklist for Davis:
+- [x] Launch checklist for Davis (`docs/LAUNCH.md`):
   - an original icon and thumbnails
   - a title and description with no real brand names (unless licensed)
   - the maturity questionnaire (its approval is also needed for billboard ads)
@@ -907,7 +907,7 @@ All numbers are clamped in code: `body` values run 0–1, `stance.rideHeight` ru
   - a private beta with friends, then public
 
 **Acceptance**
-- [ ] The security table is complete, and fuzzing causes no server errors.
+- [x] The security table is complete, and fuzzing causes no server errors.
 - [ ] Performance targets are hit in Studio device simulation, and Davis confirms on a real phone.
 
 **Stop.** Soft launch.

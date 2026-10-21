@@ -9,7 +9,8 @@ the game can build, or a friendly "we can't make that one". Only the game server
 You need: a Supabase project, an Anthropic API key, a Vercel project and the Roblox Creator Dashboard.
 
 1. **Supabase tables.** Open your Supabase project, go to **SQL Editor**, paste all of
-   `supabase/migrations/0001_designer.sql` and click **Run**. Then go to **Project Settings > API** and copy the
+   `supabase/migrations/0001_designer.sql` and click **Run**; then do the same with
+   `supabase/migrations/0002_vc_sequence_privileges.sql`. Then go to **Project Settings > API** and copy the
    **Project URL** and the **service_role** key (the secret one, not the anon key).
 2. **Anthropic key.** In the Anthropic Console, create an API key for this game.
 3. **Shared secret.** Make one long random password that the game and the backend share. In PowerShell:
@@ -26,13 +27,17 @@ You need: a Supabase project, an Anthropic API key, a Vercel project and the Rob
    | `SUPABASE_SERVICE_ROLE_KEY` | the service_role key from step 1 |
    | `ROBLOX_SHARED_SECRET` | the secret from step 3 |
 
+   Only while you're changing the secret, a fifth one, `ROBLOX_SHARED_SECRET_PREVIOUS` (the old secret), keeps
+   game servers that still have the old one working. The steps are in `docs/SECURITY.md`, "Rotating the game
+   password".
+
    Then deploy: from the `backend` folder run `vercel --prod --yes --scope spacemutters-projects` (or press
    **Redeploy** in Vercel). Note the address it gives you, for example `voltage-designer.vercel.app`.
 5. **Roblox secret.** In the Creator Dashboard open the experience, go to **Secrets**, click **Create Secret**:
    name `designer_key`, value = the secret from step 3, domain = your Vercel address from step 4 (without
    `https://`). In **Experience Settings > Security**, turn on **Allow HTTP Requests**.
-6. **Studio testing.** Studio can't read the Dashboard's secrets. In Studio open **Game Settings > Security** and
-   add a local secret in the box there, in this form (your own secret and address):
+6. **Studio testing.** Studio can't read the Dashboard's secrets. In Studio open **File > Experience Settings >
+   Security** and add a local secret under **Local Secrets**, in this form (your own secret and address):
    ```json
    { "designer_key": ["<the secret from step 3>", "voltage-designer.vercel.app"] }
    ```
@@ -66,6 +71,16 @@ Players are never charged for a stopped request: the game refunds their credits.
 
 The same words, however they're capitalized or punctuated, are refused from then on.
 
+## How long records are kept
+
+- `vc_designer_usage` (one row per request: the salted player hash, the filtered description, the result, tokens
+  and cost) keeps **90 days**. The backend deletes older rows itself, at most once an hour while it's running
+  (`USAGE_RETENTION_DAYS` in `lib/limits.ts`). A failed delete is logged and tried again later; it never fails a
+  request. The privacy page (`public/privacy.html`, served at `/privacy`) promises this.
+- `vc_designs` (the cache of finished designs, by description, with no player hash) is kept, so the same words
+  give the same car.
+- `vc_designer_settings` and `vc_designer_blocklist` are kept until you change them.
+
 ## Run the prompt suite
 
 The suite sends 90 test prompts (normal cars, real brand names, famous movie cars, offensive requests, tricks,
@@ -95,7 +110,8 @@ are saved in `tests/suite/results/` (not committed).
 
 ### HTTP contract (the game server is the only caller)
 
-`POST /api/design` and `POST /api/mod`, header `x-api-key: <ROBLOX_SHARED_SECRET>`, JSON body:
+`POST /api/design` and `POST /api/mod`, header `x-api-key: <ROBLOX_SHARED_SECRET>` (or, during a rotation,
+`<ROBLOX_SHARED_SECRET_PREVIOUS>`), JSON body:
 
 - design: `{ kitVersion, userHash, prompt, classId?, reroll? }`. `classId` missing or null = "surprise me".
 - mod: `{ kitVersion, userHash, prompt, kind: "kit" | "catalog", classId, current, reroll? }`. `current` is the

@@ -240,11 +240,11 @@ local REMOTES: { [string]: Spec } = {
 		burst = 3,
 		perSecond = 0.5,
 	},
-	-- Custom plate text (filtered by TextService on the server before anyone sees it).
+	-- Custom plate text (filtered by TextService on the server before anyone sees it). "" puts the standard plate back.
 	SetPlate = {
 		kind = "function",
 		direction = "toServer",
-		validate = Check.shape({ uid = Check.string(UID_LENGTH), text = Check.string(PLATE_LENGTH) }),
+		validate = Check.shape({ uid = Check.string(UID_LENGTH), text = Check.string(PLATE_LENGTH, 0) }),
 		burst = 2,
 		perSecond = 0.2,
 	},
@@ -632,6 +632,25 @@ local REMOTES: { [string]: Spec } = {
 		direction = "toServer",
 		validate = Check.shape({ amount = Check.integer(0, MAX_DEV_CASH) }),
 		burst = 3,
+		perSecond = 1,
+	},
+	-- Studio only (Phase 14): the fuzz test's server side. "begin" starts recording server errors and snapshots the
+	-- caller's saved data; "finish" stops and returns the errors and what changed in the data (the server refuses it
+	-- outside Studio).
+	DevFuzz = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ action = Check.oneOf({ "begin", "finish" }) }),
+		burst = 4,
+		perSecond = 1,
+	},
+	-- Studio only (Phase 14): the perf test's server heartbeat sampler. "start" begins sampling the server's frame
+	-- times, "stop" ends it and returns the numbers (the server refuses it outside Studio).
+	DevPerf = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ action = Check.oneOf({ "start", "stop" }) }),
+		burst = 4,
 		perSecond = 1,
 	},
 }
