@@ -536,7 +536,7 @@ return function(t: Harness.Api)
 				end
 				local level = Customization.nearestTintLevel(1)
 				-- The leanest wheel style that isn't stock: the busy ones take any car past the part budget with
-				-- extras on (docs/PROGRESS.md open issues; the shop doesn't hold looks to the budget yet).
+				-- extras on (a dressed car has its own cap, Config/Perf parts.dressed, checked by tests/PartBudget.spec).
 				local styled: string? = nil
 				for _, style in Customization.wheels do
 					local parts = Appearance.wheelFaceParts(style.id)

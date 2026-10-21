@@ -240,11 +240,11 @@ local REMOTES: { [string]: Spec } = {
 		burst = 3,
 		perSecond = 0.5,
 	},
-	-- Custom plate text (filtered by TextService on the server before anyone sees it).
+	-- Custom plate text (filtered by TextService on the server before anyone sees it). "" puts the standard plate back.
 	SetPlate = {
 		kind = "function",
 		direction = "toServer",
-		validate = Check.shape({ uid = Check.string(UID_LENGTH), text = Check.string(PLATE_LENGTH) }),
+		validate = Check.shape({ uid = Check.string(UID_LENGTH), text = Check.string(PLATE_LENGTH, 0) }),
 		burst = 2,
 		perSecond = 0.2,
 	},

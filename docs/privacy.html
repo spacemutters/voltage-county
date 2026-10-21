@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Voltage County Privacy</title>
+<meta name="description" content="What the Roblox game Voltage County saves, what its AI Car Designer sends, and how long anything is kept.">
+<style>
+  :root {
+    --bg: #f7f7f4;
+    --card: #ffffff;
+    --text: #1c1d21;
+    --muted: #4a4d55;
+    --line: #dcdcd6;
+    --accent: #0a5fd1;
+    --accent-soft: #e7f0fd;
+    --good: #156b3a;
+    --good-soft: #e5f4ea;
+    --stop: #9b2c1f;
+    --stop-soft: #fbeae7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111216;
+      --card: #1a1c22;
+      --text: #ececef;
+      --muted: #b3b6bf;
+      --line: #2e313a;
+      --accent: #7fb2ff;
+      --accent-soft: #1b2a44;
+      --good: #8fd9ab;
+      --good-soft: #17301f;
+      --stop: #f2a596;
+      --stop-soft: #3a1d18;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 56px; }
+  header { margin-bottom: 28px; }
+  .eyebrow {
+    margin: 0 0 6px;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 8px; font-size: 32px; line-height: 1.2; letter-spacing: -0.01em; }
+  h2 { margin: 36px 0 10px; font-size: 22px; line-height: 1.3; }
+  h3 { margin: 18px 0 6px; font-size: 18px; }
+  p, li { color: var(--text); }
+  .updated { margin: 0; color: var(--muted); font-size: 15px; }
+  ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 6px 0; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin: 14px 0;
+  }
+  .short { background: var(--accent-soft); border-color: transparent; }
+  .short h2 { margin-top: 0; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+  .pair .card { margin: 0; }
+  .sent { background: var(--good-soft); border-color: transparent; }
+  .sent h3 { color: var(--good); margin-top: 0; }
+  .never { background: var(--stop-soft); border-color: transparent; }
+  .never h3 { color: var(--stop); margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 14px; }
+  tr:last-child td { border-bottom: 0; }
+  .muted { color: var(--muted); }
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
+  @media (max-width: 560px) {
+    body { font-size: 16px; }
+    h1 { font-size: 27px; }
+    h2 { font-size: 20px; }
+    .pair { grid-template-columns: 1fr; }
+    .card { padding: 16px; }
+    th, td { padding: 8px 6px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">Voltage County on Roblox</p>
+    <h1>Privacy</h1>
+    <p class="updated">Last updated October 21, 2026</p>
+  </header>
+
+  <section class="card short" aria-labelledby="short">
+    <h2 id="short">The short version</h2>
+    <ul>
+      <li>Your game progress is saved in Roblox's own storage, under your Roblox account.</li>
+      <li>We never ask for your name, email, age, photos or where you live.</li>
+      <li>The AI Car Designer gets only your car description, after Roblox's filter has checked it. It never gets your
+        name, your Roblox account or your chat.</li>
+      <li>Design records with a player code are deleted after 90 days.</li>
+      <li>We don't sell anything about you, show you ads based on you, or build profiles of players.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="saved">
+    <h2 id="saved">What the game saves</h2>
+    <p>Everything below is kept in Roblox's own storage (Roblox calls it data stores), linked to your Roblox player
+      number so the game can load it when you come back.</p>
+    <div class="card">
+      <table>
+        <thead><tr><th scope="col">What</th><th scope="col">Why</th></tr></thead>
+        <tbody>
+          <tr><td>Your cash, cars, car looks, custom plate text, house upgrades, job levels, season progress and daily
+            reward streak</td><td>So your progress is there next time</td></tr>
+          <tr><td>Your Design Credits and the cars you designed with the AI</td><td>So you keep what you made
+            and what you paid for</td></tr>
+          <tr><td>The last 100 purchase receipts (a purchase number, not payment details)</td><td>So a purchase is
+            never given twice or lost</td></tr>
+          <tr><td>Your best drag strip time each week</td><td>For the weekly leaderboard, which shows your Roblox
+            display name</td></tr>
+          <tr><td>The serial number of any limited car or wrap you own</td><td>So each number belongs to one
+            player</td></tr>
+          <tr><td>The day you last watched a reward ad</td><td>To keep it to one a day</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Payments are handled by Roblox. We only learn that a purchase happened, so the game can give you the item.
+      Chat is Roblox's own chat: the game doesn't store it, and nothing you say in chat goes to the AI. If you report
+      a car, the report goes to that game server's log and a short list for our moderators. It isn't saved with your
+      progress.</p>
+  </section>
+
+  <section aria-labelledby="designer">
+    <h2 id="designer">The AI Car Designer</h2>
+    <p>When you ask for a new car or a mod, the game first runs your words through Roblox's text filter. Only what
+      passes leaves Roblox. It goes to our small design service, which asks an AI to turn it into a car and checks
+      the answer before the game builds it.</p>
+    <div class="pair">
+      <div class="card sent">
+        <h3>What is sent</h3>
+        <ul>
+          <li>Your description, after Roblox's filter</li>
+          <li>The car class you picked, or for a mod, the car as it looks now</li>
+          <li>A scrambled player code: a one-way code made from your player number and a secret, which the design
+            service can't turn back into your account</li>
+          <li>The version of the game's car parts</li>
+        </ul>
+      </div>
+      <div class="card never">
+        <h3>What is never sent</h3>
+        <ul>
+          <li>Your username or display name</li>
+          <li>Your Roblox player number</li>
+          <li>Your chat, friends or anything else about your account</li>
+          <li>Your other cars, cash or progress</li>
+        </ul>
+      </div>
+    </div>
+    <p>The scrambled player code stays with our design service. It only counts how many designs each player asks
+      for, so nobody can use them all up. The AI itself receives only your description and the car class or car.</p>
+    <p>Please don't type personal information, like your real name or address, into the designer. The game reminds
+      you before your first design.</p>
+  </section>
+
+  <section aria-labelledby="kept">
+    <h2 id="kept">How long things are kept</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th scope="col">Record</th><th scope="col">Kept for</th></tr></thead>
+        <tbody>
+          <tr><td>Your saved game progress and designs</td><td>Until you scrap a design, or your Roblox account is
+            deleted</td></tr>
+          <tr><td>Your best drag strip time each week</td><td>On that week's leaderboard until you ask us to remove
+            it, or your Roblox account is deleted</td></tr>
+          <tr><td>Which player number owns each limited serial number</td><td>Kept, so each number belongs to only one
+            player. If your Roblox account is deleted, your player number is taken off it and the number stays
+            used</td></tr>
+          <tr><td>The design service's request log (the scrambled player code, the filtered description and the
+            design that came back)</td><td>90 days, then deleted</td></tr>
+          <tr><td>Finished designs, stored by description with no player code</td><td>Kept, so the same description
+            gets the same car again</td></tr>
+          <tr><td>What the AI company receives</td><td>Deleted within 30 days under its own rules (longer only if its
+            safety checks flag a request). It doesn't use it to train its AI.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="kids">
+    <h2 id="kids">Children and families</h2>
+    <p>Voltage County is made for players of all ages. We follow the U.S. Children's Online Privacy Protection Act
+      (COPPA) and Roblox's rules for children's data:</p>
+    <ul>
+      <li>We don't ask for or keep contact or identity details from children or anyone else: no names, emails,
+        phone numbers, ages, photos or locations.</li>
+      <li>The game uses your Roblox player number only to load your save and run the game, inside Roblox.</li>
+      <li>Text players type is checked by Roblox's filter before anyone else can see it, and the designer's text is
+        checked before it leaves Roblox.</li>
+      <li>The scrambled player code is used only to run the designer fairly (limits per player), never for ads or
+        profiles.</li>
+      <li>Ads, when the game shows them, come only through Roblox's own ad system. Roblox decides who can see an ad;
+        we never receive or share anything about you for ads.</li>
+      <li>A parent can ask us to delete their child's game data at any time (see below).</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="never">
+    <h2 id="never">Things we never do</h2>
+    <ul>
+      <li>Sell, rent or trade information about players.</li>
+      <li>Send you to websites or ask you to pay outside Roblox.</li>
+      <li>Send your chat, your username or your account to the AI.</li>
+      <li>Keep design records with a player code longer than 90 days.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="who">
+    <h2 id="who">Who helps run the game</h2>
+    <ul>
+      <li><strong>Roblox</strong> runs the game, the saves, chat, purchases and ads. Its own privacy policy covers
+        your Roblox account.</li>
+      <li><strong>Vercel</strong> runs our small design service.</li>
+      <li><strong>Supabase</strong> stores the design service's 90-day request log and the finished designs.</li>
+      <li><strong>Anthropic</strong> makes the AI that designs the cars.</li>
+    </ul>
+    <p class="muted">Each of them only gets what is listed on this page.</p>
+  </section>
+
+  <section aria-labelledby="delete">
+    <h2 id="delete">Deleting your data</h2>
+    <ul>
+      <li>If you delete your Roblox account, Roblox tells us and we delete your game data: your save, your drag
+        strip times, the design service's records for you, and your player number on any limited serial number
+        (the number itself stays used, so no one else gets it).</li>
+      <li>You, or a parent, can also ask us to delete your game data without deleting your account. Send us your
+        Roblox username as shown below. Your progress and designs will be gone for good.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="contact">
+    <h2 id="contact">Contact us</h2>
+    <p>Open Voltage County on Roblox, tap the creator's name under the game's title to open their Roblox profile,
+      and send a message from there. A parent can do this from their own Roblox account. Please don't include
+      personal details beyond your Roblox username.</p>
+  </section>
+
+  <footer>
+    <p>If this page changes, the date at the top changes with it. Voltage County is an original game; every car and
+      brand in it is made up.</p>
+  </footer>
+</main>
+</body>
+</html>

@@ -1,6 +1,8 @@
-// The request pipeline behind POST /api/design and POST /api/mod (docs/phase-11-contracts.md "Backend"):
-// shared secret -> request checks -> on/off switch, limits and spend cap -> blocklist -> cache -> Claude
-// (structured output, validated and clamped, brand scan with one stricter retry) -> usage log -> reply.
+// The request pipeline behind POST /api/design and POST /api/mod (docs/phase-11-contracts.md "Backend";
+// docs/SECURITY.md): shared secret (or the previous one during a rotation) -> request checks -> on/off switch,
+// limits and spend cap -> blocklist -> cache -> Claude (structured output, validated and clamped, brand scan with
+// one stricter retry) -> usage log -> reply. Once the reply is decided, usage rows older than USAGE_RETENTION_DAYS
+// are deleted, at most once every PRUNE_EVERY_MS per warm instance (never failing the request).
 // Replies: 200 { ok: true, spec, cached } or 200 { ok: false, refusal }; 401 bad key; 429 { ok: false, refusal }
 // for limits, the spend cap and the off switch; 400/409/413 bad requests; 5xx errors (the game refunds on all
 // of these). Dependencies are injected so the tests run without the network. Read by: api/design.ts, api/mod.ts.
@@ -13,22 +15,28 @@ import {
 	addTokens,
 	checkLimits,
 	costUsd,
+	DAY_MS,
 	MAX_BODY_BYTES,
 	NO_TOKENS,
+	PRUNE_EVERY_MS,
 	REQUEST_BUDGET_MS,
 	type TokenCounts,
+	USAGE_RETENTION_DAYS,
 	windowsAt,
 } from "./limits.ts";
 import { REFUSALS } from "./messages.ts";
 import { canonicalJson, charCount, cleanText, hashPrompt, meaningfulChars, sha256Hex, utf8Bytes } from "./normalize.ts";
 import { designUserText, modUserText } from "./prompt.ts";
 import { designJsonSchema, modJsonSchema, readDesign, readMod, type JsonSchema } from "./schema.ts";
-import { createStore, type Outcome, type RequestKind, type Store } from "./store.ts";
+import { createStore, type Outcome, type RequestKind, type Store, type StoreEnv } from "./store.ts";
 
 export type Deps = {
 	store: Store;
 	claude: MessagesClient | null; // null when ANTHROPIC_API_KEY isn't set
 	secret: string | undefined; // ROBLOX_SHARED_SECRET, the same value as the game's designer_key secret
+	// ROBLOX_SHARED_SECRET_PREVIOUS: the old value, still accepted while a rotation is under way (game servers
+	// started before the change keep the old designer_key until they close). docs/SECURITY.md has the steps.
+	previousSecret: string | undefined;
 	now: () => number;
 	banned: RegExp;
 	log: (line: string) => void; // never given prompts, keys or user hashes
@@ -87,6 +95,23 @@ export function keyMatches(given: string | null, secret: string): boolean {
 	return given !== null && timingSafeEqual(digest(given.trim()), digest(secret));
 }
 
+export type KeyCheck = "current" | "previous" | null;
+
+// Which secret the given key is: the current one, the previous one (during a rotation) or neither. Both are always
+// compared, the same way whether or not a previous secret is set, so the time taken says nothing about which one
+// matched. A blank previous secret is no secret: it never lets a blank key in.
+export function checkKey(given: string | null, secret: string, previous: string | undefined): KeyCheck {
+	const old = previous?.trim();
+	const hasOld = old !== undefined && old !== "";
+	const key = digest(given?.trim() ?? "");
+	const isCurrent = timingSafeEqual(key, digest(secret));
+	const isPrevious = timingSafeEqual(key, digest(hasOld ? old : secret)) && hasOld;
+	if (given === null) {
+		return null;
+	}
+	return isCurrent ? "current" : isPrevious ? "previous" : null;
+}
+
 type Preflight = { ok: true; body: unknown } | { ok: false; response: Response };
 
 async function preflight(request: Request, deps: Deps): Promise<Preflight> {
@@ -98,8 +123,13 @@ async function preflight(request: Request, deps: Deps): Promise<Preflight> {
 		deps.log("ROBLOX_SHARED_SECRET is not set");
 		return { ok: false, response: refuse(503, REFUSALS.unavailable) };
 	}
-	if (!keyMatches(request.headers.get("x-api-key"), secret)) {
+	const key = checkKey(request.headers.get("x-api-key"), secret, deps.previousSecret);
+	if (key === null) {
 		return { ok: false, response: refuse(401, REFUSALS.notAllowed) };
+	}
+	if (key === "previous") {
+		// Shows in the Vercel logs while old game servers still run; once it stops, the old secret can go.
+		deps.log("a request used ROBLOX_SHARED_SECRET_PREVIOUS (rotation under way)");
 	}
 	const declared = Number(request.headers.get("content-length") ?? "0");
 	if (declared > MAX_BODY_BYTES) {
@@ -224,7 +254,32 @@ async function record(job: Job, deps: Deps, outcome: Outcome, logged: unknown, t
 	}
 }
 
+// When each store last deleted old usage rows (one store per warm instance in production; one per test).
+const lastPrune = new WeakMap<Store, number>();
+
+// The 90-day cleanup: deletes usage rows older than USAGE_RETENTION_DAYS, at most once every PRUNE_EVERY_MS for a
+// store. A failure is logged and tried again after the same wait; it never changes the reply.
+async function pruneUsage(deps: Deps): Promise<void> {
+	const now = deps.now();
+	const last = lastPrune.get(deps.store);
+	if (last !== undefined && now - last < PRUNE_EVERY_MS) {
+		return;
+	}
+	lastPrune.set(deps.store, now);
+	try {
+		await deps.store.pruneUsage(new Date(now - USAGE_RETENTION_DAYS * DAY_MS));
+	} catch (error) {
+		deps.log(`usage cleanup failed: ${error instanceof Error ? error.message : "unknown"}`);
+	}
+}
+
 async function runJob(job: Job, deps: Deps): Promise<Response> {
+	const response = await decide(job, deps);
+	await pruneUsage(deps); // awaited: Vercel may freeze the instance once the reply is sent
+	return response;
+}
+
+async function decide(job: Job, deps: Deps): Promise<Response> {
 	const started = deps.now();
 	try {
 		const settings = await deps.store.getSettings();
@@ -358,20 +413,29 @@ export async function handleMod(request: Request, deps: Deps): Promise<Response>
 // Production wiring (Vercel env vars)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+export type DepsEnv = StoreEnv & {
+	ANTHROPIC_API_KEY?: string;
+	ROBLOX_SHARED_SECRET?: string;
+	ROBLOX_SHARED_SECRET_PREVIOUS?: string;
+};
+
+export function depsFromEnv(env: DepsEnv): Deps {
+	const apiKey = env.ANTHROPIC_API_KEY?.trim();
+	return {
+		store: createStore(env),
+		claude: apiKey === undefined || apiKey === "" ? null : createMessagesClient(apiKey),
+		secret: env.ROBLOX_SHARED_SECRET,
+		previousSecret: env.ROBLOX_SHARED_SECRET_PREVIOUS,
+		now: () => Date.now(),
+		banned: bannedRegex(),
+		log: (line) => console.error(`[designer] ${line}`),
+	};
+}
+
 let shared: Deps | undefined;
 
 export function defaultDeps(): Deps {
-	if (shared === undefined) {
-		const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-		shared = {
-			store: createStore(process.env),
-			claude: apiKey === undefined || apiKey === "" ? null : createMessagesClient(apiKey),
-			secret: process.env.ROBLOX_SHARED_SECRET,
-			now: () => Date.now(),
-			banned: bannedRegex(),
-			log: (line) => console.error(`[designer] ${line}`),
-		};
-	}
+	shared ??= depsFromEnv(process.env);
 	return shared;
 }
 

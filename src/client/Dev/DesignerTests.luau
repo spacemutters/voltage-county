@@ -1488,23 +1488,19 @@ local function creditsTest(ctx: Context)
 		local afterRoll = balanceNow(ctx)
 		check(ctx, `re-roll {roll} is free`, afterRoll == start - newCar, `balance {tostring(afterRoll)}`)
 	end
+	-- Re-rolls are never sold (docs/COMPLIANCE.md section 2): one past the free ones is refused and costs nothing.
 	setCurrent(ctx, "one re-roll too many")
 	local extraReply, extra = choose(ctx, latest, "reroll")
-	local charged = start - 2 * newCar
-	if extraReply ~= nil and extraReply.ok == true then
-		if extra ~= nil then
-			latest = extra
-		end
-		local afterExtra = balanceNow(ctx)
-		check(
-			ctx,
-			"a re-roll past the free one isn't free",
-			afterExtra == charged,
-			`accepted; balance {tostring(afterExtra)}, a new car's price would leave {charged}`
-		)
-	else
-		check(ctx, "a re-roll past the free one isn't free", true, `refused: {describe(extraReply)}`)
+	if extra ~= nil and extra.ok then
+		latest = extra
 	end
+	local afterExtra = balanceNow(ctx)
+	check(
+		ctx,
+		"a re-roll past the free one is refused and costs nothing",
+		extraReply ~= nil and extraReply.ok ~= true and afterExtra == start - newCar,
+		`{describe(extraReply)}; balance {tostring(afterExtra)}, want {start - newCar}`
+	)
 	local beforeDiscard = balanceNow(ctx)
 	choose(ctx, latest, "discard")
 	local afterDiscard = balanceNow(ctx)

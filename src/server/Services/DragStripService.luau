@@ -719,7 +719,10 @@ local function loadBest(player: Player, week: string): (number?, boolean)
 		return nil, false
 	end
 	local ms = if type(value) == "number" then value else nil
-	bests[userId] = { week = week, ms = ms }
+	-- The read yielded: a player who left meanwhile was already forgotten, and caching them now would never clear.
+	if player.Parent ~= nil then
+		bests[userId] = { week = week, ms = ms }
+	end
 	return ms, true
 end
 

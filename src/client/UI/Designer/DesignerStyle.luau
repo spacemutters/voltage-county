@@ -116,19 +116,22 @@ local DesignerStyle = {
 		modPlaceholder = "Lift it, chunky off-road tires, roof rack, desert tan",
 		counter = "%d/%d", -- characters used, the limit
 		classTitle = "Class",
-		surprise = "Surprise me",
+		-- No classId: the AI picks the class that fits the words (never "surprise": nothing paid is left to chance).
+		surprise = "AI picks",
 		emptyPrompt = "Describe your car first.",
 		emptyModPrompt = "Describe the change first.",
 		shortPrompt = "Tell the AI a little more about it.",
 
-		-- The AI notice (Config/Designer's own text replaces `disclosureBody` when it has one).
+		-- The AI notice (Config/Designer's own text replaces `disclosureBody` when it has one). Roblox's Creator
+		-- Terms ask for three things here: it's an AI, not a person; what it makes is AI-made; and it can be wrong.
 		disclosureTitle = "Before you start",
 		disclosureLead = "An AI designs your car from your words.",
-		disclosureBody = "It makes original cars only, so real brands become a car with the same vibe. "
+		disclosureBody = "The AI isn't a person, and it can get things wrong, so your car may not match every word. "
+			.. "It makes original cars only, so real brands become a car with the same vibe. "
 			.. "Keep your words friendly, and never type personal info like your name or address.",
 		disclosureOk = "Got it",
-		finePrint = "An AI designs your car from your words.",
-		modFinePrint = "An AI changes your car from your words.",
+		finePrint = "An AI, not a person, designs your car from your words. It can get details wrong.",
+		modFinePrint = "An AI, not a person, changes your car from your words. It can get details wrong.",
 
 		-- Cost.
 		cost = "Cost",
@@ -157,15 +160,16 @@ local DesignerStyle = {
 
 		-- The result.
 		resultEyebrow = "Your design",
+		-- "Redesign" (the AI designs again from the same words), never "re-roll". Only ever free: a redesign isn't
+		-- sold (docs/COMPLIANCE.md section 2), so once it's used the note points to new words instead.
 		build = "Build",
 		building = "Building...",
-		reroll = "Re-roll",
-		freeReroll = "Free re-roll",
-		rerolling = "Re-rolling...",
+		freeReroll = "Free redesign",
+		rerolling = "Redesigning...",
 		discard = "Discard",
 		discarding = "Discarding...",
-		rerollNote = "One re-roll is free.",
-		rerollCost = "A re-roll now makes a new design for %s.", -- "2 credits"
+		rerollNote = "One redesign is free.",
+		changeWords = "Want something else? Discard this one and change your words. A new design is %s.", -- "2 credits"
 		report = "Report this design",
 		discardTitle = "Discard this design?",
 		discardRow = "It won't be saved.",

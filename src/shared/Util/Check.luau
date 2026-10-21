@@ -1,14 +1,22 @@
 --!strict
 -- Payload validators for remotes (used by Net). Every client payload is untrusted: a validator returns true
 -- only when the value has exactly the expected shape. Numbers must be finite and in range, strings must be
--- valid UTF-8 under a length cap, and tables may not carry keys that were not declared.
+-- valid UTF-8 under a length cap, not empty (unless a remote allows it) and free of NUL bytes, and tables may not
+-- carry keys that were not declared. A validator never throws, whatever it is given (tests/NetFuzz.spec).
 
 export type Validator = (value: any) -> boolean
 
 local Check = {}
 
+local NUL = "\0"
+
 local function isFinite(n: number): boolean
 	return n == n and n ~= math.huge and n ~= -math.huge
+end
+
+-- -0 equals 0, so range checks let it through; no client ever means it, and saved as a count it prints as "-0".
+local function isNegativeZero(n: number): boolean
+	return n == 0 and 1 / n < 0
 end
 
 -- The payload must be absent (remotes that carry no data).
@@ -32,13 +40,25 @@ end
 
 function Check.integer(min: number, max: number): Validator
 	return function(value)
-		return type(value) == "number" and isFinite(value) and value % 1 == 0 and value >= min and value <= max
+		return type(value) == "number"
+			and isFinite(value)
+			and value % 1 == 0
+			and not isNegativeZero(value)
+			and value >= min
+			and value <= max
 	end
 end
 
-function Check.string(maxBytes: number): Validator
+-- A string of at most `maxBytes` bytes and at least `minBytes` (default 1: "" is refused, since an empty id or
+-- prompt is never a real request; pass 0 where "" means something, like clearing a plate).
+function Check.string(maxBytes: number, minBytes: number?): Validator
+	local least = minBytes or 1
 	return function(value)
-		return type(value) == "string" and #value <= maxBytes and utf8.len(value) ~= nil
+		return type(value) == "string"
+			and #value >= least
+			and #value <= maxBytes
+			and string.find(value, NUL, 1, true) == nil
+			and utf8.len(value) ~= nil
 	end
 end
 
@@ -89,7 +109,8 @@ function Check.shape(fields: { [string]: Validator }): Validator
 	end
 end
 
--- A list of up to maxLength items, each passing `inner`, with no gaps and no other keys.
+-- A list of up to maxLength items, each passing `inner`, with no gaps and no other keys. A longer list is refused
+-- as soon as it is seen to be too long, so a huge one costs no more than a short one.
 function Check.array(inner: Validator, maxLength: number): Validator
 	return function(value)
 		if type(value) ~= "table" then
@@ -101,8 +122,11 @@ function Check.array(inner: Validator, maxLength: number): Validator
 				return false
 			end
 			count += 1
+			if count > maxLength then
+				return false
+			end
 		end
-		if count > maxLength or count ~= #value then
+		if count ~= #value then
 			return false
 		end
 		for i = 1, count do

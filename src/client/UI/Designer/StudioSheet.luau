@@ -6,10 +6,11 @@
 --
 --   disclosure     the AI notice, acknowledged with "Got it" before the first request
 --   compose        the Design Studio: the prompt box with its 200-character counter, the class picker (kit
---                  classes and "Surprise me"), the cost ("Free" for the first car, else the credits) and Design it
+--                  classes and "AI picks"), the cost ("Free" for the first car, else the credits) and Design it
 --   progress       a sliding bar while the AI works; after a while it says the sheet can be closed
 --   result         the new design: a turning preview, name, tagline, class and energy, stat bars, Report, and
---                  Build / Re-roll ("Free re-roll" once) / Discard
+--                  Build / Free redesign (while the design has one; the re-roll in code) / Discard. Redesigns
+--                  are never sold: once the free one is used, the note says to discard and change the words
 --   refused        the server's friendly refusal (credits come back), with Try again
 --   built          the design is in the garage: Drive it / Done
 --   modCompose     "Mod with AI": the car as it is, the prompt box and the cost
@@ -465,7 +466,7 @@ export type ComposeProps = {
 	text: string,
 	limit: number,
 	options: { DesignerModel.Option },
-	choice: string, -- the picked class chip (DesignerModel.surpriseId for "Surprise me")
+	choice: string, -- the picked class chip (DesignerModel.surpriseId for "AI picks")
 	costLabel: string, -- "Free", "2 credits"
 	balanceLine: string,
 	balanceTone: Tone,
@@ -537,8 +538,8 @@ export type ResultProps = {
 	card: DesignerModel.Card,
 	model: Model?, -- the preview (nil: "Preview not available")
 	stats: { Primitives.StatRow },
-	rerollFree: boolean, -- a free re-roll is left; after that a re-roll is a new paid design
-	rerollCost: string, -- "2 credits": what a re-roll costs once the free one is used
+	rerollFree: boolean, -- a free re-roll is left (there is no other kind)
+	newDesignCost: string, -- "2 credits": what a new design from changed words costs
 	busy: ResultBusy?,
 	widths: Widths,
 	onBuild: () -> (),
@@ -563,14 +564,13 @@ function StudioSheet.result(props: ResultProps): Content
 	local actions: { Primitives.Action } = {
 		action("build", if busy == "build" then copy.building else copy.build, "primary", locked, props.onBuild),
 	}
-	local rerollLabel = if busy == "reroll"
-		then copy.rerolling
-		elseif props.rerollFree then copy.freeReroll
-		else copy.reroll
-	table.insert(actions, action("reroll", rerollLabel, "secondary", locked, props.onReroll))
+	if props.rerollFree or busy == "reroll" then
+		local rerollLabel = if busy == "reroll" then copy.rerolling else copy.freeReroll
+		table.insert(actions, action("reroll", rerollLabel, "secondary", locked, props.onReroll))
+	end
 	local discardLabel = if busy == "discard" then copy.discarding else copy.discard
 	table.insert(actions, action("discard", discardLabel, "secondary", locked, props.onDiscard))
-	local note = if props.rerollFree then copy.rerollNote else string.format(copy.rerollCost, props.rerollCost)
+	local note = if props.rerollFree then copy.rerollNote else string.format(copy.changeWords, props.newDesignCost)
 	return {
 		eyebrow = copy.resultEyebrow,
 		title = card.name,

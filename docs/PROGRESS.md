@@ -2,6 +2,86 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-21 — Phase 14: performance, security, soft launch
+
+**Shipped**
+- **Security:** `docs/SECURITY.md` has one row per remote (69) and per backend endpoint: validator, rate limit, who
+  may call it and the abuse it stops. A build gate (`scripts/check-security-table`) fails on a remote without a row;
+  it replaces the planned `SecurityDoc.spec`, since specs can't read `docs/`.
+  - `Util/Check` hardened: strings are non-empty unless a remote allows "" (only `SetPlate.text`), no NUL bytes, no
+    -0, and an over-long list is refused as soon as it passes its cap.
+  - Admin-only remotes warn once per player, not on every call, so the admin log can't be flooded (AdminService,
+    `DesignerService.hide`).
+  - Fuzzing: `tests/NetFuzz.spec` checks every validator in Edit mode; `Dev/FuzzTests` sends the same cases through
+    the network in a playtest, with `Services/DevFuzzService` (Studio only) recording server errors and the
+    caller's economy.
+- **Backend review:** no secrets in the repo or its history. Limits and the spend cap verified on the in-memory
+  store (`tests/spend.test.ts`). Supabase tables are RLS-on and service-role only; migration 0002 (sequence rights)
+  applied and read back. The shared secret can now be changed with no downtime (`ROBLOX_SHARED_SECRET_PREVIOUS`,
+  `tests/rotation.test.ts`; the setup tool's **Change game password** and **Finish change**). The request log keeps
+  90 days (`tests/retention.test.ts`), and the privacy page is served at `/privacy`. `npm test`: 97 pass;
+  typecheck clean.
+- **Data safety:** `tests/MigrationFixtures.spec` (one save per version 1-7, every field kept) and
+  `tests/DataSafety.spec` (crash-at-every-step credits, drops, receipts). The DataService close handler now runs
+  before ProfileStore's, and CreditsService's join clean-up keys reservations by Player.
+- **Performance:** budgets in `Config/Perf`.
+  - Part budget (decided here): 60 parts for every built car, 120 for a car dressed in the fullest Wrap & Tint look,
+    plus 48 for wrap stripes on designs. The reason is in `Config/Perf` (dressing parts are weightless and never
+    collide, so they cost a transform each, not physics). This closes Phase 7's "Busy looks push a car past the
+    60-part greybox budget" and Phase 11's busy wheel styles. Checked by `tests/PartBudget.spec`.
+  - Generated bodies over 20,000 triangles keep the kit look (`GeneratedAdapter`). A body whose triangles can't be
+    counted is still taken (`meshes.rejectUncounted` off) until the counter is proven on real generator output.
+  - `Dev/PerfTests` drives the County Loop at highway speed with traffic on and judges frame times against the
+    desktop and phone budgets, with `Services/DevPerfService` (Studio only) sampling the server.
+  - Streaming: min radius 512 (up from 256), target 2048, Opportunistic, integrity Disabled. Only StreamingEnabled
+    is scriptable, so the rest are set by hand in Studio (LAUNCH step 10); a build gate keeps `default.project.json`
+    the same as `Config/Perf.streaming`.
+- **Compliance and launch:** `docs/COMPLIANCE.md`, `docs/LAUNCH.md` (13 steps for Davis) and `docs/privacy.html`.
+  - Paid redesigns are gone: a redesign skips the design service's cache and can change the stats, so a paid one
+    was a paid draw. Redesigns are only ever free; "Re-roll" reads "Redesign" and "Surprise me" reads "AI picks".
+  - The AI notice says the AI isn't a person and can be wrong, and not to type personal info.
+  - The "AI picks" fallback class is no longer random.
+  - `Dev/ForgetPlayer` handles deletion requests: drag strip times, serial owners, the design service's rows (and
+    the save, when asked).
+- Built by 5 helpers, then reviewed (13 findings, 3 serious, all handled; see the fixer's report).
+
+**Checked in Studio:**
+- Tests: `TESTS: passed=2360 failed=0` (NetFuzz, MigrationFixtures, DataSafety, PartBudget, GeneratedAdapter and
+  ForgetPlayer included).
+- Part budget, measured: most parts as built 54 (budget 60); fullest dressed look 88 (cap 120: a design with turbine
+  wheels); with a wrap 116 (cap 168: a pickup design with the tricolor wrap). The two new art supercars are 21 as built.
+- **Fuzz test in a playtest** (48 checks, all passed): all 43 player-facing remotes got hostile payloads, extra
+  arguments and a burst over their rate limit. Every call was refused, with 0 answered and 0 errors. The server
+  logged 0 errors or warnings, the economy was unchanged (cash, credits, cars, designs and the rest), and the
+  client logged 0 errors.
+- **Perf drive on desktop** (all checks passed): 135 s on the County Loop in a Montevale Valtero, average 67.8 mph
+  (max 70.6), 0 stuck events, traffic on (12 pods with routes).
+  - Client: mean 16.67 ms (60 fps), p95 18.27 ms, worst 32.58 ms.
+  - Server: mean 16.67 ms, p95 18.16 ms, worst 21.71 ms.
+  - 7,493 parts and 10,904 instances on the server, about 5,100 to 5,550 parts streamed in on the client, and a
+    traffic step p95 of 0.043 ms. (Memory reads about 5.5 GB because it is Studio's own total, editor included.)
+  - The phone pass needs Studio's device emulator, which scripts can't switch on; Davis checks on a real phone
+    (acceptance line 2).
+- **Designer credits test** (16 checks, all passed): the free car is used once; 2 credits per new car; the one free
+  redesign is free; a redesign past it is refused and costs nothing; a refused design costs nothing; the balance
+  never goes below zero.
+- ForgetPlayer on a test id (report only, Studio stores): no records found, nothing changed, the delete SQL
+  printed.
+- Sounds: 0 Sound instances with an id anywhere in the place.
+- Chat: TextChatService's channels exist in a playtest, but the place's ChatVersion still reads LegacyChatService,
+  and scripts can't change it. Davis switches it in Studio (LAUNCH step 10).
+- Backend: migration 0002 applied (anon and authenticated have no use of the `vc_` sequences, service_role does);
+  `npm test` 97 pass; deployed to production (rotation, the 90-day cleanup and `/privacy` are live).
+
+**Open issues**
+- Davis (LAUNCH steps, plus three questions): the streaming and chat settings in Studio (step 10); change the game
+  password before the beta (step 11); check on a real phone; keep or drop the free redesign that comes with a paid
+  design (COMPLIANCE section 2); a contact address for the privacy page; under-16 access (step 13) and the starting
+  prices (step 8).
+- `meshes.rejectUncounted` goes back on only after a playtest with the real backend shows no "takes its generated
+  look uncounted" line.
+- The shared Supabase project has security warnings that belong to other apps (not the designer's tables).
+
 ## 2026-10-21 — Phase 13: houses and social roleplay
 
 **Shipped**

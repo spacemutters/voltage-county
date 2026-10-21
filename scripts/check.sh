@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Quality gate. Run before every commit: scripts/check.sh
-# Steps: --!strict on every file -> brand names -> StyLua check -> Selene -> Rojo build.
+# Steps: --!strict on every file -> brand names -> security table -> streaming settings -> StyLua check -> Selene ->
+# Rojo build.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.rokit/bin:$PATH"
@@ -24,6 +25,12 @@ pattern="$(grep -v '^#' scripts/banned-names.txt | grep -v '^[[:space:]]*$' | tr
 if grep -rniE --exclude-dir=Vendor "\b(${pattern})\b" src tests; then
 	fail "brand names (real carmaker or model name in game code)"
 fi
+
+# Every remote in src/shared/Net.luau has its row in docs/SECURITY.md, and no row names a remote that isn't there.
+echo "== security table"; bash scripts/check-security-table.sh || fail "security table"
+
+# default.project.json's Workspace streaming values match Config/Perf.streaming (scripts can't read them in a place).
+echo "== streaming settings"; bash scripts/check-streaming.sh || fail "streaming settings"
 
 [ -d Packages ] || wally install
 echo "== stylua"; stylua --check src tests || fail "stylua"

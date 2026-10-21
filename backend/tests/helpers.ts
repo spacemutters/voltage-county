@@ -93,13 +93,16 @@ export function fakeClaude(...steps: Step[]): FakeClaude {
 
 export type TestDeps = Deps & { store: MemoryStore; logs: string[]; clock: { now: number } };
 
-export function makeDeps(options: { claude?: MessagesClient | null; store?: MemoryStore; secret?: string } = {}): TestDeps {
+export function makeDeps(
+	options: { claude?: MessagesClient | null; store?: MemoryStore; secret?: string; previousSecret?: string } = {},
+): TestDeps {
 	const logs: string[] = [];
 	const clock = { now: NOW };
 	return {
 		store: options.store ?? new MemoryStore(),
 		claude: options.claude === undefined ? fakeClaude(textReply(validDesign())) : options.claude,
 		secret: "secret" in options ? options.secret : SECRET,
+		previousSecret: options.previousSecret,
 		now: () => clock.now,
 		banned: bannedRegex(),
 		log: (line) => logs.push(line),

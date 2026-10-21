@@ -6,10 +6,10 @@
 --   cleanPrompt(), promptProblem()             what is sent, and why Design is refused before it is sent
 --   prices(), creditsText(), costOf()          what a new car or a mod costs this player (the free first car),
 --   costLabel(), costSentence(), canAfford()   in plain words, whether their balance covers it, and whether a
---   rerollFree()                               design still has its free re-roll
+--   rerollFree()                               design still has its free re-roll ("redesign" to the player)
 --   disclosureNeeded(), unlocked()             the AI notice gate and the phone app's unlock
 --   classOptions()                             the class picker: designable kit classes by tier, exotic only
---                                              for owners of an exotic, then "Surprise me"
+--                                              for owners of an exotic, then "AI picks" (the surprise chip)
 --   disclosureText(), reportReasons()          Config/Designer's words when it has them, else DesignerStyle's
 --   readResult(), designCard(), statRows()     a DesignResult payload, the result card's name, tagline, spec
 --   modTitle()                                 line and stat bars, and the mod result's title
@@ -33,7 +33,7 @@ local DesignerStyle = require(script.Parent.DesignerStyle)
 
 local KPH_PER_MPH = 1.609344 -- a unit conversion, not a tunable
 local HANDLING_SCALE = 10 -- handling (0..1) is shown out of 10, like the dealership
-local SURPRISE_ID = "surprise" -- the class picker's "Surprise me" chip (sends no classId)
+local SURPRISE_ID = "surprise" -- the class picker's "AI picks" chip (sends no classId: the AI picks the class)
 
 local copy = DesignerStyle.copy
 
@@ -270,7 +270,8 @@ function DesignerModel.costOf(kind: Kind, credits: DesignerData?, prices: Prices
 end
 
 -- True while a design still has a free re-roll: `used` of the ones that come with it (a paid design comes with
--- prices.rerollsPaid, the free first car with prices.rerollsFree). After that a re-roll is a new paid design.
+-- prices.rerollsPaid, the free first car with prices.rerollsFree). After that there is none: re-rolls are never
+-- sold (a different idea is a new design from new words).
 -- The server's DesignResult says (rerollFree); this is only for when it doesn't.
 function DesignerModel.rerollFree(paid: boolean, used: number, prices: Prices): boolean
 	return used < (if paid then prices.rerollsPaid else prices.rerollsFree)
@@ -357,7 +358,7 @@ function DesignerModel.ownedClasses(cars: { Car }?): { [string]: boolean }
 end
 
 -- The class picker's choices: every kit class that Config/Classes marks designable, cheapest tier first (then by
--- name), leaving out classes that need an owned class the player doesn't have; "Surprise me" last.
+-- name), leaving out classes that need an owned class the player doesn't have; "AI picks" last.
 function DesignerModel.classOptions(owned: { [string]: boolean }): { Option }
 	local ids: { string } = {}
 	for id, rule in DesignerModel.kit.classes :: { [string]: any } do
@@ -382,7 +383,7 @@ function DesignerModel.classOptions(owned: { [string]: boolean }): { Option }
 	return options
 end
 
--- The classId DesignCar sends for a picked chip (nil: "Surprise me").
+-- The classId DesignCar sends for a picked chip (nil: "AI picks").
 function DesignerModel.classIdFor(choice: string?): string?
 	if choice == nil or choice == SURPRISE_ID then
 		return nil
