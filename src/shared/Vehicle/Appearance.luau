@@ -5,6 +5,8 @@
 --   Appearance.apply(model, look)   paint, finish, wrap, wheels, ride height, tint, calipers, extras, plates
 --   Appearance.lookOf(model)        the look last applied to the model (the shop reverts a preview with it)
 --   Appearance.findExtra(model, id) an extra's Model (light shows look for the light bar's PointLight)
+--   Appearance.wheelFaceParts(wheelId)     the parts apply builds on one wheel for that wheel style
+--   Appearance.addedParts(model, wheelId)  how many parts apply adds on the wheels and plates (the part budget)
 --
 -- Works on any model that follows the vehicle model contract (docs/phase-1-contracts.md): Body parts tagged
 -- Paint, Trim and Glass, Wheels FL/FR/RL/RR, Lights, optional Doors, and the PlateFront, PlateRear and Mount_*
@@ -49,6 +51,7 @@ local PLATE_POINTS = { "PlateFront", "PlateRear" }
 local LOOK_FOLDER = "Look" -- holds the wrap vinyl, extras and plates this module builds
 local HINGE_NAME = "Hinge" -- door Motor6D (VehicleBuilder)
 local STOCK_RIM_PARTS = { Rim = true, Spoke = true } -- VehicleBuilder's plain wheel face, replaced by a style
+local FACE_DISCS = { "Rim", "Caliper", "Cap" } -- the round parts of every wheel face buildWheel makes (spokes aside)
 
 -- Attributes recording a part's factory state (set on the first apply) and the applied look on the model.
 local BASE_CFRAME = "LookBase" -- part CFrame relative to the Chassis
@@ -983,6 +986,55 @@ function Appearance.lookOf(model: Model): Look?
 		return nil
 	end
 	return complete(decoded :: any)
+end
+
+-- The parts apply builds on one wheel for a wheel style (Config/Customization id; unknown: the default style): the
+-- rim, the brake disc, the spokes (an even count as bars through the center, each two opposite spokes) and the cap.
+function Appearance.wheelFaceParts(wheelId: string?): number
+	local style = Customization.getWheel(wheelId) or Customization.getWheel(Customization.defaults.wheels)
+	if style == nil then
+		return 0
+	end
+	local count = style.spokes
+	local spokes = if count <= 0 then 0 elseif count % 2 == 0 then count // 2 else count
+	return #FACE_DISCS + spokes
+end
+
+-- How many parts `model` gains when a look with this wheel style goes on: each wheel's face for the style in place
+-- of what apply clears there (VehicleBuilder's stock rim and spoke, or an earlier look's face), and a plate on each
+-- plate point that has none yet. Not a wrap's vinyl or extras. Vehicle/SpecBuilder keeps this room free in the
+-- part budget (BodyKit.MAX_PARTS) when it lays a design's stripes.
+function Appearance.addedParts(model: Model, wheelId: string?): number
+	local added = 0
+	local perWheel = Appearance.wheelFaceParts(wheelId)
+	local wheels = model:FindFirstChild("Wheels")
+	if wheels ~= nil then
+		for _, name in WHEEL_NAMES do
+			local wheel = wheels:FindFirstChild(name)
+			if wheel == nil or not wheel:IsA("BasePart") then
+				continue
+			end
+			local cleared = 0
+			for _, child in wheel:GetChildren() do
+				if child:IsA("BasePart") and (isLookPart(child) or STOCK_RIM_PARTS[child.Name]) then
+					cleared += 1
+				end
+			end
+			added += perWheel - cleared
+		end
+	end
+	local chassis = model:FindFirstChild("Chassis")
+	local folder = model:FindFirstChild(LOOK_FOLDER)
+	if chassis ~= nil then
+		for _, pointName in PLATE_POINTS do
+			local point = chassis:FindFirstChild(pointName)
+			local plate = if folder ~= nil then folder:FindFirstChild(pointName) else nil
+			if point ~= nil and point:IsA("Attachment") and plate == nil then
+				added += 1
+			end
+		end
+	end
+	return added
 end
 
 -- The Model an extra was built as on `model` (its parts, and a PointLight named Light on lamp pieces), or nil

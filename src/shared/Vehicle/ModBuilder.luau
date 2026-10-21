@@ -3,10 +3,15 @@
 -- follows the vehicle model contract. Read by Services/VehicleService (a car's saved mods, on a fresh copy before
 -- its Wrap & Tint look goes on) and the client's mod screen (the before/after preview, on a copy of the car).
 --
---   ModBuilder.apply(model, modSpec, kit, kind)   kind "kit" for designed cars (built by Vehicle/SpecBuilder),
---                                                 "catalog" for catalog cars
+--   ModBuilder.apply(model, modSpec, kit, kind, options?)   kind "kit" for designed cars (built by
+--                                                 Vehicle/SpecBuilder), "catalog" for catalog cars; options.wheels is
+--                                                 the wheel style the car's Wrap & Tint look puts on afterwards
+--                                                 (Services/VehicleService passes the owned car's), so the part budget
+--                                                 counts the wheel faces the car will really wear
 --   ModBuilder.changes(modSpec, kit, kind)        what the mod changes on that kind of car, e.g. { "paint.primary",
 --                                                 "extras" } ({} = nothing)
+--   ModBuilder.extrasOn(model)                    the extras mods built on the model, by id (Services/VehicleService
+--                                                 reads which extras a mod really puts on before it is paid for)
 --
 -- What each kind may change comes from kit.mod (kitAllowed / catalogAllowed):
 --   * kit cars (the model carries SpecBuilder's DesignSpec): the body proportions (length, height, roofline, nose
@@ -38,6 +43,11 @@
 --     model's ModWheelScale attribute (Appearance builds the faces at it when it exports wheelScaleAttribute; see
 --     appearanceScalesWheels).
 --
+-- The part budget (BodyKit.MAX_PARTS, docs/phase-1-contracts.md): a mod never takes the car past it with what this
+-- module adds. Once the look is on (its wheel faces and plates count), stripes give way first (from the last one
+-- laid), then extras (from the last one asked for). The body itself is never trimmed, so a car whose body and look
+-- alone are over the budget (busy wheel styles; docs/PROGRESS.md open issues) keeps no stripes or mod extras.
+--
 -- A mod spec is read leniently (Services/DesignerService/Validate makes it canonical first): a number field is a
 -- number, the kit's "keep" word or { change, value } (a block's own change = false keeps its numbers); ids and
 -- colors must be in the kit ("#RRGGBB"); anything else counts as "keep".
@@ -54,6 +64,10 @@ local SpecBuilder = require(script.Parent.SpecBuilder)
 local Vehicles = require(Shared.Config.Vehicles)
 
 export type Kind = "kit" | "catalog"
+
+export type ApplyOptions = {
+	wheels: string?, -- the Config/Customization wheel style the car's look puts on after the mod
+}
 
 local ModBuilder = {}
 
@@ -628,17 +642,25 @@ local function startingLook(spec: SpecBuilder.Spec?): Customization.Look
 	}
 end
 
--- The extras earlier mods built on the model, by id.
-local function modExtras(model: Model): { string }
-	local ids: { string } = {}
+-- The extras mods built on the model (their holders in Body), in the order they were put on.
+local function extraHolders(model: Model): { Instance }
+	local holders: { Instance } = {}
 	local body = model:FindFirstChild("Body")
 	if body ~= nil then
 		for _, child in body:GetChildren() do
-			local id = child:GetAttribute(EXTRA_ID)
-			if CollectionService:HasTag(child, EXTRA_TAG) and type(id) == "string" then
-				table.insert(ids, id)
+			if CollectionService:HasTag(child, EXTRA_TAG) and type(child:GetAttribute(EXTRA_ID)) == "string" then
+				table.insert(holders, child)
 			end
 		end
+	end
+	return holders
+end
+
+-- The extras earlier mods built on the model, by id.
+local function modExtras(model: Model): { string }
+	local ids: { string } = {}
+	for _, holder in extraHolders(model) do
+		table.insert(ids, holder:GetAttribute(EXTRA_ID) :: string)
 	end
 	return ids
 end
@@ -656,14 +678,16 @@ end
 
 -- Puts the mod's wheel style and finish on with Appearance, builds `extras` with Appearance's extras builder and
 -- keeps them as body parts. The look's own ride height is left at none: the mod's stance is already in the body.
-local function applyLook(model: Model, mod: Mod, spec: SpecBuilder.Spec?, extras: { string }?)
+-- `finalWheels` (ApplyOptions.wheels) is the wheel style the car's own look puts on afterwards; it wins, so the
+-- faces counted against the part budget are the ones the car will wear.
+local function applyLook(model: Model, mod: Mod, spec: SpecBuilder.Spec?, extras: { string }?, finalWheels: string?)
 	local base = Appearance.lookOf(model) or startingLook(spec)
 	local look: Customization.Look = table.clone(base)
 	if mod.primary ~= nil or mod.secondary ~= nil then
 		look.paint = Customization.defaults.paint -- the factory paint: the mod's colors
 	end
 	look.finish = mod.finish or base.finish
-	look.wheels = mod.parts.wheels or base.wheels
+	look.wheels = finalWheels or mod.parts.wheels or base.wheels
 	look.rideHeight = Customization.defaults.rideHeight
 	look.extras = if extras ~= nil then table.clone(extras) else {}
 	if extras ~= nil then
@@ -751,17 +775,63 @@ local function scaleFaces(model: Model, scale: number)
 end
 
 ----------------------------------------------------------------------------------------------------------------
+-- The part budget
+----------------------------------------------------------------------------------------------------------------
+
+local function partsIn(instance: Instance): number
+	local count = if instance:IsA("BasePart") then 1 else 0
+	for _, descendant in instance:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			count += 1
+		end
+	end
+	return count
+end
+
+-- Takes the model back inside BodyKit.MAX_PARTS with what mods add (see the header): stripes from the last one laid,
+-- then extras from the last one put on. Deterministic, so the same mod always leaves the same car.
+local function keepPartBudget(model: Model)
+	local over = BodyKit.partCount(model) - BodyKit.MAX_PARTS
+	if over <= 0 then
+		return
+	end
+	local stripes = BodyKit.stripes(model)
+	for index = #stripes, 1, -1 do
+		if over <= 0 then
+			return
+		end
+		stripes[index]:Destroy()
+		over -= 1
+	end
+	local holders = extraHolders(model)
+	for index = #holders, 1, -1 do
+		if over <= 0 then
+			return
+		end
+		local holder = holders[index]
+		over -= partsIn(holder)
+		holder:Destroy()
+	end
+end
+
+----------------------------------------------------------------------------------------------------------------
 -- Applying
 ----------------------------------------------------------------------------------------------------------------
 
+-- The extras mods built on `model`, by id, in the order they went on.
+function ModBuilder.extrasOn(model: Model): { string }
+	return modExtras(model)
+end
+
 -- Puts a mod on a car model (see the header). Safe to call on a fresh copy (VehicleService) or on a copy that
 -- already wears a look or earlier mods (previews). Does nothing to a model without a Chassis.
-function ModBuilder.apply(model: Model, modSpec: any, kitData: any, kind: Kind)
+function ModBuilder.apply(model: Model, modSpec: any, kitData: any, kind: Kind, options: ApplyOptions?)
 	local kit: SpecBuilder.Kit = kitData
 	local chassis = model:FindFirstChild("Chassis")
 	if chassis == nil or not chassis:IsA("BasePart") then
 		return
 	end
+	local finalWheels = if options ~= nil then options.wheels else nil
 	local spec = if kind == "kit" then SpecBuilder.specOf(model, kit) else nil
 	local mod = read(modSpec, kit, if spec ~= nil then "kit" else "catalog")
 
@@ -800,12 +870,15 @@ function ModBuilder.apply(model: Model, modSpec: any, kitData: any, kind: Kind)
 	if extras == nil and rebuilt then
 		extras = modExtras(model)
 	end
-	applyLook(model, mod, spec, extras)
+	applyLook(model, mod, spec, extras, finalWheels)
 
 	-- 5. Wheel size on the faces Appearance just built, unless it already built them at that size.
 	if not appearanceScalesWheels() then
 		scaleFaces(model, scale)
 	end
+
+	-- 6. The part budget, with the look's wheel faces and plates on: stripes, then extras give way.
+	keepPartBudget(model)
 end
 
 return ModBuilder

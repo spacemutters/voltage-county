@@ -27,6 +27,9 @@ local Spawning = {
 	-- When a prompt fires, the server re-checks that the character is at most this many studs from the seat.
 	-- A little more than prompt.maxDistance so lag never refuses an honest tap.
 	seatReach = 16,
+	-- A car swapped out from under its driver leaves the character seated for a moment; the new car's seat waits
+	-- for them to be out of the old one, at most this many seconds, before it sits them down.
+	reseatTimeoutSeconds = 1,
 
 	-- Getting out: the server stands the character on the ground beside the seat's door (seats sit inside the
 	-- collidable chassis box, so standing up in place would shove the character out of it).

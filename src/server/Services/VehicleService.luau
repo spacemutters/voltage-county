@@ -25,10 +25,15 @@
 --            a moderator hid builds from its plain look (DesignerService/Validate.plain: same class, template and
 --            stats). In the session a design was made, setGeneratedLook may hand over its generated body
 --            (Vehicle/GeneratedAdapter), which unmodded, unhidden designs wear instead of the kit build.
---   mods     spawn(..., { mods = savedMods }) applies the car's saved mod spec with Vehicle/ModBuilder to the fresh
---            copy (kind "kit" for designs, "catalog" for catalog cars), re-validated first; mods a moderator hid
---            (mods.hidden) are skipped, so the car shows its stock look. A mod that fails to apply is logged and
---            the car comes out without it.
+--   mods     spawn(..., { mods = savedMods, wheels }) applies the car's saved mod spec with Vehicle/ModBuilder to the
+--            fresh copy (kind "kit" for designs, "catalog" for catalog cars), re-validated first; `wheels` is the
+--            car's Wrap & Tint wheel style, so ModBuilder's part budget counts the faces it will wear. Mods a
+--            moderator hid (mods.hidden), and every mod on a design a moderator hid, are skipped, so the car shows
+--            its stock or plain look. A mod that fails to apply is logged and the car comes out without it.
+--            extrasAfterMods builds the same copy out of the world, so DesignerService can see which extras a mod
+--            really puts on before it is paid for.
+--   seating  seatDriverWhenFree seats the player once their character has left the seat of a car just taken away
+--            from under them (GarageService swapping the car they sit in): Seat:Sit in that same step doesn't take.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -65,6 +70,7 @@ export type DesignSource = { uid: string, spec: { [string]: any }, hidden: boole
 export type SpawnOptions = {
 	design: DesignSource?, -- set for a player design (vehicleId "custom")
 	mods: { [string]: any }?, -- the car's saved AI mod spec (OwnedVehicle.mods)
+	wheels: string?, -- the car's Wrap & Tint wheel style (OwnedVehicle.wheels), for ModBuilder's part budget
 }
 
 type CarRecord = {
@@ -642,20 +648,57 @@ function VehicleService.forgetDesign(designUid: string)
 	end
 end
 
--- Applies a car's saved mods to a fresh copy. Never lets a mod problem stop the spawn.
-local function applyMods(model: Model, mods: any, kind: Validate.Kind)
+-- Applies a car's saved mods to a fresh copy (`wheels`: the wheel style its look puts on afterwards). Never lets a
+-- mod problem stop the spawn. False when the mods were there but couldn't be applied.
+local function applyMods(model: Model, mods: any, kind: Validate.Kind, wheels: string?): boolean
 	if not activeMods(mods) then
-		return
+		return true
 	end
 	local checked, reasons = Validate.mod(mods, DesignKit, kind)
 	if checked == nil then
 		warn(`[VehicleService] Skipped saved mods on {model.Name}: {table.concat(reasons, "; ")}`)
-		return
+		return false
 	end
-	local ok, err = pcall(ModBuilder.apply, model, checked, DesignKit, kind)
+	local ok, err = pcall(ModBuilder.apply, model, checked, DesignKit, kind, { wheels = wheels })
 	if not ok then
 		warn(`[VehicleService] Couldn't apply mods to {model.Name}: {err}`)
 	end
+	return ok
+end
+
+-- Gives a copy of a design's kit build its identity as that design (the catalog id it is published under).
+local function markDesign(model: Model, design: DesignSource, vehicleId: string, trimId: string)
+	model.Name = Catalog.modelName(vehicleId, trimId)
+	model:SetAttribute("VehicleId", vehicleId)
+	model:SetAttribute("Trim", trimId)
+	model:SetAttribute("DesignUid", design.uid)
+end
+
+-- The extras an owned car really carries with `options.mods` (in the order they went on): a copy of its model built
+-- the way spawn builds it (ModBuilder leaves off extras the car can't carry, or has no room for in the part budget
+-- with `options.wheels` on), which never enters the world. DesignerService checks a mod with it before charging.
+-- nil when the car can't be built here, or its mods can't be applied.
+function VehicleService.extrasAfterMods(vehicleId: string, trimId: string, options: SpawnOptions): { string }?
+	local design = options.design
+	if design ~= nil then
+		if design.hidden or not VehicleService.publishDesign(design) then
+			return nil
+		end
+		vehicleId = VehicleService.designVehicleId(design.uid)
+		trimId = Designer.designTrim
+	end
+	local template = if design ~= nil then designTemplate(design) else findTemplate(vehicleId, trimId)
+	if template == nil then
+		return nil
+	end
+	local model = template:Clone()
+	if design ~= nil then
+		markDesign(model, design, vehicleId, trimId)
+	end
+	local applied = applyMods(model, options.mods, if design ~= nil then "kit" else "catalog", options.wheels)
+	local ids = if applied then ModBuilder.extrasOn(model) else nil
+	model:Destroy()
+	return ids
 end
 
 -- Public API: spawning -------------------------------------------------------------------------------------
@@ -673,7 +716,11 @@ function VehicleService.spawn(
 ): Model?
 	local design = if options ~= nil then options.design else nil
 	local mods = if options ~= nil then options.mods else nil
+	local wheels = if options ~= nil then options.wheels else nil
 	if design ~= nil then
+		if design.hidden then
+			mods = nil -- a design a moderator hid falls back to its plain kit look, mods and all
+		end
 		if not VehicleService.publishDesign(design) then
 			return nil
 		end
@@ -708,14 +755,11 @@ function VehicleService.spawn(
 	local model = template:Clone()
 	local chassis = model.PrimaryPart :: BasePart -- findTemplate (or designTemplate) checked it
 	if design ~= nil then
-		model.Name = Catalog.modelName(vehicleId, trimId)
-		model:SetAttribute("VehicleId", vehicleId)
-		model:SetAttribute("Trim", trimId)
-		model:SetAttribute("DesignUid", design.uid)
+		markDesign(model, design, vehicleId, trimId)
 	end
 	-- Mods go on before anything else touches the copy, so the Wrap & Tint look (CustomizationService) layers on
 	-- top of the modded car.
-	applyMods(model, mods, if design ~= nil then "kit" else "catalog")
+	applyMods(model, mods, if design ~= nil then "kit" else "catalog", wheels)
 	-- Only the chassis is ever anchored: every other part is welded to it, so it holds the whole car.
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
@@ -804,6 +848,51 @@ function VehicleService.seatDriver(player: Player): boolean
 	return true
 end
 
+-- Sits the player in their newest car's Driver seat once their character is out of any seat it was in. A car
+-- destroyed under its driver (GarageService swapping the car they sit in, a dev spawn, a test drive) leaves the
+-- Humanoid seated for a moment, and a Seat:Sit in that same step doesn't take: this waits until the Humanoid has no
+-- SeatPart and has left the Seated state, at most Config/Spawning.reseatTimeoutSeconds, then seats them. Never
+-- yields; listens to the Humanoid's own signals (no polling).
+function VehicleService.seatDriverWhenFree(player: Player)
+	local humanoid = aliveCharacter(player)
+	if humanoid == nil then
+		return
+	end
+	local function free(): boolean
+		return humanoid.SeatPart == nil and humanoid:GetState() ~= Enum.HumanoidStateType.Seated
+	end
+	if free() then
+		VehicleService.seatDriver(player)
+		return
+	end
+	local done = false
+	local connections: { RBXScriptConnection } = {}
+	local timer: thread? = nil
+	local function finish()
+		if done then
+			return
+		end
+		done = true
+		for _, connection in connections do
+			connection:Disconnect()
+		end
+		local pending = timer
+		timer = nil
+		if pending ~= nil and pending ~= coroutine.running() then
+			task.cancel(pending)
+		end
+		VehicleService.seatDriver(player)
+	end
+	local function check()
+		if free() then
+			finish()
+		end
+	end
+	table.insert(connections, humanoid:GetPropertyChangedSignal("SeatPart"):Connect(check))
+	table.insert(connections, humanoid.StateChanged:Connect(check))
+	timer = task.delay(Spawning.reseatTimeoutSeconds, finish)
+end
+
 -- Dev spawn (Studio only) ----------------------------------------------------------------------------------
 
 local function onDevSpawn(player: Player, payload: any)
@@ -822,7 +911,7 @@ local function onDevSpawn(player: Player, payload: any)
 			return
 		end
 		if VehicleService.spawn(player, vehicleId, trimId, nil, { design = source }) ~= nil then
-			VehicleService.seatDriver(player)
+			VehicleService.seatDriverWhenFree(player)
 		end
 		return
 	end
@@ -832,7 +921,7 @@ local function onDevSpawn(player: Player, payload: any)
 		return
 	end
 	if VehicleService.spawn(player, vehicleId, trimId) ~= nil then
-		VehicleService.seatDriver(player)
+		VehicleService.seatDriverWhenFree(player)
 	end
 end
 

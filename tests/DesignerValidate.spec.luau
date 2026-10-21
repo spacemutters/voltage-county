@@ -27,6 +27,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Classes = require(ReplicatedStorage.Shared.Config.Classes)
+local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local ModBuilder: any = require(ReplicatedStorage.Shared.Vehicle.ModBuilder)
 local SpecBuilder: any = require(ReplicatedStorage.Shared.Vehicle.SpecBuilder)
@@ -1048,6 +1049,88 @@ return function(t: Harness.Api)
 			model:Destroy()
 			t.expect(changes).toEqual({})
 			t.expect(physical).toEqual({})
+		end)
+	end)
+
+	-- A hidden design is published under the same catalog id, so its geometry (body numbers and stance) must not move.
+	t.describe("Validate.plain", function()
+		t.it(
+			"keeps the class, stats, body numbers and stance (the same chassis); plain parts, paint and name",
+			function()
+				local raw = validDesign("muscle", "fastback", "torquey", "fuel")
+				for index, field in BODY_NUMBERS do
+					raw.body[field] = index / (#BODY_NUMBERS + 1)
+				end
+				raw.stance = { rideHeight = -0.6, wheelSize = 0.9 }
+				raw.parts.spoiler = "wing"
+				local spec, reasons = design(raw)
+				expectAccepted(t, spec, reasons)
+				local plain = Validate.plain(spec, kit)
+				t.expect(plain.body).toEqual(spec.body)
+				t.expect(plain.stance).toEqual(spec.stance)
+				t.expect({ class = plain.class, energy = plain.energy, personality = plain.personality })
+					.toEqual({ class = spec.class, energy = spec.energy, personality = spec.personality })
+				t.expect(SpecBuilder.geometry(plain, kit)).toEqual(SpecBuilder.geometry(spec, kit))
+				t.expect(SpecBuilder.stats(plain, kit)).toEqual(SpecBuilder.stats(spec, kit))
+				for field, value in plain.parts do
+					t.expect({ field = field, value = value }).toEqual({ field = field, value = kit.parts[field][1] })
+				end
+				t.expect(plain.meshPrompt).toBe("")
+				t.expect(plain.tagline).toBe("")
+				t.expect(plain.body == spec.body).toBe(false) -- a copy, never the saved spec's own table
+			end
+		)
+	end)
+
+	-- PLAN.md: extras go on mount points, and Config/Customization says which cars each extra fits.
+	t.describe("extras a car can carry", function()
+		t.it("lists only the extras that fit the class and body style", function()
+			local problems: { string } = {}
+			for _, classId in classIds() do
+				for _, template in kit.classes[classId].templates do
+					local style = kit.templates[template].style
+					local fits = Validate.extrasThatFit(kit, classId, style)
+					for _, id in sortedKeys(kit.extras) do
+						local listed = table.find(fits, id) ~= nil
+						if listed ~= Customization.extraAllowed(id, classId, style) then
+							table.insert(
+								problems,
+								`{classId}/{template}: {id} {if listed then "listed" else "missing"}`
+							)
+						end
+					end
+				end
+			end
+			t.expect(problems).toEqual({})
+		end)
+
+		t.it("leaves off extras the car can't carry and keeps the rest", function()
+			local raw = validMod()
+			raw.extras = { "roof_rack", "wing_spoiler" } -- a sports coupe takes a wing, never a roof rack
+			local modSpec, reasons = mod(raw, "catalog")
+			expectAccepted(t, modSpec, reasons)
+			local fitted, dropped = Validate.fitExtras(modSpec, kit, "sports", "coupe")
+			t.expect(fitted.extras).toEqual({ "wing_spoiler" })
+			t.expect(dropped).toEqual({ "roof_rack" })
+			t.expect(modSpec.extras).toEqual({ "roof_rack", "wing_spoiler" }) -- the mod given is never changed
+			local same, none = Validate.fitExtras(modSpec, kit, "pickup", "pickup")
+			t.expect(same.extras).toEqual({ "roof_rack" })
+			t.expect(none).toEqual({ "wing_spoiler" })
+		end)
+
+		t.it("turns extras that all don't fit into keep, so an extras-only mod is empty", function()
+			local raw = validMod()
+			raw.parts.wheels = KEEP
+			raw.paint = { primary = KEEP, secondary = KEEP, finish = KEEP, stripe = KEEP }
+			raw.stance = { rideHeight = unchanged(), wheelSize = unchanged() }
+			raw.extras = { "roof_rack", "light_bar" }
+			local modSpec, reasons = mod(raw, "catalog")
+			expectAccepted(t, modSpec, reasons)
+			t.expect(Validate.isEmptyMod(modSpec, kit)).toBe(false)
+			local fitted, dropped = Validate.fitExtras(modSpec, kit, "sports", "coupe")
+			t.expect(fitted.extras).toBe(KEEP)
+			t.expect(#dropped).toBe(1) -- one per mount point: Validate.mod kept only the roof rack
+			t.expect(Validate.isEmptyMod(fitted, kit)).toBe(true)
 		end)
 	end)
 end

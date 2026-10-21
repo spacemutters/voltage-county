@@ -7,8 +7,11 @@
 --   Validate.mod(raw, kit, kind)       -> (modSpec?, reasons)  a mod spec (PLAN.md "Mod spec"), kind "kit"|"catalog"
 --   Validate.forClass(spec, classId, kit)   the spec moved to another designable class (template and energy fixed)
 --   Validate.plain(spec, kit)          the plain look of a hidden design: same class, template, energy and
---                                      personality (so the same stats), base parts, neutral paint, generic name
+--                                      personality (so the same stats), the same body numbers and stance (so the
+--                                      same chassis and wheels), base parts, neutral paint, generic name
 --   Validate.keepMod(kit) / mergeMods(old, new, kit) / withMods(spec, mods, kit) / isEmptyMod(mod, kit)
+--   Validate.extrasThatFit(kit, classId, bodyStyle?)   the kit extras a car of that class (and body style) can carry
+--   Validate.fitExtras(mod, kit, classId, bodyStyle?)  the mod without the extras that car can't carry
 --   Validate.statsInBand(stats, classId)    built stats inside the class band (Config/Classes)
 --   Validate.prompt(raw, limit) / visibleChars(text) / clientSpec(spec)
 --
@@ -35,6 +38,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Classes = require(ReplicatedStorage.Shared.Config.Classes)
+local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Designer = require(ReplicatedStorage.Shared.Config.Designer)
 
 export type Body = {
@@ -403,9 +407,11 @@ function Validate.forClass(spec: Spec, classId: string, kit: any): Spec?
 	return moved
 end
 
--- What a hidden design looks like: its class, template, energy and personality (so the same stats and the same
--- chassis), the middle of every body range, each part's first (base) option, the neutral Config/Designer
--- plainLook paint, no generation prompt and a generic name ("Custom <class display name>").
+-- What a hidden design looks like: its class, template, energy and personality (so the same stats), its own body
+-- numbers and stance (so the same chassis, wheels and ride height: the catalog entry it is published under keeps
+-- its geometry, and a client that tuned the car before it was hidden still drives it right), each part's first
+-- (base) option, the neutral Config/Designer plainLook paint, no generation prompt and a generic name ("Custom
+-- <class display name>").
 function Validate.plain(spec: Spec, kit: any): Spec
 	local class = Classes[spec.class]
 	local className = if class ~= nil then class.displayName else spec.class
@@ -421,14 +427,7 @@ function Validate.plain(spec: Spec, kit: any): Spec
 		energy = spec.energy,
 		personality = spec.personality,
 		meshPrompt = "",
-		body = {
-			template = spec.body.template,
-			length = MIDDLE,
-			height = MIDDLE,
-			roofline = MIDDLE,
-			noseSlope = MIDDLE,
-			flare = MIDDLE,
-		},
+		body = table.clone(spec.body),
 		parts = parts :: any,
 		paint = {
 			primary = look.primary,
@@ -436,7 +435,7 @@ function Validate.plain(spec: Spec, kit: any): Spec
 			finish = look.finish,
 			stripe = look.stripe,
 		},
-		stance = { rideHeight = 0, wheelSize = MIDDLE },
+		stance = table.clone(spec.stance),
 	}
 end
 
@@ -684,6 +683,40 @@ function Validate.isEmptyMod(mod: ModSpec, kit: any): boolean
 		end
 	end
 	return true
+end
+
+-- The kit extras a car of `classId` can carry (Config/Customization's classes, and body styles when `bodyStyle` is
+-- given), sorted by id. The backend is told these, so it offers only extras that fit.
+function Validate.extrasThatFit(kit: any, classId: string, bodyStyle: string?): { string }
+	local ids: { string } = {}
+	for id in kit.extras do
+		if Customization.extraAllowed(id, classId, bodyStyle) then
+			table.insert(ids, id)
+		end
+	end
+	table.sort(ids)
+	return ids
+end
+
+-- The mod without the extras a car of `classId` (and `bodyStyle`, when given) can't carry, and the ids it left off.
+-- Vehicle/ModBuilder would skip them anyway, so they must never count as a change the player pays for: when none
+-- is left, extras become "keep" (and a mod that asked for nothing else is empty). Never changes `mod`.
+function Validate.fitExtras(mod: ModSpec, kit: any, classId: string, bodyStyle: string?): (ModSpec, { string })
+	local extras = mod.extras
+	if type(extras) ~= "table" then
+		return mod, {}
+	end
+	local fitting: { string } = {}
+	local dropped: { string } = {}
+	for _, id in extras do
+		table.insert(if Customization.extraAllowed(id, classId, bodyStyle) then fitting else dropped, id)
+	end
+	if #dropped == 0 then
+		return mod, dropped
+	end
+	local fitted = table.clone(mod)
+	fitted.extras = if #fitting > 0 then fitting else kit.mod.keep
+	return fitted, dropped
 end
 
 local function copyMod(mod: ModSpec): ModSpec

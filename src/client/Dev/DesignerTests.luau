@@ -113,7 +113,7 @@ export type DesignRun = {
 	placedBy: string?, -- "spawn" or "drive"
 	rideHeight: number?, -- studs, measured at rest
 	configuredRideHeight: number?, -- studs, from its catalog geometry
-	restVerticalSpeed: number?, -- studs/s, the most seen over the end of the settle
+	restVerticalSpeed: number?, -- studs the chassis rose and fell over the end of the settle
 	bumpMaxTilt: number?, -- degrees from upright, the most seen on the bumps lane
 	bumpMph: number?, -- average over the humps
 	zeroToSixty: number?, -- seconds, measured
@@ -168,9 +168,12 @@ local SETTINGS = {
 	-- peaked at 2.6 degrees over the humps at 40 mph; 0-60 within ±15 % of the configured figure).
 	holdSeconds = 4, -- settle: held still this long once the car is placed...
 	bounceWindow = 1.5, -- ...and over the last this-many seconds of it...
-	maxRestVerticalSpeed = 0.5, -- ...the chassis moves up or down no faster than this (studs/s)
+	-- ...the chassis rises and falls within this many studs. Measured as a distance, not a speed: the raycast
+	-- suspension jitters by about 0.01 studs at 30 Hz at rest, which reads as 1.4 studs/s of instantaneous speed on
+	-- every car, catalog ones included (2026-10-20, a Halden Corrin on the same spot).
+	maxRestBounce = 0.05,
+	maxRestDrift = 0.25, -- ...and creeps no farther than this across the ground (studs)
 	restUprightDot = 0.98, -- at rest on flat ground the chassis UpVector.Y is at least this
-	maxRestMph = 1, -- and it is this still
 	rideHeightTolerance = 0.3, -- measured ride height within this many studs of the configured one...
 	rideHeightShare = 0.3, -- ...or this share of it, whichever is more
 	rayLength = 50, -- studs searched below the chassis for the ground
@@ -742,10 +745,15 @@ end
 -- Cars the tests need
 ---------------------------------------------------------------------------------------------------------------
 
--- Brings an owned car out of the garage (SpawnOwned seats the player). The car, or nil and why.
+-- Brings an owned car out of the garage (SpawnOwned seats the player). Gets out of any car first, as a player walking
+-- up to the garage would: the server takes the old car away, and a character still seated in it can't be sat in the
+-- new one in the same step. The car, or nil and why.
 local function spawnOwned(ctx: Context, uid: string): (Model?, string?)
 	setCurrent(ctx, `bringing out car {uid}`)
 	local previous = currentCar()
+	if not leaveCar(ctx) then
+		return nil, "couldn't get out of the car before bringing one out"
+	end
 	local reply = invoke("SpawnOwned", { uid = uid }, true)
 	if reply == nil or reply.ok ~= true then
 		return nil, `SpawnOwned {describe(reply)}`
@@ -1015,35 +1023,42 @@ local function settleCheck(ctx: Context, run: DesignRun, car: Model, vehicleId: 
 	local c = run.classId
 	local chassis = car.PrimaryPart :: BasePart
 	setCurrent(ctx, `{c}: letting it settle`)
-	local samples: { { at: number, vy: number } } = {}
+	local samples: { { at: number, position: Vector3 } } = {}
 	local started = os.clock()
 	local connection = RunService.Heartbeat:Connect(function()
 		if chassis.Parent ~= nil then
-			table.insert(samples, { at = os.clock() - started, vy = chassis.AssemblyLinearVelocity.Y })
+			table.insert(samples, { at = os.clock() - started, position = chassis.Position })
 		end
 	end)
 	AutoDriver.holdStill(SETTINGS.holdSeconds)
 	connection:Disconnect()
 
+	-- Over the window: how far the chassis rose and fell, and how far it crept across the ground.
 	local windowStart = SETTINGS.holdSeconds - SETTINGS.bounceWindow
-	local bounce = 0
+	local low, high = math.huge, -math.huge
+	local first: Vector3? = nil
+	local drift = 0
 	for _, sample in samples do
 		if sample.at >= windowStart then
-			bounce = math.max(bounce, math.abs(sample.vy))
+			local p = sample.position
+			low, high = math.min(low, p.Y), math.max(high, p.Y)
+			first = first or p
+			local start = first :: Vector3
+			drift = math.max(drift, Vector3.new(p.X - start.X, 0, p.Z - start.Z).Magnitude)
 		end
 	end
-	local mph = Units.studsToMph(chassis.AssemblyLinearVelocity.Magnitude)
+	local bounce = if high >= low then high - low else 0
 	local up = chassis.CFrame.UpVector.Y
 	run.restVerticalSpeed = round(bounce, 3)
 	check(
 		ctx,
 		`{c}: settles on its suspension`,
-		#samples > 0
+		first ~= nil
 			and up >= SETTINGS.restUprightDot
-			and mph <= SETTINGS.maxRestMph
-			and bounce <= SETTINGS.maxRestVerticalSpeed,
-		`upright {format(up, 3)}, {format(mph, 2)} mph, up/down at most {format(bounce, 2)} studs/s over the last `
-			.. `{SETTINGS.bounceWindow} s`
+			and bounce <= SETTINGS.maxRestBounce
+			and drift <= SETTINGS.maxRestDrift,
+		`upright {format(up, 3)}, rose and fell {format(bounce, 3)} studs and crept {format(drift, 2)} studs over the `
+			.. `last {SETTINGS.bounceWindow} s`
 	)
 
 	local geometry = Catalog.geometry(vehicleId, trim)
@@ -1325,10 +1340,11 @@ local function designOne(ctx: Context, classId: string): DesignRun
 		scrap(ctx, carUid, `the {c} design`)
 		return stop(placeWhy or "not placed")
 	end
-	-- Driving the owned car, the server may still swap in its generated look (GarageService.refreshOwned) until the
-	-- generation budget has passed; wait it out so no check is cut short.
+	-- Until the generation budget has passed, the server may still swap a driven owned car for its generated look
+	-- (GarageService.refreshOwned), and GenerationService is still busy in the same Studio process either way, which
+	-- slows the physics frames the settle check measures. Wait it out, however the car got here.
 	local generation = Designer.generation
-	if run.placedBy == "drive" and type(generation) == "table" and generation.enabled ~= false then
+	if type(generation) == "table" and generation.enabled ~= false then
 		local untilDone = result.at + numberIn(generation, "timeoutSeconds", 0) + SETTINGS.settleSeconds
 		if os.clock() < untilDone then
 			setCurrent(ctx, `{c}: waiting out the generated look`)

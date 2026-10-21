@@ -24,6 +24,7 @@ test("the system prompt states every rule", () => {
 		"Catalog cars may change only paint, stance, wheels and extras",
 		"body.template is always", // a mod never swaps the template (the game never does)
 		"accessoryPrompt is always", // generated add-ons aren't built, so none is asked for
+		"pick extras only from that list", // the game tells it which extras fit the car (extrasThatFit)
 		"language of the player's description",
 	];
 	for (const rule of rules) {

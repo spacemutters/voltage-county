@@ -221,13 +221,14 @@ local function destroy(model: Model?)
 	end
 end
 
--- A design built from its spec (SpecBuilder.build), or nil.
-local function buildDesign(spec: { [string]: any }): Model?
+-- A design built from its spec (SpecBuilder.build), or nil. With the uid of a saved design the model is that design
+-- ("custom:<uid>", which the server published), so the looks and extras sized by class fit it.
+local function buildDesign(spec: { [string]: any }, designUid: string?): Model?
 	local SpecBuilder = builder("SpecBuilder")
 	if SpecBuilder == nil then
 		return nil
 	end
-	local ok, model = pcall(SpecBuilder.build, spec, DesignerModel.kit)
+	local ok, model = pcall(SpecBuilder.build, spec, DesignerModel.kit, designUid)
 	if ok and typeof(model) == "Instance" and model:IsA("Model") then
 		return model
 	end
@@ -294,11 +295,12 @@ local function currentLook(car: Types.SnapshotVehicle): Model?
 	local designer = ProfileController.designer()
 	local design = DesignerModel.designOf(car, designer)
 	local spec = if design ~= nil then design.spec else nil
-	if spec == nil then
+	if design == nil or spec == nil then
 		return nil
 	end
-	local model = buildDesign(spec) -- a hidden design's spec is already its plain look
-	local mod = if designer ~= nil then designer.mods[car.uid] else nil
+	local model = buildDesign(spec, design.uid) -- a hidden design's spec is already its plain look
+	-- A hidden design spawns plain, without its mods (Services/VehicleService), so its preview does too.
+	local mod = if designer ~= nil and not design.hidden then designer.mods[car.uid] else nil
 	if model ~= nil and mod ~= nil and next(mod) ~= nil then
 		applyMod(model, mod, "kit")
 	end

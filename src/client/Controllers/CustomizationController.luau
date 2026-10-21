@@ -437,7 +437,13 @@ tryOpen = function(bay: Location?, quiet: boolean)
 	end
 	local car, uid = ownCar()
 	local owned = if uid ~= nil then ownedEntry(uid) else nil
-	local info = if owned ~= nil then CustomizeModel.vehicleInfo(owned.vehicleId) else nil
+	-- The car is looked up by its model's catalog id: a player design is saved as "custom" but spawns as
+	-- "custom:<designUid>", which resolves through the designs the server published (Vehicle/Catalog).
+	local modelId = if car ~= nil then car:GetAttribute("VehicleId") else nil
+	local info = if owned == nil
+		then nil
+		else (if type(modelId) == "string" then CustomizeModel.vehicleInfo(modelId) else nil)
+			or CustomizeModel.vehicleInfo(owned.vehicleId)
 	if car == nil or uid == nil or owned == nil or info == nil then
 		refuse(copy.notYourCar)
 		return

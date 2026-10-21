@@ -4,6 +4,9 @@
 --   * every template of every designable class, at every personality, builds a model that passes the vehicle model
 --     contract inside the part budget, with every parts variant, finish and stripe used along the way, and at the
 --     extremes of every number
+--   * the budget still holds once the car wears its look (Vehicle/Appearance: wheel faces and plates) and then a
+--     maximal mod (Vehicle/ModBuilder: every part swapped, stripes, every extra that fits): stripes and extras give
+--     way, so only a body and look that are over the budget on their own (busy wheel styles) end up over it
 --   * stats sit inside the class band and at or under its ceiling (kit.bandCeiling), and come only from class and
 --     personality
 --   * out-of-range, forged and missing numbers clamp to the kit ranges; unknown ids fall back to kit ids
@@ -16,6 +19,7 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local Appearance = require(ReplicatedStorage.Shared.Vehicle.Appearance)
 local BodyKit = require(ReplicatedStorage.Shared.Vehicle.BodyKit)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Classes = require(ReplicatedStorage.Shared.Config.Classes)
@@ -23,10 +27,12 @@ local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Designer = require(ReplicatedStorage.Shared.Config.Designer)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
+local ModBuilder = require(ReplicatedStorage.Shared.Vehicle.ModBuilder)
 local SpecBuilder = require(ReplicatedStorage.Shared.Vehicle.SpecBuilder)
 
 local kit: any = require(ReplicatedStorage.Shared.Config.DesignKit)
 
+local KEEP: string = kit.mod.keep
 local UID = "specbuilder-spec" -- the design uid builds here use
 local BODY_NUMBERS = { "length", "height", "roofline", "noseSlope", "flare" }
 local PART_FIELDS = { "frontBumper", "rearBumper", "spoiler", "lights", "wheels" }
@@ -206,6 +212,75 @@ local function build(spec: any): Model
 	return SpecBuilder.build(spec, kit, UID)
 end
 
+-- The kit wheel styles with the fewest and the most parts in their face (Vehicle/Appearance).
+local function wheelExtremes(): { string }
+	local lightest, busiest = kit.parts.wheels[1], kit.parts.wheels[1]
+	for _, id in kit.parts.wheels do
+		if Appearance.wheelFaceParts(id) < Appearance.wheelFaceParts(lightest) then
+			lightest = id
+		end
+		if Appearance.wheelFaceParts(id) > Appearance.wheelFaceParts(busiest) then
+			busiest = id
+		end
+	end
+	return if lightest == busiest then { lightest } else { lightest, busiest }
+end
+
+-- Every kit extra a design of this class and template can carry (Config/Customization), one per mount point, at most
+-- kit.limits.maxExtras.
+local function extrasFor(classId: string, template: string): { string }
+	local bodyStyle = kit.templates[template].style
+	local list: { string } = {}
+	local mounts: { [string]: boolean } = {}
+	for _, id in sortedKeys(kit.extras) do
+		local mount = kit.extras[id].mount
+		if
+			not mounts[mount]
+			and #list < kit.limits.maxExtras
+			and Customization.extraAllowed(id, classId, bodyStyle)
+		then
+			mounts[mount] = true
+			table.insert(list, id)
+		end
+	end
+	return list
+end
+
+-- A kit mod that asks for the most parts it can: the biggest body, the multi-part bumpers, lamps and wing, the given
+-- wheels and stripe, and `extras` ("keep" when nil).
+local function maximalMod(wheels: string, stripe: string, extras: { string }?): { [string]: any }
+	local function change(value: number): { [string]: any }
+		return { change = true, value = value }
+	end
+	local body: { [string]: any } = { template = KEEP }
+	for _, field in BODY_NUMBERS do
+		body[field] = change(kit.ranges.body.max)
+	end
+	return {
+		refusal = nil,
+		summary = "Everything at once",
+		body = body,
+		parts = { frontBumper = "rugged", rearBumper = "diffuser", spoiler = "wing", lights = "bar", wheels = wheels },
+		paint = { primary = "#AA2233", secondary = "#101820", finish = KEEP, stripe = stripe },
+		stance = { rideHeight = change(kit.ranges.rideHeight.max), wheelSize = change(kit.ranges.wheelSize.max) },
+		extras = if extras ~= nil then extras else KEEP,
+		accessoryPrompt = "none",
+	}
+end
+
+-- The parts on a design once it wears its look (SpecBuilder.lookFields, as a new design's car starts) and then
+-- `mod`, when given: what a spawned car carries.
+local function partsWithLook(spec: any, mod: { [string]: any }?): number
+	local model = build(spec)
+	Appearance.apply(model, SpecBuilder.lookFields(spec, kit) :: any)
+	if mod ~= nil then
+		ModBuilder.apply(model, mod, kit, "kit")
+	end
+	local count = BodyKit.partCount(model)
+	model:Destroy()
+	return count
+end
+
 -- Specs ------------------------------------------------------------------------------------------------------
 
 return function(t: Harness.Api)
@@ -276,6 +351,53 @@ return function(t: Harness.Api)
 				end
 			end
 			t.expect(problems).toEqual({})
+		end)
+
+		t.it("keeps inside the budget once its look and a maximal mod go on (stripes and extras give way)", function()
+			-- Extras are sized by class, so the design's catalog entry must resolve (Vehicle/Appearance looks it up).
+			local canPublish = RunService:IsServer()
+			if not canPublish then
+				print("  SpecBuilder.spec: Catalog.publishDesign runs on the server only; extras aren't counted here")
+			end
+			local problems: { string } = {}
+			local extrasSeen = 0
+			for _, pair in templateClasses() do
+				for _, wheels in wheelExtremes() do
+					local label = `{pair.template} with {wheels} wheels`
+					local striped = baseSpec(pair.classId, pair.template)
+					striped.parts.wheels = wheels
+					striped.paint.stripe = "center"
+					local plain = baseSpec(pair.classId, pair.template)
+					plain.parts.wheels = wheels
+					plain.paint.stripe = "none"
+					if canPublish then
+						pcall(Catalog.publishDesign, UID, SpecBuilder.vehicleFor(striped, kit, UID))
+					end
+					local extras = extrasFor(pair.classId, pair.template)
+					extrasSeen += #extras
+
+					-- The look alone: the design's stripes left room for its wheel faces and plates.
+					local looked, lookFloor = partsWithLook(striped, nil), partsWithLook(plain, nil)
+					if looked > math.max(BodyKit.MAX_PARTS, lookFloor) then
+						table.insert(problems, `{label}: {looked} parts with its look (without stripes {lookFloor})`)
+					end
+
+					-- Then a maximal mod: stripes and every extra that fits give way to the budget.
+					local modded = partsWithLook(striped, maximalMod(wheels, "side", extras))
+					local modFloor = partsWithLook(plain, maximalMod(wheels, "none", nil))
+					if modded > math.max(BodyKit.MAX_PARTS, modFloor) then
+						table.insert(
+							problems,
+							`{label}: {modded} parts after a maximal mod (without its stripes and extras {modFloor})`
+						)
+					end
+				end
+			end
+			if canPublish then
+				pcall(Catalog.unpublishDesign, UID)
+			end
+			t.expect(problems).toEqual({})
+			t.expect(extrasSeen).toBeGreaterThan(0)
 		end)
 
 		t.it("a spec with nothing valid in it (normalized to the kit)", function()

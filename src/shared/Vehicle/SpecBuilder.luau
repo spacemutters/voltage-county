@@ -4,7 +4,8 @@
 -- Services/VehicleService (spawning a design, publishing its catalog entry), Services/DesignerService (stats),
 -- Vehicle/ModBuilder (mods on designed cars) and the client's Design Studio (local previews).
 --
---   SpecBuilder.build(spec, kit, designUid?)  a contract model (<= BodyKit.MAX_PARTS parts), checked; deterministic.
+--   SpecBuilder.build(spec, kit, designUid?)  a contract model (<= BodyKit.MAX_PARTS parts, room kept for its look's
+--                                             wheel faces and plates), checked; deterministic.
 --                                             With a designUid it is "custom_<uid>" with VehicleId "custom:<uid>",
 --                                             Trim "design" and DesignUid; without, "custom" / VehicleId "custom".
 --   SpecBuilder.stats(spec, kit)              { topSpeedMph, zeroToSixtySec, handling, energyMinutes, seats, drive }
@@ -36,6 +37,7 @@
 local HttpService = game:GetService("HttpService")
 
 local Shared = script.Parent.Parent
+local Appearance = require(script.Parent.Appearance)
 local BodyKit = require(script.Parent.BodyKit)
 local Classes = require(Shared.Config.Classes)
 local Customization = require(Shared.Config.Customization)
@@ -464,8 +466,11 @@ local function assembleSpec(
 	BodyKit.addSpoiler(model, s.parts.spoiler)
 	BodyKit.paint(model, toColor(s.paint.primary), secondary, Customization.getFinish(s.paint.finish))
 	dressWheels(model, s.parts.wheels)
-	-- Stripes go on last, inside whatever is left of the part budget.
-	BodyKit.addStripes(model, s.paint.stripe, secondary, BodyKit.MAX_PARTS - BodyKit.partCount(model))
+	-- Stripes go on last, inside what is left of the part budget once the car's look goes on (Vehicle/Appearance:
+	-- the wheel style's faces in place of the stock rim and spoke, and the plates). A busy wheel style can leave no
+	-- room for them.
+	local room = BodyKit.MAX_PARTS - BodyKit.partCount(model) - Appearance.addedParts(model, s.parts.wheels)
+	BodyKit.addStripes(model, s.paint.stripe, secondary, math.max(room, 0))
 	model:SetAttribute(SPEC_ATTRIBUTE, HttpService:JSONEncode(s))
 	model:SetAttribute(KIT_ATTRIBUTE, kit.kitVersion)
 	return model, vehicle

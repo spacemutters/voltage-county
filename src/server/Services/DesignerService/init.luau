@@ -37,7 +37,10 @@
 --      version, with the shared secret in the x-api-key header (HttpService:GetSecret). Waits at most
 --      Config/Designer.requestTimeoutSeconds, sending again once if the request never reached the backend.
 --   4. re-validates the reply against the kit (Validate; the backend isn't trusted either) and forces the class
---      the player asked for (or a surprise class they may design).
+--      the player asked for (or a surprise class they may design). A mod loses the extras the car can't carry
+--      (Config/Customization classes and body styles; the backend is told which fit, as current.extrasThatFit) or
+--      has no room for (the part budget: VehicleService.extrasAfterMods builds the car to see) before anything is
+--      paid, so a mod left with nothing to change is refunded as empty.
 --   5. checks the name, tagline, mod summary, refusal and mesh prompt for real brand names (Util/BrandNames; the
 --      backend checks too, but it isn't trusted) and filters the shown text with TextService; text that names a
 --      brand or that the filter changes is replaced by a plain one ("Custom <class>", no tagline, "Mod applied",
@@ -147,6 +150,7 @@ export type ModInput = {
 	prompt: string,
 	kind: Validate.Kind,
 	classId: string,
+	bodyStyle: string?, -- the car's Config/Vehicles body style (nil: extras are checked by class alone)
 	current: { [string]: any }, -- the car's current spec or look, for the backend
 }
 
@@ -190,6 +194,7 @@ type ReportEntry = {
 type ModPlan = {
 	kind: Validate.Kind,
 	classId: string,
+	bodyStyle: string, -- Config/Vehicles body style (a design's: its template's)
 	current: { [string]: any },
 	previous: Validate.ModSpec?, -- the car's mods before this one (nil: none, or hidden)
 }
@@ -604,13 +609,19 @@ function DesignerService.modPipeline(deps: Deps, input: ModInput): ModOutcome
 	if reply.status ~= "ok" then
 		return modOutcome(reply.status, shownRefusal(deps, reply.refusal))
 	end
-	local mod, reasons = Validate.mod(reply.spec, kit, input.kind)
-	if mod == nil then
+	local checked, reasons = Validate.mod(reply.spec, kit, input.kind)
+	if checked == nil then
 		if reasons[1] == "refusal" then
 			return modOutcome("refused", shownRefusal(deps, refusalOf(reply.spec)))
 		end
 		deps.log(`the backend's mod failed validation: {table.concat(reasons, "; ")}`)
 		return modOutcome("invalid")
+	end
+	-- Extras the car can't carry (Config/Customization classes and body styles) are left off before anything is
+	-- charged: ModBuilder would skip them, so a mod that asked only for those changes nothing.
+	local mod, dropped = Validate.fitExtras(checked, kit, input.classId, input.bodyStyle)
+	if #dropped > 0 then
+		deps.log(`left off extras a {input.classId} can't carry: {table.concat(dropped, ", ")}`)
 	end
 	if Validate.isEmptyMod(mod, kit) then
 		return modOutcome("empty")
@@ -1269,15 +1280,19 @@ function DesignerService.modPlan(data: Types.PlayerData, vehicle: Types.OwnedVeh
 			return nil, "cantMod"
 		end
 		local previous = savedMods(vehicle, "kit")
+		local template = kit.templates[spec.body.template]
+		local bodyStyle: string = if template ~= nil then template.style else spec.body.template
 		return {
 			kind = "kit",
 			classId = spec.class,
+			bodyStyle = bodyStyle,
 			previous = previous,
 			current = {
 				kind = "kit",
 				classId = spec.class,
 				spec = Validate.clientSpec(Validate.withMods(spec, previous, kit)),
 				extras = if previous ~= nil then deepCopy(previous.extras) else kit.mod.keep,
+				extrasThatFit = Validate.extrasThatFit(kit, spec.class, bodyStyle),
 			},
 		},
 			nil
@@ -1290,6 +1305,7 @@ function DesignerService.modPlan(data: Types.PlayerData, vehicle: Types.OwnedVeh
 	return {
 		kind = "catalog",
 		classId = entry.class,
+		bodyStyle = entry.bodyStyle,
 		previous = previous,
 		current = {
 			kind = "catalog",
@@ -1302,6 +1318,7 @@ function DesignerService.modPlan(data: Types.PlayerData, vehicle: Types.OwnedVeh
 				rideHeight = vehicle.rideHeight,
 			},
 			mods = shownMod(previous),
+			extrasThatFit = Validate.extrasThatFit(kit, entry.class, entry.bodyStyle),
 		},
 	},
 		nil
@@ -1347,8 +1364,57 @@ local function saveMod(
 	return merged, nil
 end
 
+-- The mod with only the extras that really go on the car: VehicleService builds a copy of it out of the world with
+-- its mods and this one merged, wearing the wheels its look will have (ModBuilder leaves off extras with no room
+-- left in the part budget). The mod as it was when the car can't be built here, so a build problem never costs the
+-- player their mod. Never changes `mod`.
+local function buildableExtras(player: Player, job: ModJob, mod: Validate.ModSpec): Validate.ModSpec
+	local extras = mod.extras
+	local data = dataOf(player)
+	local vehicleService, garageService = VehicleService, GarageService
+	if type(extras) ~= "table" or data == nil or vehicleService == nil or garageService == nil then
+		return mod
+	end
+	local vehicle = garageService.findVehicle(data, job.uid)
+	local options = if vehicle ~= nil then garageService.spawnOptions(data, vehicle) else nil
+	if vehicle == nil or options == nil then
+		return mod
+	end
+	local previous = if type(vehicle.mods) == "table" and vehicle.mods.hidden ~= true then vehicle.mods else nil
+	options.mods = Validate.mergeMods(previous, mod, DesignKit) :: any
+	if mod.parts.wheels ~= DesignKit.mod.keep then
+		options.wheels = mod.parts.wheels -- saveMod makes the mod's wheels the car's own
+	end
+	local ok, built = pcall(vehicleService.extrasAfterMods, vehicle.vehicleId, vehicle.trim, options)
+	if not ok or built == nil then
+		if not ok then
+			warn(`{LOG} {player.Name}: couldn't check the mod's extras on car {job.uid}: {built}`)
+		end
+		return mod
+	end
+	local kept: { string } = {}
+	for _, id in extras do
+		if table.find(built, id) ~= nil then
+			table.insert(kept, id)
+		end
+	end
+	if #kept == #extras then
+		return mod
+	end
+	warn(`{LOG} {player.Name}: car {job.uid} has no room for some extras (part budget); kept {#kept} of {#extras}`)
+	local fitted = table.clone(mod)
+	fitted.extras = if #kept > 0 then kept else DesignKit.mod.keep
+	return fitted
+end
+
 local function runMod(player: Player, job: ModJob, prompt: string, plan: ModPlan)
-	local input: ModInput = { prompt = prompt, kind = plan.kind, classId = plan.classId, current = plan.current }
+	local input: ModInput = {
+		prompt = prompt,
+		kind = plan.kind,
+		classId = plan.classId,
+		bodyStyle = plan.bodyStyle,
+		current = plan.current,
+	}
 	local ran, result = xpcall(DesignerService.modPipeline, debug.traceback, depsFor(player), input)
 	local outcome: ModOutcome = if ran then result else modOutcome("error")
 	if not ran then
@@ -1358,10 +1424,17 @@ local function runMod(player: Player, job: ModJob, prompt: string, plan: ModPlan
 		return -- the player left (and was refunded) while this ran
 	end
 	modJobs[player] = nil
-	local mod = outcome.mod
-	if DesignerService.settles(outcome.status) ~= "hold" or mod == nil then
+	local made = outcome.mod
+	if DesignerService.settles(outcome.status) ~= "hold" or made == nil then
 		CreditsService.refund(player, job.reservationId)
 		sendFailure(player, job.requestId, "mod", outcome)
+		return
+	end
+	-- Extras the part budget leaves off are never paid for either; a mod left with nothing is refunded.
+	local mod = buildableExtras(player, job, made)
+	if Validate.isEmptyMod(mod, DesignKit) then
+		CreditsService.refund(player, job.reservationId)
+		sendFailure(player, job.requestId, "mod", modOutcome("empty"))
 		return
 	end
 

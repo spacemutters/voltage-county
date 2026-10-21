@@ -642,7 +642,7 @@ local function onStartTestDrive(player: Player, payload: any): Reply
 			DealershipService.endTestDrive(player, true)
 		end
 	end)
-	vehicleService.seatDriver(player)
+	vehicleService.seatDriverWhenFree(player) -- spawning replaced any car they sat in
 	local length = DealershipService.durationText(settings.seconds)
 	print(`{LOG} {player.Name} started a test drive in {vehicleId}/{trimId}`)
 	return { ok = true, message = string.format(messages.testDriveStarted, length), seconds = settings.seconds }

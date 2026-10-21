@@ -73,9 +73,10 @@ type CustomizationServiceModule = typeof(require(script.Parent.CustomizationServ
 export type Reply = { ok: boolean, message: string }
 
 -- VehicleService.SpawnOptions (spelled out here: VehicleService is only required in Init).
-type SpawnOptions = {
+export type SpawnOptions = {
 	design: { uid: string, spec: { [string]: any }, hidden: boolean }?,
 	mods: { [string]: any }?,
+	wheels: string?,
 }
 
 local LOG = "[GarageService]"
@@ -373,10 +374,12 @@ end
 
 -- Remotes ---------------------------------------------------------------------------------------------------
 
--- What VehicleService needs to bring an owned car out (a design's saved spec, the car's saved mods), or nil and
--- what to tell the player when it can't come out: a catalog car that isn't drivable or no longer in the catalog,
--- or a design whose saved design is missing.
-local function spawnPlan(data: Types.PlayerData, vehicle: Types.OwnedVehicle): (SpawnOptions?, string?)
+-- What VehicleService needs to bring an owned car out (a design's saved spec, the car's saved mods and the wheel
+-- style its look puts on), or nil and what to tell the player when it can't come out: a catalog car that isn't
+-- drivable or no longer in the catalog, or a design whose saved design is missing. A new table every call
+-- (DesignerService fills in a mod it is about to save, for VehicleService.extrasAfterMods).
+function GarageService.spawnOptions(data: Types.PlayerData, vehicle: Types.OwnedVehicle): (SpawnOptions?, string?)
+	local wheels = if type(vehicle.wheels) == "string" then vehicle.wheels else nil
 	if isCustom(vehicle) then
 		local design = GarageService.findDesign(data, vehicle.designUid)
 		if design == nil or type(design.spec) ~= "table" then
@@ -385,6 +388,7 @@ local function spawnPlan(data: Types.PlayerData, vehicle: Types.OwnedVehicle): (
 		return {
 			design = { uid = design.uid, spec = design.spec, hidden = design.hidden == true },
 			mods = vehicle.mods,
+			wheels = wheels,
 		},
 			nil
 	end
@@ -396,8 +400,9 @@ local function spawnPlan(data: Types.PlayerData, vehicle: Types.OwnedVehicle): (
 	then
 		return nil, messages.cantSpawn
 	end
-	return { mods = vehicle.mods }, nil
+	return { mods = vehicle.mods, wheels = wheels }, nil
 end
+local spawnPlan = GarageService.spawnOptions
 
 -- The name a car shows in replies: its catalog name, or a design's own name.
 local function ownedName(data: Types.PlayerData, vehicle: Types.OwnedVehicle): string
@@ -435,7 +440,9 @@ local function bringOut(
 		customizationService.applySaved(player, model, vehicle)
 	end
 	if seat then
-		vehicleService.seatDriver(player)
+		-- Once they are out of the car this one replaced (spawnOwned and refreshOwned take away the car they may be
+		-- sitting in, and a seat can't take a character that is still seated in the step it lost its old seat).
+		vehicleService.seatDriverWhenFree(player)
 	end
 	return model
 end

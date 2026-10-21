@@ -640,6 +640,39 @@ return function(t: Harness.Api)
 			end
 		end)
 
+		-- Config/Customization says which cars each extra fits; ModBuilder skips the rest, so they're never paid for.
+		t.it("leaves off extras the car can't carry, and refunds a mod that asked only for those", function()
+			local function run(spec: { [string]: any }): (DesignerService.ModOutcome, Credits)
+				local wallet = credits(3)
+				assert(Ledger.reserve(wallet, PRICES.mod, "m", NOW), "the mod reservation failed")
+				local outcome = DesignerService.modPipeline(fakeDeps({ status = "ok", spec = spec }), {
+					prompt = "a roof rack on my coupe",
+					kind = "catalog",
+					classId = "sports", -- a roof rack fits no sports car
+					bodyStyle = "coupe",
+					current = { kind = "catalog", classId = "sports" },
+				})
+				if DesignerService.settles(outcome.status) == "hold" then
+					Ledger.spend(wallet, "m")
+				else
+					Ledger.refund(wallet, "m")
+				end
+				return outcome, wallet
+			end
+			local rackOnly = backendMod() -- extras = { "roof_rack" }
+			rackOnly.parts.wheels = KEEP
+			rackOnly.paint.primary = KEEP
+			rackOnly.stance.rideHeight = { change = false, value = 0 }
+			local refused, kept = run(rackOnly)
+			t.expect(refused.status).toBe("empty")
+			t.expect(kept.balance).toBe(3)
+
+			local made, paid = run(backendMod()) -- trail wheels, tan paint and a lift as well
+			t.expect(made.status).toBe("ok")
+			t.expect(paid.balance).toBe(3 - PRICES.mod)
+			t.expect((made.mod :: any).extras).toBe(KEEP)
+		end)
+
 		t.it("replaces a summary that names a real brand", function()
 			local mod = backendMod()
 			mod.summary = `Paint like a {BrandNames.phrases()[4]}`

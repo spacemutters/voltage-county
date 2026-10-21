@@ -23,8 +23,9 @@
 --             ("Custom <class>"), no tagline.
 --   vehicles  each car also carries `designUid` (player designs, vehicleId "custom") and, when it has an AI mod,
 --             `modded = true` with `mods` (the mod spec re-validated, without its accessory prompt; its summary
---             was filtered when the mod was made) and `modSummary`. A mod a moderator hid sends `modHidden = true`
---             and no spec or summary. Fields that don't apply are left out.
+--             was filtered when the mod was made) and `modSummary`. A mod a moderator hid, or any mod on a design a
+--             moderator hid (that car spawns plain, Services/VehicleService), sends `modHidden = true` and no spec
+--             or summary. Fields that don't apply are left out.
 --
 -- Only ever sends a player their own data. No polling: one task.defer or task.delay per burst, per player.
 
@@ -100,8 +101,8 @@ function ProfileSyncService.snapshotMod(mods: any, kind: "kit" | "catalog"): Sna
 end
 
 -- The client's copy of one owned car: only the listed fields, each a plain value of the right type (the Phase 11
--- ones only when they apply).
-local function snapshotVehicle(vehicle: { [string]: any }): Types.SnapshotVehicle
+-- ones only when they apply). `hiddenDesigns` holds the uids of the player's designs a moderator hid.
+local function snapshotVehicle(vehicle: { [string]: any }, hiddenDesigns: { [string]: boolean }): Types.SnapshotVehicle
 	local look = Garage.defaults
 	local copy: { [string]: any } = {
 		uid = text(vehicle.uid, ""),
@@ -119,6 +120,9 @@ local function snapshotVehicle(vehicle: { [string]: any }): Types.SnapshotVehicl
 		copy.designUid = vehicle.designUid
 	end
 	local mod = ProfileSyncService.snapshotMod(vehicle.mods, if custom then "kit" else "catalog")
+	if mod ~= nil and custom and hiddenDesigns[copy.designUid or ""] then
+		mod = { modded = true, modHidden = true }
+	end
 	if mod ~= nil then
 		copy.modded = mod.modded
 		copy.modHidden = mod.modHidden
@@ -192,11 +196,19 @@ end
 -- (default false) is whether the player owns the Fleet Manager pass, for the fleet's slots.
 function ProfileSyncService.snapshot(data: Types.PlayerData, hasFleetManager: boolean?): Types.ProfileSnapshot
 	local raw = data :: any
+	local hiddenDesigns: { [string]: boolean } = {}
+	if type(raw.designs) == "table" then
+		for _, design in raw.designs do
+			if type(design) == "table" and type(design.uid) == "string" and design.hidden == true then
+				hiddenDesigns[design.uid] = true
+			end
+		end
+	end
 	local vehicles: { Types.SnapshotVehicle } = {}
 	if type(raw.vehicles) == "table" then
 		for _, vehicle in raw.vehicles do
 			if type(vehicle) == "table" and type(vehicle.uid) == "string" then
-				table.insert(vehicles, snapshotVehicle(vehicle))
+				table.insert(vehicles, snapshotVehicle(vehicle, hiddenDesigns))
 			end
 		end
 	end
