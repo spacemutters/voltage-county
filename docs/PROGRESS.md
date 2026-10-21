@@ -2,6 +2,75 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-20 — Phase 11: the AI Car Designer and AI mods (end of Milestone C)
+
+**Shipped**
+- **Design kit v1** (`Config/DesignKit.json`, shared with the backend): 11 designable classes, 11 body templates, part
+  variants (bumpers, spoilers, lights, the 8 Phase 7 wheel styles), 8 extras, finishes, stripes and 4 personalities.
+  Stats come only from the class band and personality (capped at 85 % of the band), so text can never make a
+  faster car.
+- **Builders that run in the live game:** the greybox body code moved out of the Studio-only builder into
+  `Vehicle/BodyKit`. A spec fingerprints every catalog car against the stored models, and none changed.
+  - `SpecBuilder` turns a design into a drivable car.
+  - `ModBuilder` applies an AI mod: catalog cars only take paint, stripes, wheels, stance and extras.
+  - Designs join the catalog as `custom:<id>`, so tuning, energy, jobs, the garage and Wrap & Tint all work for
+    them unchanged.
+- **AI look:** when Roblox's generator finishes in time, a new design shows a generated body for that session.
+  The saved car always rebuilds from its kit spec (Davis's choice).
+- **Credits:**
+  - the first new car is free, exactly once; then a new car costs 2 credits with one free re-roll, and a mod 1
+  - credits are held when a request starts, spent only on success, and refunded on a refusal, an error, a timeout
+    or a mod that changes nothing
+  - the balance never goes below zero
+- **Safety:**
+  - the player's words are filtered by Roblox before anything leaves the game, and only the filtered text, the
+    class, a salted player hash (salt kept in a DataStore, never in the repo) and the kit version are sent
+  - every AI answer is checked again in the game: kit values only, clamped numbers, re-filtered name and tagline,
+    and a real-brand-name scan
+  - report and admin-hide for designs; the AI disclosure shows before the first request
+- **Backend** live at `voltage-county-designer.vercel.app`:
+  - shared-key check, per-player and global limits, a daily spend cap and an on/off switch
+  - a cache of earlier answers and a prompt blocklist
+  - structured answers from Claude, with the system prompt cached
+  - its tables live in the existing Supabase project under a `vc_` prefix (Davis's call: no new paid project)
+  - it answers "not set up yet" until its keys are in, and the game then refunds
+  - 76 backend tests pass
+- **Screens:** the Design Studio at The Plant and the phone's Designer app (prompt with a counter, class or
+  "surprise me", costs, progress, result card with Build / Re-roll / Discard), "Mod with AI" in the garage, an
+  out-of-credits sheet (store in Phase 12) and a Report button.
+- Built by 5 helpers, then reviewed twice (8 + 7 findings, all fixed). The serious ones:
+  - a mod's empty extras list wiped earlier extras
+  - mods could charge for extras the car can't carry, or for an accessory that is never built
+  - Wrap & Tint wouldn't open on designed cars
+  - a seat race when the garage swaps your car
+  - the paid-price-0 edge case could use up the free car
+
+**Checked in Studio:**
+- Tests: `TESTS: passed=1587 failed=0`.
+- **Credits test** with the Studio stand-in backend: every rule above held (free car once, 2 credits, the free re-roll,
+  refund on refusal, never below zero).
+- **One design per class, all 11, driven** (`DesignerTests.all`, 181/181 checks): each was designed, saved,
+  brought out of the garage and seated, settled at its ride height, crossed the bumps at 40 mph (worst tilt
+  2.5°), and hit 0–60 within 0.5 % of its own figure, inside its class band. 10 of 11 wore their AI-generated look.
+  The mod test passed: catalog cars only change paint, stance, wheels and extras; a refused mod costs nothing.
+- **Car swaps while seated:** the garage, a dev spawn or an AI mod swapping the car under a seated player sometimes
+  left them standing beside the new car (the old seat's late "stand up" knocked them out). The server now checks
+  they stayed seated and seats them again: 8 of 8 swaps held.
+- The at-rest "bounce" an earlier run flagged was the test reading instantaneous speed. Every car, catalog ones
+  included, jitters about 0.01 studs at 30 Hz at rest, so the check now measures movement.
+
+**For Davis:**
+- Turn the designer on: double-click `tools\open_designer_setup.bat`, paste the database key it asks for, click
+  **Save and go live**. Then copy the game password into the experience's Secrets as `designer_key` (the window
+  says where). After that I run the 90-prompt live test (about 5 cents, approved).
+
+**Open issues**
+- Three acceptance items wait for the keys: the 90-prompt live suite, limits holding across two servers on the
+  real database, and the time-to-drivable numbers through the real backend (10 s kit, 60 s generated).
+- The optional generated accessory on mods isn't built (the AI is told to use kit extras instead).
+- With busy wheel styles the 60-part greybox budget leaves no room for stripes; the realistic-car art pass will
+  change that budget anyway.
+
 ## 2026-10-20 — Phase 10: hypercar thrusters and the drag strip
 
 **Shipped**

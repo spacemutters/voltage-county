@@ -472,9 +472,15 @@ local function leaveCar(ctx: Context): boolean
 	end
 	humanoid.Sit = false
 	humanoid.Jump = true
+	-- Out once the seat lets go, or once the character is plainly standing: a seat swapped away under the driver can
+	-- leave a stale SeatPart on this client while the server already has them on foot.
 	local out = waitFor(ctx, function(): boolean
+		local state = humanoid:GetState()
 		return humanoid.SeatPart == nil
-	end, { humanoid:GetPropertyChangedSignal("SeatPart") }, SETTINGS.exitTimeout)
+			or state == Enum.HumanoidStateType.Running
+			or state == Enum.HumanoidStateType.RunningNoPhysics
+			or state == Enum.HumanoidStateType.Landed
+	end, { humanoid:GetPropertyChangedSignal("SeatPart"), humanoid.StateChanged }, SETTINGS.exitTimeout)
 	if out then
 		task.wait(SETTINGS.settleSeconds)
 	end

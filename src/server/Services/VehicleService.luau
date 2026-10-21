@@ -848,6 +848,64 @@ function VehicleService.seatDriver(player: Player): boolean
 	return true
 end
 
+-- After a swap seats the driver, watches the new Driver seat for Config/Spawning.reseatVerifySeconds: if the
+-- character drops out of it, seats them again after reseatDelaySeconds, at most `retries` more times. The drop is
+-- the old seat's "stand up" arriving from the player's device a moment after the server seated them (seen in
+-- Studio 2026-10-20: SeatWeld made and broken in the same frame, then a late Sit = false), so the seat may
+-- already be empty when this starts watching. Listens to the seat's Occupant (no polling); a player who gets out
+-- on purpose after the window stays out.
+local function holdInSeat(player: Player, humanoid: Humanoid, retries: number)
+	local record = newestCar(player)
+	local seat = if record then record.driverSeat else nil
+	if seat == nil or retries <= 0 then
+		return
+	end
+	local connection: RBXScriptConnection? = nil
+	local timer: thread? = nil
+	local handled = false
+	local function reseat()
+		if handled then
+			return
+		end
+		handled = true
+		if connection then
+			connection:Disconnect()
+		end
+		if timer and timer ~= coroutine.running() then
+			task.cancel(timer)
+		end
+		-- Wait out the late stand-up, then sit them back down if this is still their newest car and they're alive.
+		task.delay(Spawning.reseatDelaySeconds, function()
+			local current = newestCar(player)
+			if
+				current ~= nil
+				and current.driverSeat == seat
+				and seat.Occupant ~= humanoid
+				and humanoid.Health > 0
+				and humanoid.Parent ~= nil
+			then
+				VehicleService.seatDriver(player)
+				holdInSeat(player, humanoid, retries - 1)
+			end
+		end)
+	end
+	if seat.Occupant ~= humanoid then
+		reseat()
+		return
+	end
+	connection = seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+		if seat.Occupant ~= humanoid then
+			reseat()
+		end
+	end)
+	timer = task.delay(Spawning.reseatVerifySeconds, function()
+		handled = true
+		if connection then
+			connection:Disconnect()
+		end
+	end)
+end
+
 -- Sits the player in their newest car's Driver seat once their character is out of any seat it was in. A car
 -- destroyed under its driver (GarageService swapping the car they sit in, a dev spawn, a test drive) leaves the
 -- Humanoid seated for a moment, and a Seat:Sit in that same step doesn't take: this waits until the Humanoid has no
@@ -863,6 +921,7 @@ function VehicleService.seatDriverWhenFree(player: Player)
 	end
 	if free() then
 		VehicleService.seatDriver(player)
+		holdInSeat(player, humanoid, Spawning.reseatRetries)
 		return
 	end
 	local done = false
@@ -882,6 +941,7 @@ function VehicleService.seatDriverWhenFree(player: Player)
 			task.cancel(pending)
 		end
 		VehicleService.seatDriver(player)
+		holdInSeat(player, humanoid, Spawning.reseatRetries)
 	end
 	local function check()
 		if free() then

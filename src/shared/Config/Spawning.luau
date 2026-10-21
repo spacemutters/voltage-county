@@ -30,6 +30,13 @@ local Spawning = {
 	-- A car swapped out from under its driver leaves the character seated for a moment; the new car's seat waits
 	-- for them to be out of the old one, at most this many seconds, before it sits them down.
 	reseatTimeoutSeconds = 1,
+	-- The old seat vanishing can still make the character hop up just as the new seat takes them, which throws them
+	-- straight back out (seen in Studio 2026-10-20: seated in the new car, standing beside it a moment later). So
+	-- after seating them the server watches the seat for this many seconds and seats them again if they left it, at
+	-- most reseatRetries times.
+	reseatVerifySeconds = 1.5,
+	reseatRetries = 2,
+	reseatDelaySeconds = 0.3, -- before seating them again, so the late stand-up has landed
 
 	-- Getting out: the server stands the character on the ground beside the seat's door (seats sit inside the
 	-- collidable chassis box, so standing up in place would shove the character out of it).
