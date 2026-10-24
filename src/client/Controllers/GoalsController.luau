@@ -318,25 +318,33 @@ end
 
 -- The spots a card of `size` may take on `screen`, best first: centred under the light-show button's place, beside
 -- the cash column at the same height, under the GPS chip, or under the cash column (below the fleet chip's place).
-local function candidatesFor(screen: Vector2, size: Vector2): { Layout.Rect }
+-- The small pill first tries the screen's top corner beside the cash column and then under the GPS chip, so it never
+-- sits in the middle of the view (seen 2026-10-24: centred, it hung over the road at 40 % of the screen's height).
+local function candidatesFor(screen: Vector2, size: Vector2, pill: boolean?): { Layout.Rect }
 	local gap = Goals.card.gap
 	local top = lightShowRect(screen).bottom + gap
 	local column = cashColumn(screen)
 	local gps = HudController.gpsChipRect(screen)
 	local fleet = HudController.fleetChipBelowRect(screen)
-	return {
+	local list = {
 		Layout.rect((screen.X - size.X) / 2, top, size.X, size.Y),
 		Layout.rect(column.right + gap, top, size.X, size.Y),
 		Layout.rect(gps.right - size.X, gps.bottom + gap, size.X, size.Y),
 		Layout.rect(column.left, fleet.bottom + gap, size.X, size.Y),
 	}
+	if pill then
+		table.insert(list, 1, Layout.rect(gps.right - size.X, gps.bottom + gap, size.X, size.Y))
+		table.insert(list, 1, Layout.rect(column.right + gap, column.top, size.X, size.Y))
+	end
+	return list
 end
 
--- The first spot for a card of `size` that is on screen and clear of every cardBlockers rect, or nil.
-function GoalsController.cardRect(screen: Vector2, context: Layout.Context, size: Vector2): Layout.Rect?
+-- The first spot for a card of `size` (the small pill when `pill`) that is on screen and clear of every cardBlockers
+-- rect, or nil.
+function GoalsController.cardRect(screen: Vector2, context: Layout.Context, size: Vector2, pill: boolean?): Layout.Rect?
 	local blockers = GoalsController.cardBlockers(screen, context)
 	local whole = Layout.screen(screen)
-	for _, candidate in candidatesFor(screen, size) do
+	for _, candidate in candidatesFor(screen, size, pill) do
 		local clear = Layout.contains(whole, candidate)
 		for _, blocker in blockers do
 			if not clear then
@@ -361,7 +369,7 @@ function GoalsController.placeCard(
 	local config = Goals.card
 	if pill then
 		local size = config.pillSize
-		return GoalsController.cardRect(screen, context, size) or candidatesFor(screen, size)[1], "pill"
+		return GoalsController.cardRect(screen, context, size, true) or candidatesFor(screen, size)[1], "pill"
 	end
 	local tall = GoalsController.cardRect(screen, context, config.size)
 	if tall ~= nil then

@@ -196,7 +196,9 @@ local Environment = {
 			window = {
 				dayMaterial = Enum.Material.Glass,
 				nightMaterial = Enum.Material.Neon,
-				nightColor = rgb(222, 176, 108),
+				-- A dim warm glow: Neon's brightness follows its colour, and a brighter colour turned whole floors into
+				-- flat yellow slabs (seen 2026-10-24).
+				nightColor = rgb(118, 90, 54),
 			},
 			sign = {
 				dayMaterial = Enum.Material.SmoothPlastic,
@@ -233,7 +235,9 @@ local Environment = {
 	budget = {
 		mapParts = 16000, -- the whole of Workspace.Map.Generated
 		treeParts = 4800, -- trunks and leaves: about 1,750 trees at 2 or 3 parts each
-		buildingParts = 5200, -- glass, floor bands, roof edges, corner piers and roof boxes of about 620 buildings
+		-- glass, floor bands, roof edges, corner piers and roof boxes of about 620 buildings: measured 5,496 on
+		-- 2026-10-24 after capping downtown at 4 floor bands (the whole map stays under mapParts)
+		buildingParts = 5600,
 		featureParts = 200, -- the water tower, the diner and the bridge arches
 		groundParts = 700, -- the ground patchwork, lake beds and banks, mesas and hills
 	},
@@ -330,11 +334,11 @@ local Environment = {
 	facades = {
 		cedar_bend = {
 			floorHeight = 12,
-			maxFloors = 6,
-			towerFrom = 76, -- taller than six floors: a glass tower
+			maxFloors = 4,
+			towerFrom = 76, -- taller than 76 studs: a glass tower
 			windowShare = 0.55,
 			litShare = 0.55,
-			rooftopShare = 0.6,
+			rooftopShare = 0.35,
 			rooftopFrom = 50,
 			tints = { rgb(58, 72, 88), rgb(64, 86, 92), rgb(88, 78, 64), rgb(70, 74, 80), rgb(92, 116, 136) },
 			materials = { Enum.Material.SmoothPlastic, Enum.Material.Concrete, Enum.Material.Brick },
@@ -351,10 +355,10 @@ local Environment = {
 		},
 		lakefront = {
 			floorHeight = 11,
-			maxFloors = 4,
+			maxFloors = 3,
 			windowShare = 0.55,
 			litShare = 0.6,
-			rooftopShare = 0.3,
+			rooftopShare = 0.2,
 			rooftopFrom = 30,
 			tints = { rgb(70, 98, 112), rgb(84, 112, 124), rgb(64, 80, 92) },
 			materials = { Enum.Material.SmoothPlastic, Enum.Material.Concrete },
@@ -364,7 +368,7 @@ local Environment = {
 			maxFloors = 3,
 			windowShare = 0.4,
 			litShare = 0.3,
-			rooftopShare = 0.5,
+			rooftopShare = 0.3,
 			rooftopFrom = 30,
 			tints = { rgb(76, 84, 92), rgb(88, 96, 104) },
 			materials = { Enum.Material.Concrete, Enum.Material.Metal, Enum.Material.DiamondPlate },

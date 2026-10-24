@@ -5,8 +5,8 @@ Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 ## 2026-10-24 — Roast fixes: sound, day and night, price ladder, first session, exclusive looks
 
 A fresh reviewer roasted the game before launch (`docs/roast-2026-10-24.md`, 10 points). Five helpers fixed what code
-can fix this round, then a reviewer checked their work (14 findings, all handled by the fixer). Nothing here has been
-run in Studio yet: Davis was playing in Studio, so no Studio tool was used. The lead runs the checks below.
+can fix this round, then a reviewer checked their work (14 findings, all handled by the fixer). The lead then fixed
+the car art in Studio (below) and ran the checks.
 
 **Shipped**
 - **Car sounds and car signals (point 2):** `Controllers/VehicleSoundController` plays an EV whine that rises with
@@ -15,8 +15,8 @@ run in Studio yet: Davis was playing in Studio, so no Studio tool was used. The 
   (`Services/CarSignalService`: the driver of their own car only); headlights come on by themselves at night. Touch
   phones get a Horn and Lights row above the pedals (`UI/Phone/Layout.touchZones` counts it, so the phone button,
   phone sheet, job slot, hitch row, fleet chip, charging card and goals card all keep clear of it).
-  - The 8 sounds were made with ElevenLabs (about 210 credits) and their asset ids are in `Config/Audio`. They were
-    still under Roblox's audio review at upload, so they stay silent until approved.
+  - The 8 sounds were made with ElevenLabs (about 210 credits) and their asset ids are in `Config/Audio`. Roblox's
+    audio review passed them: all 8 load in Studio.
 - **Day, night and the county art pass (point 3, partly):** a 24-minute day (8 minutes of night,
   `Services/DayNightService`), streetlights, lit windows and lit landmarks (tag `NightLight`; claimed houses'
   windows and porch lights too). `Dev/MapBuilder` adds 1,200 to 1,800 trees, grass patchwork, hills, parks, building
@@ -46,13 +46,37 @@ run in Studio yet: Davis was playing in Studio, so no Studio tool was used. The 
   and looks with underglow join the light shows' underglow cues. Launch day is one number in `Config/Launch`, read by
   the season, the launch-week limiteds and the launch events.
 
-**Checked in Studio:** not yet (see the lead's report for the list).
+- **Car art (point 1, partly; the lead, in Studio):**
+  - The three lookalikes are remade as original bodies, each generated at its car's real size so it isn't stretched:
+    Kaze Rinto (now a late-80s style coupe), Aldermoor Belcourt (a 60s two-door with four round lamps) and Brannock
+    Calder (a 70s hardtop with stacked square lamps). Earlier tries that looked like other famous cars were thrown out.
+  - The Ohm Arc, the hero car, has a new clean body with a wing and spoked wheels instead of the lumpy one. Its
+    thruster nozzles no longer stick out of the tail as black pipes: they go with the greybox body now
+    (`Dev/ArtPass`), and the plumes still come from the Chassis attachments.
+  - Tried and dropped: keeping the generated body texture under a tinted paint (SurfaceAppearance). Side by side the
+    flat paint looked clean and the textured one turned into a blob with painted-over windows, so the paint stays as
+    it was.
+  - Lit windows at night glow a dim warm colour; the first, brighter one turned whole floors into flat yellow slabs.
+  - The goals button now sits in the top corner beside the cash, not in the middle of the view.
+
+**Checked in Studio:**
+- Tests: `TESTS: passed=2504 failed=0`.
+- Map rebuilt: 15,485 parts (trees 4,581, buildings 5,496 after capping downtown at 4 floor bands; the building
+  budget is 5,600 and the map's 16,000). MapCheck PASS: 0 overlaps, 0 missing, 0 unreachable, route max 0.13 ms.
+- Playtest: 40 services and 33 controllers boot with no errors from the game. At dusk (DevClockTime 19.2) IsNight
+  turns on and all 1,113 night lights light. The goals button shows.
+- The 8 sounds load (Roblox's review passed).
+- The new bodies fit with no problems: Kaze Rinto 21 parts, Aldermoor Belcourt 23, Brannock Calder 23, Ohm Arc 22-23
+  (no nozzles). Screenshot: `docs/images/roast-fix-new-bodies-2026-10-24.jpg`.
+- Not run here: a full first-session playthrough on a fresh profile, a drive to hear the engines, and the phone
+  layout in the device emulator. Davis checks those.
 
 **Open issues**
-- Points 1 (car art), 4 (keeping the designed body), 6 (emergency services), 7 (roleplay depth) and 10 (more to
-  chase) are not started. Point 3 is missing the stadium, more trees and real traffic.
-- Davis: approve or wait out the audio review for the 8 sounds; the light-show music (about 2,700 ElevenLabs
-  credits, needs his yes); a Car Radio pass; the launch date; check the bigger map on a real phone.
+- Point 1 is partly done (the lookalikes and the Arc; hand-finished hero cars with interiors and doors are not).
+  Points 4 (keeping the designed body), 6 (emergency services), 7 (roleplay depth) and 10 (more to chase) are not
+  started. Point 3 is missing the stadium, more trees and real traffic.
+- Davis: the light-show music (about 2,700 ElevenLabs credits, needs his yes); a Car Radio pass; the launch date;
+  check the bigger map and the new buttons on a real phone.
 
 ## 2026-10-21 — Phase 14: performance, security, soft launch
 

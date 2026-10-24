@@ -45,8 +45,10 @@ builder made them; only what you see changes.
   `CameraHood` from the mesh bounds so extras, plates and the hood camera sit on the real body. As built: raycasts at
   full collision detail from the greybox place and the nearest places around it; each point the fit placed is
   stamped `OnArt`, and `checkArt` fails a model with an unstamped one.
-- **Kept pieces:** Hitch, Underlift, FifthWheel(Base), the Arc's nozzles and a trailer's landing-gear tubes stay
-  (physics points sit on them) and stretch from their outer end until they meet the art surface (stamped `OnArt`).
+- **Kept pieces:** Hitch, Underlift, FifthWheel(Base) and a trailer's landing-gear tubes stay (physics points sit on
+  them) and stretch from their outer end until they meet the art surface (stamped `OnArt`). The Arc's thruster
+  nozzles go with the greybox body (2026-10-24): the plumes come from the Chassis attachments, and stretched nozzles
+  stuck out of the art tail as long black pipes.
 - **Trailers:** the art never hangs below the kingpin plane over the front (from the front to 3.5 studs behind the
   kingpin), where a coupled tractor's fifth wheel and rear swing under it; the measured clearance is stamped
   `KingpinClearance` and checked.
