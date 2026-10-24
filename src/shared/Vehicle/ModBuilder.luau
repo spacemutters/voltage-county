@@ -692,6 +692,9 @@ local function applyLook(model: Model, mod: Mod, spec: SpecBuilder.Spec?, extras
 	look.extras = if extras ~= nil then table.clone(extras) else {}
 	if extras ~= nil then
 		clearModExtras(model)
+		-- No wrap while the extras are built: an exclusive look paints the whole body (and its chrome and pearl),
+		-- and extras baked into the body would keep that for good. The car's own look still goes on afterwards.
+		look.wrap = nil
 	end
 	Appearance.apply(model, look)
 	if extras == nil then

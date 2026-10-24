@@ -41,6 +41,9 @@ export type Upgrade = {
 --   turn    degrees about Y inside the plot (180 turns a roof wedge to face the back)
 --   tilt    degrees about X (the solar panels lie on the front roof slope)
 --   glow    a PointLight (Houses.porchLight) inside it
+--   night   a night light (roast fixes): a Config/Environment nightLights kind. Services/HouseService tags the part
+--           nightLights.tag with that kind and its day colour, and Services/DayNightService lights it from dusk to
+--           dawn (with any PointLight in it) like the county's windows and streetlights
 export type Piece = {
 	name: string,
 	offset: Vector3,
@@ -53,6 +56,7 @@ export type Piece = {
 	tilt: number?,
 	transparency: number?,
 	glow: boolean?,
+	night: string?,
 }
 
 export type Light = { range: number, brightness: number, color: Color3 }
@@ -245,6 +249,7 @@ local Houses = {
 			color = GLASS,
 			material = Enum.Material.Glass,
 			solid = false,
+			night = "window",
 		},
 		{
 			name = "WindowRight",
@@ -253,6 +258,7 @@ local Houses = {
 			color = GLASS,
 			material = Enum.Material.Glass,
 			solid = false,
+			night = "window",
 		},
 		{
 			name = "GarageWallInner",
@@ -379,6 +385,7 @@ local Houses = {
 				material = Enum.Material.Neon,
 				solid = false,
 				glow = true,
+				night = "streetlight",
 			},
 			{
 				name = "PorchLightRight",
@@ -388,6 +395,7 @@ local Houses = {
 				material = Enum.Material.Neon,
 				solid = false,
 				glow = true,
+				night = "streetlight",
 			},
 		},
 		garden = {

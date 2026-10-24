@@ -704,23 +704,45 @@ local function plateView(saved: Look, pending: Look, class: string, input: Panel
 	}
 end
 
+-- The note on the Paint and Finish tabs while the look being tried on is an exclusive one that paints the whole car
+-- (its own color and finish): what is bought there is saved, and shows once the look comes off.
+local function coveredNote(pending: Look): string?
+	local wrap = Customization.getWrap(wrapOf(pending))
+	if wrap ~= nil and Customization.paintsWholeBody(wrap) then
+		return string.format(copy.coveredByLook, wrap.displayName)
+	end
+	return nil
+end
+
+-- The Wrap tab's note: what the exclusive look being tried on is, else why stripes are missing on a curved body.
+local function wrapNote(pending: Look, paintOnly: boolean?): string?
+	local blurb = Customization.lookBlurb(wrapOf(pending))
+	if blurb ~= nil then
+		return string.format(copy.lookNote, blurb)
+	end
+	return if paintOnly == true then copy.paintOnlyWraps else nil
+end
+
 -- What the panel's body shows for `input.tab`.
 function CustomizeModel.tabView(input: PanelInput): TabView
 	local saved, pending, class = input.saved, input.pending, input.class
 	local tab = input.tab
 	if tab == "paint" then
-		return paintView(saved, pending, class)
+		local view = paintView(saved, pending, class)
+		view.note = coveredNote(pending)
+		return view
 	elseif tab == "finish" then
 		return {
 			cards = cardsFor(Customization.finishes, "finish", saved, pending, class, function(look: Look): string
 				return look.finish
 			end),
+			note = coveredNote(pending),
 		}
 	elseif tab == "wrap" then
 		local wraps = Customization.wrapsFor(input.looks, wrapOf(saved), input.paintOnly)
 		return {
 			cards = cardsFor(wraps, "wrap", saved, pending, class, wrapOf),
-			note = if input.paintOnly == true then copy.paintOnlyWraps else nil,
+			note = wrapNote(pending, input.paintOnly),
 		}
 	elseif tab == "wheels" then
 		return {

@@ -9,6 +9,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
+local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local Season = require(ReplicatedStorage.Shared.Config.Season)
@@ -335,8 +336,13 @@ return function(t: Harness.Api)
 				string.format(copy.grantCredits, "5"),
 				string.format(copy.grantCash, "$25,000"),
 				copy.grantCustomSlot,
-				copy.grantLook,
+				string.format(
+					copy.grantNamedLook,
+					(Customization.getWrap("starter_wrap") :: Customization.Wrap).displayName,
+					Customization.lookBlurb("starter_wrap") :: string
+				),
 			})
+			t.expect(StoreModel.grantLines({ cosmetics = { "a" } })).toEqual({ copy.grantLook })
 			t.expect(StoreModel.grantLines({ customSlots = 2, garageSlots = 10, plateFrame = true })).toEqual({
 				string.format(copy.grantCustomSlots, 2),
 				string.format(copy.grantGarageSlots, 10),
@@ -548,7 +554,10 @@ return function(t: Harness.Api)
 			local claimed = "free:1,free:2,premium:1"
 			local view = StoreModel.seasonView(season(), { xp = 350, premium = true, claimed = claimed }, NOW)
 			t.expect(view.free).toBe(nil)
-			t.expect(view.premiumClaim).toEqual({ tier = 2, track = "premium", text = copy.grantWrap })
+			t.expect(view.premiumClaim).toEqual({ tier = 2, track = "premium", text = copy.grantWrap }) -- an unknown look
+			local gold = Customization.getWrap("season1_finale_wrap") :: Customization.Wrap
+			t.expect(StoreModel.rewardText({ kind = "wrap", ref = gold.id }))
+				.toBe(string.format(copy.rewardLook, gold.displayName))
 			t.expect(view.premiumLocked).toBe(nil)
 			local top = StoreModel.seasonView(season(), { xp = 900, premium = true, claimed = nil }, NOW)
 			t.expect(top.tier).toBe(3)

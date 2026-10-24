@@ -1,8 +1,10 @@
 --!strict
 -- The Wrap & Tint shop catalog (Config/Customization, docs/phase-7-contracts.md): every id is unique, every
 -- price is a whole positive number of dollars, priceOf only charges what changed, extras only name real classes
--- and contract mounts, custom colors stay inside their limits, and plates follow their rules. Pure: runs in
--- Edit mode.
+-- and contract mounts, custom colors stay inside their limits, and plates follow their rules. Exclusive looks: each
+-- has something the shop can't make (an unsold finish, a pearl drift, colored glass, underglow), a different mix
+-- each, none of it can be bought or matched with shop paint and finishes, and the drift and glow math is the same
+-- everywhere and never random. Pure: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -10,6 +12,11 @@ local Classes = require(ReplicatedStorage.Shared.Config.Classes)
 local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Garage = require(ReplicatedStorage.Shared.Config.Garage)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
+
+local kit: any = require(ReplicatedStorage.Shared.Config.DesignKit)
+
+-- An exclusive look's blurb fits the Wrap tab's two-line note with UI/Customize/Style's lookNote around it.
+local MAX_BLURB = 60
 
 -- Mount attachments every model has (vehicle model contract, docs/phase-1-contracts.md).
 local CONTRACT_MOUNTS = {
@@ -488,6 +495,168 @@ return function(t: Harness.Api)
 		t.it("falls back to the default format for an unknown one", function()
 			local fallback = Customization.standardPlateText("nope", "seed")
 			t.expect(fallback).toBe(Customization.standardPlateText(Customization.defaults.plateFormat, "seed"))
+		end)
+	end)
+
+	t.describe("Customization exclusive looks", function()
+		t.it("gives every exclusive look a body color, its own words and something the shop can't make", function()
+			for _, wrap in Customization.exclusiveWraps do
+				t.expect(wrap.artColor ~= nil).toBe(true)
+				t.expect(Customization.paintsWholeBody(wrap)).toBe(true)
+				local blurb = wrap.blurb
+				t.expect(type(blurb) == "string" and #(blurb :: string) > 0 and #(blurb :: string) <= MAX_BLURB)
+					.toBe(true)
+				t.expect(Customization.lookBlurb(wrap.id)).toBe(blurb)
+				t.expect(#Customization.effectsOf(wrap)).toBeGreaterThan(0)
+				t.expect(`{wrap.id} the shop can make: {Customization.shopCanMake(wrap)}`)
+					.toBe(`{wrap.id} the shop can make: false`)
+				if wrap.finish ~= nil then
+					-- Its own finish is worn whatever finish the car has.
+					local worn = Customization.wornFinish(wrap, "matte")
+					t.expect(worn ~= nil and worn.id).toBe(wrap.finish)
+				end
+			end
+			t.expect(Customization.lookBlurb("rally")).toBe(nil)
+		end)
+
+		t.it("keeps every effect out of the shop's own wraps", function()
+			for _, wrap in Customization.wraps do
+				t.expect(#Customization.effectsOf(wrap)).toBe(0)
+				t.expect(Customization.shopCanMake(wrap)).toBe(true)
+				t.expect(Customization.paintsWholeBody(wrap)).toBe(false)
+				local plain = wrap.finish == nil and wrap.shift == nil and wrap.glass == nil and wrap.underglow == nil
+				t.expect(`{wrap.id} plain: {plain}`).toBe(`{wrap.id} plain: true`)
+				-- A shop wrap leaves the car's own finish on.
+				local worn = Customization.wornFinish(wrap, "matte")
+				t.expect(worn ~= nil and worn.id).toBe("matte")
+			end
+		end)
+
+		t.it("never sells an exclusive finish, and none comes near a shop finish", function()
+			local m = Customization.messages
+			local shiniest = 0
+			for _, shop in Customization.finishes do
+				shiniest = math.max(shiniest, shop.reflectance)
+			end
+			local exclusiveIds: { [string]: boolean } = {}
+			for _, finish in Customization.exclusiveFinishes do
+				exclusiveIds[finish.id] = true
+				t.expect(Customization.getFinish(finish.id)).toBe(nil)
+				t.expect(select(2, Customization.check({ finish = finish.id }, "sedan"))).toBe(m.unknownFinish)
+				t.expect((Customization.priceOf({ finish = finish.id }, stockLook(), "sedan"))).toBe(0)
+				for _, shop in Customization.finishes do
+					local apart = shop.material ~= finish.material
+						or math.abs(shop.reflectance - finish.reflectance) >= Customization.finishGap - 1e-9
+					t.expect(`{finish.id} apart from {shop.id}: {apart}`).toBe(`{finish.id} apart from {shop.id}: true`)
+				end
+			end
+			-- Chrome and brushed metal shine more than anything the shop sells.
+			for _, id in { "mirror_chrome", "brushed_metal" } do
+				t.expect(exclusiveIds[id]).toBe(true)
+				local worn = Customization.wornFinish(
+					{ id = "spec", displayName = "Spec", price = 0, bands = {}, finish = id },
+					nil
+				)
+				t.expect(worn ~= nil and worn.reflectance > shiniest).toBe(true)
+			end
+			-- Every look names a finish that exists, and the AI Car Designer paints with shop finishes only.
+			for _, wrap in Customization.exclusiveWraps do
+				if wrap.finish ~= nil then
+					t.expect(exclusiveIds[wrap.finish]).toBe(true)
+				end
+			end
+			for _, id in kit.finishes do
+				t.expect(Customization.getFinish(id) ~= nil).toBe(true)
+			end
+		end)
+
+		-- Roast 2026-10-24 point 9: chrome or brushed metal on its own is close to shop metallic in the same color,
+		-- and reflections may not render on a phone, so every look has a second effect or one that isn't a finish.
+		t.it("gives every exclusive look two effects, or one that isn't a finish", function()
+			local finishIds: { [string]: boolean } = {}
+			for _, finish in Customization.exclusiveFinishes do
+				finishIds[finish.id] = true
+			end
+			for _, wrap in Customization.exclusiveWraps do
+				local effects = Customization.effectsOf(wrap)
+				local beyondFinish = false
+				for _, effect in effects do
+					beyondFinish = beyondFinish or not finishIds[effect]
+				end
+				local enough = #effects >= 2 or beyondFinish
+				t.expect(`{wrap.id} enough: {enough}`).toBe(`{wrap.id} enough: true`)
+			end
+		end)
+
+		t.it("gives each exclusive look a different mix of effects", function()
+			local seen: { [string]: string } = {}
+			for _, wrap in Customization.exclusiveWraps do
+				local mix = table.concat(Customization.effectsOf(wrap), "+")
+				t.expect(`{wrap.id} shares its mix with: {seen[mix] or "none"}`)
+					.toBe(`{wrap.id} shares its mix with: none`)
+				seen[mix] = wrap.id
+			end
+		end)
+
+		t.it("can't be matched by any shop paint, finish and wrap, even in its own color", function()
+			for _, wrap in Customization.exclusiveWraps do
+				local own = Customization.wornFinish(wrap, nil)
+				local h, s, v = (wrap.artColor :: Color3):ToHSV()
+				for _, shopWrap in Customization.wraps do
+					for _, finish in Customization.finishes do
+						-- The nearest custom color to the look's own, a shop finish and a shop wrap.
+						local after = Customization.applyChanges(
+							stockLook(),
+							{ customColor = { h = h, s = s, v = v }, finish = finish.id, wrap = shopWrap.id }
+						)
+						t.expect(Customization.isPaint(after.paint)).toBe(true)
+						local shopWorn = Customization.getWrap(after.wrap) :: Customization.Wrap
+						local shopFinish = Customization.wornFinish(shopWorn, after.finish) :: Customization.Finish
+						local shopEffects = Customization.effectsOf(shopWorn)
+						-- Matched only if the shop look gives every one of the exclusive look's effects.
+						local matched = true
+						for _, effect in Customization.effectsOf(wrap) do
+							local finishMatched = own ~= nil
+								and effect == own.id
+								and own.material == shopFinish.material
+								and math.abs(own.reflectance - shopFinish.reflectance) < Customization.finishGap
+							if not finishMatched and table.find(shopEffects, effect) == nil then
+								matched = false
+							end
+						end
+						t.expect(`{wrap.id} matched by {shopWrap.id}/{finish.id}: {matched}`)
+							.toBe(`{wrap.id} matched by {shopWrap.id}/{finish.id}: false`)
+					end
+				end
+			end
+		end)
+
+		t.it("drifts a pearl the same way at the same time, and never at random", function()
+			local seconds = Customization.pearl.seconds
+			t.expect(seconds).toBeGreaterThan(0)
+			t.expect(Customization.pearlMix(0, seconds)).toBe(0)
+			t.expect(Customization.pearlMix(seconds / 2, seconds)).toBeNear(1, 1e-9)
+			t.expect(Customization.pearlMix(seconds, seconds)).toBeNear(0, 1e-9)
+			for i = 0, 40 do
+				local now = 1_800_000_000 + i * 0.37
+				local mix = Customization.pearlMix(now, seconds)
+				t.expect(mix >= 0 and mix <= 1).toBe(true)
+				t.expect(Customization.pearlMix(now, seconds)).toBe(mix)
+				t.expect(Customization.pearlMix(now + seconds, seconds)).toBeNear(mix, 1e-4)
+			end
+			t.expect(Customization.pearlMix(0 / 0, seconds)).toBe(0)
+			t.expect(Customization.pearlMix(5, 0)).toBe(0)
+		end)
+
+		t.it("lights underglow brighter at night than by day", function()
+			local glow = Customization.underglow
+			t.expect(glow.nightBrightness).toBeGreaterThan(glow.dayBrightness)
+			t.expect(glow.dayBrightness).toBeGreaterThan(0)
+			t.expect(Customization.underglowBrightness(12)).toBe(glow.dayBrightness)
+			t.expect(Customization.underglowBrightness(0)).toBe(glow.nightBrightness)
+			t.expect(Customization.underglowBrightness(23.5)).toBe(glow.nightBrightness)
+			t.expect(Customization.underglowBrightness(glow.nightFrom)).toBe(glow.nightBrightness)
+			t.expect(Customization.underglowBrightness(glow.nightUntil)).toBe(glow.dayBrightness)
 		end)
 	end)
 

@@ -104,20 +104,20 @@
 
 | id / trim | Price (in-game $) | Top speed (mph) | 0–60 feel (s) | Full charge ≈ minutes of driving | Seats |
 |---|---|---|---|---|---|
-| ohm_spark / used | free (once) | 105 | 6.0 | 25 | 5 |
+| ohm_spark / used | free (once) | 100 | 7.0 | 22 | 5 |
 | ohm_spark / standard | 35,000 | 120 | 5.0 | 35 | 5 |
-| ohm_spark / performance | 60,000 | 155 | 3.0 | 30 | 5 |
+| ohm_spark / performance | 60,000 | 155 | 3.6 | 30 | 5 |
 | ohm_current / standard | 48,000 | 120 | 5.2 | 33 | 5 |
 | ohm_current / long_body | 62,000 | 115 | 5.6 | 33 | 6 |
-| ohm_mesa / standard | 90,000 | 112 | 4.0 | 30 | 5 |
-| ohm_mesa / performance | 130,000 | 130 | 2.8 | 26 | 5 |
+| ohm_mesa / standard | 86,000 | 112 | 4.0 | 30 | 5 |
+| ohm_mesa / performance | 130,000 | 130 | 3.4 | 26 | 5 |
 | ohm_hauler / standard | 240,000 | 70 | 12.0 (no trailer) | 40 | 2 |
 | ohm_pod / standard | 40,000 per pod | 45 (NPC) | — | — | 2 passengers |
 | ohm_arc / performance | 1,500,000 | 220 | 1.9 | 25 | 2 |
 | ohm_arc / boost | +2,500,000 upgrade | 230 | 1.4 | 22 | 2 |
 | ohm_arc / flight | limited drop | 230 | 1.2 | 18 | 1 |
-| ohm_grand / standard | 150,000 base, dynamic | 160 | 2.4 | 32 | 5 |
-| ohm_summit / standard | 175,000 base, dynamic | 150 | 2.8 | 30 | 6 |
+| ohm_grand / standard | 150,000 base, dynamic | 160 | 3.2 | 32 | 5 |
+| ohm_summit / standard | 175,000 base, dynamic | 150 | 3.6 | 30 | 6 |
 
 ### 3.3 Catalog targets and rules
 
@@ -136,6 +136,8 @@
   - Each class defines bands for price, top speed, 0–60, energy capacity, handling and seats.
   - A vehicle's stats must sit inside its class band, so new cars (player designs and AI mods included) can't break the economy.
   - The §3.2 stats anchor their classes.
+  - Only tier 4-5 bands reach under 3.0 s to 60; the exotic and hypercar bands sit wholly ahead of every lower class on 0-60 and handling (roast 2026-10-24 point 5; tests/Catalog.spec).
+  - Every car for sale under $40,000 beats the free starter at 0-60, top speed or pay for work, not only at range or seats (tests/Catalog.spec).
 - **Jobs:** job eligibility comes from class (any `sedan` can do rideshare, `van` and `pickup` can do delivery, `heavy` does freight).
 - **Energy:** each vehicle is `battery` or `fuel`.
   - Battery cars use chargers; fuel cars use `FuelPump` stations (same Phase 5 system).
@@ -209,6 +211,13 @@
   - Mesa Test Site: `FlightZone`, `NoFlyZone`, `DragStripGate` (`index`)
 - StreamingEnabled on; vehicles use atomic model streaming.
 - The final art pass is done in Studio by Davis or a builder. The generator owns only `Workspace.Map.Generated`.
+- **Art pass in the generator (roast fixes, 2026-10-24, point 3):** `Dev/MapBuilder` now plants the county as well as laying it out, all tuned in `Config/Environment`:
+  - a 24-minute day/night cycle (8 minutes of night, `Services/DayNightService`) with working streetlights, lit windows and lit landmarks (CollectionService tag `NightLight`); claimed houses' windows and porch lights join in;
+  - 1,200 to 1,800 trees (trunks cars hit, leaves they pass through), grass patchwork, hills outside the Loop and parks (Town Square in the block north-west of Main Ave and Commerce Ave);
+  - building facades: glass ribbons per floor or corner piers, roof edges, and lit floors at night;
+  - 4 landmarks: the Riverside water tower, the Overlook Diner meet spot, arches over the Cedar Lake Bridge and the Ohm Motors sign on the factory roof.
+  - Map budget 16,000 parts (`Config/Environment.budget`, with per-role caps): about twice the 7,493 parts the phase 14 perf drive held at 60 fps, because everything added is anchored and still, never collides except trunks and shells, and streams in Atomic tiles. The perf drive and Davis's real-phone check decide whether it holds.
+  - Not done yet: the stadium (the roast's fifth landmark), 2,000+ trees (capped at 1,800 for the budget) and traffic built from real car bodies that stops for you and can be hit.
 
 ---
 

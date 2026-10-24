@@ -115,6 +115,8 @@ local StoreStyle = {
 		grantPlateFrame = "An exclusive plate frame",
 		grantLook = "An exclusive look for your cars",
 		grantLooks = "%d exclusive looks for your cars",
+		grantNamedLook = "%s look: %s", -- the look's name, then what makes it special (Config/Customization blurb)
+		rewardLook = "%s look", -- a season reward look, by name
 		bullet = "•",
 
 		-- Passes page.

@@ -25,7 +25,8 @@ local Data = {
 	--   5  owned cars gain `caliper`, `extras` and `plateFormat` (Phase 7 Wrap & Tint shop)
 	--   6  the fleet gains `uncollected` and `lastOnlineAt` (Phase 9 robotaxi fleet)
 	--   7  `cosmetics`: exclusive looks the player owns, id -> serial (Phase 12: Starter Pack, limited cosmetics)
-	schemaVersion = 7,
+	--   8  `goals`: the first-session path and the daily goals (roast fixes 2026-10-24, Config/Goals)
+	schemaVersion = 8,
 	-- A save with no version field predates versioning and is treated as this version.
 	unversionedVersion = 1,
 
@@ -66,6 +67,13 @@ local Data = {
 			units = "mph" :: "mph" | "kph",
 			camera = "chase",
 			musicVolume = 0.5,
+		},
+		-- Schema 8: a new profile starts the first-session path (Config/Goals) and has no daily goals picked yet
+		-- (Services/GoalsService picks them when the player joins; no goals day is numbered 0). The 7 -> 8 step
+		-- marks the path done for every save that already has a car, so only new players are walked through it.
+		goals = {
+			pathDone = false,
+			unpickedDay = 0,
 		},
 	},
 

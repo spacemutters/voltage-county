@@ -1,7 +1,7 @@
 --!strict
 -- A fresh PlayerData profile (PLAN.md §4 and §6; docs/phase-3-contracts.md "Player data"; schema 5 owned-car
 -- look fields, docs/phase-7-contracts.md "Schema v5"; schema 6 fleet fields, docs/phase-9-contracts.md "Fleet
--- economy").
+-- economy"; schema 8 goals, Config/Goals).
 -- Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -40,6 +40,10 @@ local SHAPE: { [string]: any } = {
 	firstJoinAt = "number",
 	boosts = "table",
 	cosmetics = "table", -- v7
+	goals = { -- v8
+		path = { done = "boolean", finished = "table", claimed = "table" },
+		daily = { day = "number", ids = "table", progress = "table", claimed = "table" },
+	},
 }
 
 -- Every field a new owned car (Types.OwnedVehicle, schema version 5) starts with. The optional fields (designUid,
@@ -124,6 +128,22 @@ return function(t: Harness.Api)
 			t.expect(data.pendingGrants).toEqual({})
 			t.expect(data.fleet.pods).toEqual({})
 			t.expect(data.fleet.uncollected).toBe(0) -- v6: nothing earned yet
+		end)
+
+		t.it("starts the first-session path with nothing done and no daily goals picked (v8)", function()
+			local goals = Template.new(JOIN_TIME).goals
+			t.expect(goals.path.done).toBe(false)
+			t.expect(goals.path.done).toBe(Data.defaults.goals.pathDone)
+			t.expect(goals.path.finished).toEqual({})
+			t.expect(goals.path.claimed).toEqual({})
+			t.expect(goals.daily.day).toBe(Data.defaults.goals.unpickedDay)
+			t.expect(goals.daily.ids).toEqual({})
+			t.expect(goals.daily.progress).toEqual({})
+			t.expect(goals.daily.claimed).toEqual({})
+			-- Template.goals builds the same thing, done or not, with its own tables every time.
+			t.expect(Template.goals(false)).toEqual(goals :: any)
+			t.expect(Template.goals(true).path.done).toBe(true)
+			t.expect(Template.goals(false).daily.ids == Template.goals(false).daily.ids).toBe(false)
 		end)
 
 		t.it("uses the default settings", function()

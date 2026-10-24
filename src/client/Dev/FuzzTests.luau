@@ -256,6 +256,9 @@ local SAMPLES: { [string]: Sample } = {
 	ClaimHouse = { payload = { plotId = ID } },
 	LeaveHouse = {},
 	BuyHouseUpgrade = { payload = { upgrade = ID } },
+	-- "hornOff", not "hornOn", so a fuzz run never leaves a horn sounding.
+	CarSignal = { payload = { action = "hornOff" } },
+	ClaimGoal = { payload = { goalId = ID } },
 	DevSocial = { payload = { action = "clearDummies", meetSpotId = ID }, fits = { meetSpotId = OPTIONAL } },
 	DevAbility = { payload = { action = "resetCooldowns" } },
 	DevFleet = { payload = { action = "simulateOffline", hours = 1 }, fits = { hours = UNIT } },

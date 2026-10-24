@@ -154,8 +154,12 @@ local Style = {
 		raised = "Raised %d",
 		rideHeight = "Ride height",
 
-		-- Wraps.
-		paintOnlyWraps = "Stripes don't fit this car's curved body. Exclusive wraps go on as a full color.",
+		-- Wraps. An exclusive look's note is its Config/Customization blurb and lookNote (80 characters at most:
+		-- two lines on the narrowest panel; tests/CustomizeShop.spec checks).
+		paintOnlyWraps = "Stripes don't fit this car's curved body. Exclusive looks still go on in full.",
+		lookNote = "%s. Covers your paint.", -- the look's blurb
+		-- On the Paint and Finish tabs while an exclusive look is picked: what you buy there shows when it comes off.
+		coveredByLook = "%s covers your paint and finish while it's on.", -- the look's name
 
 		-- Extras.
 		noExtras = "No kit extras fit this car.",

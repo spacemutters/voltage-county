@@ -6,7 +6,8 @@
 --               * every server error and warning: ScriptContext.Error (with the script it came from, when that is
 --                 ours: under ServerScriptService, ReplicatedStorage or ServerStorage) and LogService MessageError /
 --                 MessageWarning lines, one entry per distinct text with a count. Lines the run is meant to cause
---                 are left out (EXPECTED: AntiExploitService's rejected-call summaries);
+--                 are left out (EXPECTED: AntiExploitService's rejected-call summaries, and GoalsService's one warning
+--                 about the fuzz sample's unknown goal id);
 --               * every Net rejection of the caller's calls, by remote and reason (Net.onReject);
 --               * a snapshot of the caller's economy (economyOf): cash, starterClaimed, cars and their looks,
 --                 garage and custom slots, designs, credits, fleet pods and collect time, job licenses, house
@@ -89,6 +90,7 @@ local MESSAGES = {
 -- Lines a fuzz run is meant to cause (Lua patterns over the raw text): they are not errors.
 local EXPECTED: { string } = {
 	"^%[AntiExploit%] .- rejected remote call", -- AntiExploitService's summary of Net rejections
+	"^%[GoalsService%] .- claimed a goal that isn't theirs today", -- the fuzz sample's unknown goal id (once)
 }
 
 -- The PlayerData fields that hold value, and how each is read: `keep` (only these keys) or `perItem` (each list

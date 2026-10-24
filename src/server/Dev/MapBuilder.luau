@@ -12,17 +12,33 @@
 -- Studio stays responsive. Building twice gives the same instances.
 --
 -- What it builds, under Generated:
---   Ground (Model, Persistent)   zone-tinted slabs with their top at y = 0 covering ±World.mapHalfExtent, the lake
---                                beds with sloping banks, the mesas (MapLayout.mesas) and the jump ramps
+--   Ground (Model, Persistent)   slabs with their top at y = 0 covering ±World.mapHalfExtent: each zone's ground
+--                                (MapLayout groundMaterial), the green zones and the open country a patchwork of
+--                                grass shades in tiles (groundShades, Config/Environment ground.tile), parks in their
+--                                own grass; the lake beds with sloping banks, the mesas (MapLayout.mesas), the grass
+--                                hills at the edge of the map (MapLayout.hills) and the jump ramps
 --   Water                        the lake surfaces (not solid)
 --   Roads (Model, Persistent)    Segments: one slab per road edge. Intersections: a pad at every node where
 --                                3+ roads meet or a road bends or changes grade. Lines: lane lines and medians
 --   Sidewalks                    raised kerbed sidewalks on Cedar Bend and Riverside streets and arterials, cut
 --                                for a driveway flush with the road in front of every pad
 --   Bridges                      railings, supports under raised roads, fill under low raised roads
---   Lots, Buildings              paved lots and block buildings along town streets (Models per block, Atomic)
---   Landmarks                    the big buildings MapLayout.landmarks names (Models, Atomic)
+--   Lots, Buildings              paved lots and buildings along town streets (Models per block, Atomic). Where the
+--                                zone has a facade (Config/Environment facades) a building is glass set in from its
+--                                footprint, under floor bands that stand proud of it and a roof edge, or past
+--                                towerFrom a glass tower with corner piers; some carry a plant box on the roof. Some
+--                                buildings' glass is split at a floor line, one piece a night light (it glows from
+--                                dusk to dawn). Parks (MapLayout.parks) get none
+--   Landmarks                    the big buildings MapLayout.landmarks names (Models, Atomic); a landmark with a
+--                                signBrand gets the brand's name on a sign on its roof
+--   Features/<id>                MapLayout.features (Models, Atomic): the water tower, the diner and its sign, the
+--                                bridge's arches
 --   Streetlights                 posts along streets and arterials; only some of them emit light
+--   Trees/Tile<x>_<z>            trees (Config/Environment trees; Models per 500-stud tile, Atomic): a trunk that
+--                                cars hit and one or two leaf blocks they pass through, planted thick in the parks
+--                                and in groves over the towns and the open country (thicker past the County Loop),
+--                                clear of roads, sidewalks, lots, pads, house plots, props and landmarks. Seeded:
+--                                every build plants the same trees
 --   Locations                    one part per MapLayout location (tag, attributes, DisplayName, Zone), with
 --                                small props parented to it (charger posts, pumps, signs, gate gantries, the
 --                                Wrap & Tint shops' garage doors...); Phase 8's TrailerSpawn, TowDrop and
@@ -36,6 +52,10 @@
 --                                switched off (Services/AdsService decides at runtime), and the brand's poster
 --                                painted on its Back face (AdsService copies it to the front while no ads are served)
 --   PlayerSpawns                 SpawnLocations at MapLayout.playerSpawns
+--
+-- Night lights (Config/Environment nightLights): streetlight heads, lit windows, the diner's neon and windows, the
+-- water tower's beacon, the bridge's arches and the Ohm sign's light bar are tagged NightLight with their kind and
+-- day colour, built in their day look with their Lights off. Services/DayNightService switches them at dusk and dawn.
 --
 -- Display pads keep buildings, lots, streetlights and props off themselves and off the rectangle round each
 -- group of them (so a block given over to the dealership is cleared of buildings), and a note is left if one
@@ -59,6 +79,7 @@ local Config = ReplicatedStorage.Shared.Config
 local Ads = require(Config.Ads)
 local Brands = require(Config.Brands)
 local Dealership = require(Config.Dealership)
+local Environment = require(Config.Environment)
 local MapLayoutModule = require(Config.MapLayout)
 local RoadGraphModule = require(Config.RoadGraph)
 local World = require(Config.World)
@@ -68,14 +89,18 @@ local World = require(Config.World)
 ---------------------------------------------------------------------------------------------------------------
 
 -- The data shapes MapBuilder reads (docs/phase-2-contracts.md, "Data"). Only what the builder uses; the extra
--- MapLayout fields (lakes, mesas, jump ramps, landmarks, groundHeight) are optional so small fixtures can leave
--- them out.
+-- MapLayout fields (lakes, mesas, hills, parks, features, jump ramps, landmarks, groundHeight) are optional so small
+-- fixtures can leave them out.
+export type GroundShade = { color: Color3, material: Enum.Material }
+
 export type ZoneData = {
 	id: string,
 	displayName: string,
 	min: Vector2,
 	max: Vector2,
 	groundColor: Color3,
+	groundMaterial: Enum.Material?,
+	groundShades: { GroundShade }?,
 	buildingColors: { Color3 },
 	buildingHeight: { min: number, max: number },
 	buildingDensity: number,
@@ -96,7 +121,32 @@ export type LocationData = {
 export type LakeData = { id: string, min: Vector2, max: Vector2, waterY: number, bedY: number }
 export type MesaData = { id: string, topMin: Vector2, topMax: Vector2, height: number, slope: number }
 export type RampData = { id: string, position: Vector3, yaw: number, size: Vector3 }
-export type LandmarkData = { id: string, kind: string, position: Vector3, yaw: number, size: Vector3 }
+export type LandmarkData = {
+	id: string,
+	kind: string,
+	position: Vector3,
+	yaw: number,
+	size: Vector3,
+	signBrand: string?,
+}
+-- Parks and features: see Config/MapLayout's Park and Feature.
+export type ParkData = {
+	id: string,
+	min: Vector2,
+	max: Vector2,
+	hole: { min: Vector2, max: Vector2 }?,
+	groundColor: Color3?,
+	groundMaterial: Enum.Material?,
+}
+export type FeatureData = {
+	id: string,
+	displayName: string,
+	kind: string,
+	position: Vector3,
+	yaw: number,
+	size: Vector3,
+	sign: string?,
+}
 -- Display pads (Phase 4): each pad's CFrame is the centre of its footprint on the ground, facing the way the car
 -- on it points; every pad of a layout is padSize.
 export type DealershipData = { padSize: Vector3, sections: { { brandId: string, pads: { CFrame } } } }
@@ -120,6 +170,9 @@ export type LayoutData = {
 	playerSpawns: { CFrame },
 	lakes: { LakeData }?,
 	mesas: { MesaData }?,
+	hills: { MesaData }?,
+	parks: { ParkData }?,
+	features: { FeatureData }?,
 	jumpRamps: { RampData }?,
 	landmarks: { LandmarkData }?,
 	dealership: DealershipData?,
@@ -161,15 +214,26 @@ export type Role =
 	| "displayPad" -- a dealership or used-lot display platform
 	| "sign" -- a dealership brand sign (post and board)
 	| "billboard" -- a billboard's panel or one of its posts (Phase 12)
+	| "tree" -- a tree's trunk or one of its leaf blocks
+	| "feature" -- a part of a MapLayout feature (water tower, diner, bridge arches)
 
 -- Text painted on one face of a part (a SurfaceGui with one TextLabel). `center` and `size` are fractions of the
--- face (defaults: centred, TUNING.labelSize).
-export type LabelSpec = { face: Enum.NormalId, text: string, color: Color3, center: Vector2?, size: Vector2? }
+-- face (defaults: centred, TUNING.labelSize); `pixelsPerStud` defaults to TUNING.labelPixelsPerStud (big signs use
+-- fewer, so their SurfaceGui stays a sensible size).
+export type LabelSpec = {
+	face: Enum.NormalId,
+	text: string,
+	color: Color3,
+	center: Vector2?,
+	size: Vector2?,
+	pixelsPerStud: number?,
+}
 
 -- An AdGui on one face of a part (a billboard's ad unit; Config/Ads). Built switched off: Services/AdsService turns it
 -- on at runtime only when ads may be served. `fallbackImage` "" leaves Roblox's default.
 export type AdUnitSpec = { name: string, face: Enum.NormalId, enableVideoAds: boolean, fallbackImage: string }
 
+-- `enabled` false builds the Light switched off (a night light's: Services/DayNightService switches it on at dusk).
 export type LightSpec = {
 	kind: "point" | "spot",
 	brightness: number,
@@ -177,6 +241,7 @@ export type LightSpec = {
 	angle: number,
 	color: Color3,
 	face: Enum.NormalId,
+	enabled: boolean?,
 }
 
 -- One part of the build. `folder` is the container path below Generated ("Roads/Segments"); every container on
@@ -215,8 +280,14 @@ export type Plan = {
 }
 
 ---------------------------------------------------------------------------------------------------------------
--- Tuning. A dev tool, so its numbers live here rather than in Shared/Config (like Dev/AutoDriver's TUNING).
+-- Tuning. A dev tool, so its numbers live here rather than in Shared/Config (like Dev/AutoDriver's TUNING). How many
+-- trees, where, the facades per zone, the budgets and the night looks are in Config/Environment.
 ---------------------------------------------------------------------------------------------------------------
+
+-- A tree species at scale 1: its trunk (width, height) and its leaf blocks (size, the height of their bottom above the
+-- ground, a turn in degrees on top of the tree's own). Pines take Config/Environment trees.pineColors.
+type LeafShape = { size: Vector3, bottom: number, turn: number }
+type TreeShape = { trunk: Vector2, leaves: { LeafShape }, pine: boolean }
 
 local TUNING = {
 	partsPerChunk = 120, -- build() yields (task.wait) after this many parts
@@ -345,6 +416,132 @@ local TUNING = {
 	glassColor = Color3.fromRGB(120, 160, 186),
 	doorColor = Color3.fromRGB(84, 86, 90),
 	accentDepth = 0.6, -- how far an accent stands proud of the facade
+	-- A landmark's roof sign (signBrand): a board on two posts, set back from the entrance edge of the roof, the
+	-- brand's name on both faces and a light bar under it that glows at night.
+	roofSign = {
+		widthShare = 0.3, -- of the landmark's width...
+		maxWidth = 240, -- ...at most
+		height = 28,
+		thickness = 1.2,
+		post = 1.6,
+		postHeight = 10,
+		postInset = 12, -- posts stand this far in from the board's ends
+		setback = 30, -- from the roof's entrance edge
+		lightBar = 1,
+		color = Color3.fromRGB(28, 30, 34),
+		textColor = Color3.fromRGB(245, 245, 242),
+		lightColor = Color3.fromRGB(226, 230, 236),
+		pixelsPerStud = 4,
+	},
+
+	-- Facades (Config/Environment facades, by zone). Glass stands glassInset inside the footprint, floor bands
+	-- bandInset (proud of the glass) and the roof edge on the footprint itself, proud of both.
+	glassInset = 0.6,
+	bandInset = 0.2,
+	parapetHeight = 2.5, -- the roof edge rises this far above the building's height (its roof)
+	towerPier = 3, -- a tower's corner piers, square
+	towerCrown = 4, -- a tower's roof edge reaches this far down from its height
+	podiumBand = 2, -- a tower's band over its ground floor
+	rooftopSize = Vector2.new(0.4, 0.35), -- a roof box's share of the building's depth and width
+	rooftopHeight = { 4, 8 },
+	rooftopEdge = 2, -- a roof box keeps this far inside the roof edge
+	rooftopColor = Color3.fromRGB(118, 120, 124),
+
+	-- Hills (MapLayout.hills): built like mesas, in grass (Config/Environment ground.hillShades).
+
+	-- Trees (Config/Environment trees): shapes at scale 1. Plain blocks, 2 or 3 parts each.
+	treeSpecies = {
+		broadleaf = {
+			trunk = Vector2.new(1.4, 9),
+			leaves = {
+				{ size = Vector3.new(12, 7, 12), bottom = 7, turn = 0 },
+				{ size = Vector3.new(8, 5, 8), bottom = 12, turn = 45 },
+			},
+			pine = false,
+		},
+		round = {
+			trunk = Vector2.new(1.1, 6),
+			leaves = { { size = Vector3.new(8, 7, 8), bottom = 4.5, turn = 45 } },
+			pine = false,
+		},
+		pine = {
+			trunk = Vector2.new(1.2, 5),
+			leaves = {
+				{ size = Vector3.new(10, 8, 10), bottom = 3.5, turn = 0 },
+				{ size = Vector3.new(6, 9, 6), bottom = 10, turn = 45 },
+			},
+			pine = true,
+		},
+		poplar = {
+			trunk = Vector2.new(1, 5),
+			leaves = { { size = Vector3.new(5, 16, 5), bottom = 4, turn = 45 } },
+			pine = false,
+		},
+	} :: { [string]: TreeShape },
+	treeTile = 500, -- trees are grouped into Atomic models per tile this many studs square
+	treeMargin = 1, -- leaves keep this far clear of what they mustn't touch (a landmark's accent stands proud of it)
+
+	-- Features (MapLayout.features). Water tower: shares of its height and footprint.
+	waterTower = {
+		legShare = 0.62, -- the legs reach this share of the height (the tank's floor)
+		leg = 1.6,
+		legInset = 2, -- legs stand this far in from the footprint's corners
+		braceShare = 0.45, -- cross braces at this share of the legs
+		brace = 0.8,
+		tankShare = 0.26,
+		tankWidth = 0.9, -- of the footprint
+		catwalk = 1.5, -- the walkway under the tank reaches this far past it
+		bandHeight = 2,
+		bandAt = 0.62, -- the painted band at this share of the tank
+		roofHeight = 3,
+		roofWidth = 0.72, -- of the tank
+		beacon = 1.4,
+		tankColor = Color3.fromRGB(200, 208, 214),
+		legColor = Color3.fromRGB(118, 122, 128),
+		bandColor = Color3.fromRGB(52, 128, 142),
+		roofColor = Color3.fromRGB(168, 176, 182),
+		beaconColor = Color3.fromRGB(150, 40, 36),
+	},
+	-- Diner: the building at the back of its site, its car park in front, its sign by the road at the front corner.
+	diner = {
+		width = 46, -- along the road
+		depth = 24,
+		base = 3.5, -- stainless base up to the windows
+		glass = 6, -- the window band; the roof band fills the rest of the height
+		glassInset = 0.5,
+		door = Vector3.new(5, 7.5, 0.6),
+		stripe = 0.5, -- the neon stripe along the top of the windows
+		apron = 0.1, -- the car park's paving
+		signPole = Vector2.new(1.2, 18), -- width, height
+		signBoard = Vector3.new(0.8, 7, 14), -- across the road's line, up, toward the road
+		signInset = 8, -- the pole stands this far in from the site's front corner
+		baseColor = Color3.fromRGB(186, 190, 194),
+		roofColor = Color3.fromRGB(176, 50, 46),
+		glassColor = Color3.fromRGB(86, 118, 128),
+		doorColor = Color3.fromRGB(60, 62, 66),
+		stripeColor = Color3.fromRGB(60, 160, 170),
+		apronColor = Color3.fromRGB(84, 86, 90),
+		signColor = Color3.fromRGB(176, 50, 46),
+		textColor = Color3.fromRGB(250, 246, 236),
+		labelPixelsPerStud = 20,
+	},
+	-- Bridge arches: one arch each side of the deck, in straight segments, hung from a tie beam along the deck edge
+	-- by hangers, standing on piers at its feet, braced across by struts at the crown.
+	bridgeArch = {
+		segments = 12,
+		rib = Vector2.new(1.6, 2.4), -- across, up
+		tieTop = 0.5, -- the tie beam's top, above the deck surface (the ribs' feet stand on it)
+		tie = Vector2.new(1.6, 2.5), -- across, up
+		hangers = 9,
+		hanger = 0.4,
+		pier = Vector2.new(3, 6), -- across, along
+		struts = 3,
+		strutSpacing = 0.12, -- of the span, between neighbouring struts
+		strut = 1.2,
+		ribColor = Color3.fromRGB(222, 226, 230),
+		hangerColor = Color3.fromRGB(180, 184, 190),
+		pierColor = Color3.fromRGB(150, 148, 142),
+	},
 
 	-- Locations
 	volumeTags = { FlightZone = true, NoFlyZone = true } :: { [string]: boolean },
@@ -997,6 +1194,27 @@ end
 
 local function add(ctx: Ctx, spec: PartSpec)
 	table.insert(ctx.specs, spec)
+end
+
+local NIGHT = Environment.nightLights
+
+-- Makes a part a night light of `kind` (Config/Environment nightLights): tagged, with its kind and day colour, in its
+-- day look, any Light in it built switched off. Services/DayNightService switches it at dusk and dawn.
+local function nightLight(spec: PartSpec, kind: string): PartSpec
+	local look = NIGHT.kinds[kind]
+	spec.tag = NIGHT.tag
+	local attributes: { [string]: any } = spec.attributes or {}
+	attributes[NIGHT.kindAttribute] = kind
+	attributes[NIGHT.dayColorAttribute] = spec.color
+	spec.attributes = attributes
+	if look then
+		spec.material = look.dayMaterial
+	end
+	local light = spec.light
+	if light then
+		light.enabled = false
+	end
+	return spec
 end
 
 local function surfaceMaterial(surface: string): Enum.Material
@@ -2042,30 +2260,63 @@ local function insideLake(lakes: { LakeData }, x: number, z: number): boolean
 	return false
 end
 
-type Run = { x0: number, x1: number, z0: number, z1: number, color: Color3 }
+-- True when (x, z) is in the park: inside its bounds and not in its hole.
+local function insidePark(park: ParkData, x: number, z: number): boolean
+	if x < park.min.X or x > park.max.X or z < park.min.Y or z > park.max.Y then
+		return false
+	end
+	local hole = park.hole
+	return not (hole and x > hole.min.X and x < hole.max.X and z > hole.min.Y and z < hole.max.Y)
+end
 
--- Zone-tinted ground slabs, top at y = 0, covering the whole map except the lakes: the map is cut along every
--- zone and lake edge into cells, cells of one colour are merged into rectangles, and big rectangles are split.
+type Run = { x0: number, x1: number, z0: number, z1: number, color: Color3, material: Enum.Material }
+
+-- Ground slabs, top at y = 0, covering the whole map except the lakes: the map is cut along every zone, lake and
+-- park edge (and, where a zone has grass shades, along the patchwork's tile lines) into cells; each cell takes its
+-- park's grass, its zone's ground or, in a zone with shades, its tile's shade; cells that look the same are merged
+-- into rectangles, and big rectangles are split.
 local function addGround(ctx: Ctx, zones: { ZoneData })
 	local half = ctx.half
 	local lakes: { LakeData } = ctx.layout.lakes or {}
+	local parks: { ParkData } = ctx.layout.parks or {}
 	local xs, zs = { -half, half }, { -half, half }
 	local function cut(list: { number }, value: number)
 		if value > -half and value < half then
 			table.insert(list, value)
 		end
 	end
+	local function cutRect(min: Vector2, max: Vector2)
+		cut(xs, min.X)
+		cut(xs, max.X)
+		cut(zs, min.Y)
+		cut(zs, max.Y)
+	end
+	local shaded = false
 	for _, zone in zones do
-		cut(xs, zone.min.X)
-		cut(xs, zone.max.X)
-		cut(zs, zone.min.Y)
-		cut(zs, zone.max.Y)
+		cutRect(zone.min, zone.max)
+		local shades = zone.groundShades
+		if shades and #shades > 0 then
+			shaded = true
+		end
 	end
 	for _, lake in lakes do
-		cut(xs, lake.min.X)
-		cut(xs, lake.max.X)
-		cut(zs, lake.min.Y)
-		cut(zs, lake.max.Y)
+		cutRect(lake.min, lake.max)
+	end
+	for _, park in parks do
+		if park.groundColor then
+			cutRect(park.min, park.max)
+			local hole = park.hole
+			if hole then
+				cutRect(hole.min, hole.max)
+			end
+		end
+	end
+	local tile = Environment.ground.tile
+	if shaded then
+		for k = math.ceil(-half / tile), math.floor(half / tile) do
+			cut(xs, k * tile)
+			cut(zs, k * tile)
+		end
 	end
 	local function unique(list: { number }): { number }
 		table.sort(list)
@@ -2078,10 +2329,32 @@ local function addGround(ctx: Ctx, zones: { ZoneData })
 		return out
 	end
 	xs, zs = unique(xs), unique(zs)
-	-- Outside every zone: the largest zone's colour (the open country), else the default.
-	local country = if #zones > 0 then zones[#zones].groundColor else TUNING.countryColor
+	-- Outside every zone: the largest zone's ground (the open country), else the default.
+	local country: ZoneData? = zones[#zones]
+	local seed = ctx.layout.seed
 
-	-- Runs of same-coloured cells along each row, then rows of identical runs merged downward.
+	-- How the ground looks at a cell's centre.
+	local function lookAt(cx: number, cz: number): (Color3, Enum.Material)
+		for _, park in parks do
+			local color = park.groundColor
+			if color and insidePark(park, cx, cz) then
+				return color, park.groundMaterial or TUNING.groundMaterial
+			end
+		end
+		local zone = zoneAt(zones, Vector2.new(cx, cz)) or country
+		if zone == nil then
+			return TUNING.countryColor, TUNING.groundMaterial
+		end
+		local shades = zone.groundShades
+		if shades and #shades > 0 then
+			local pick = mixSeed(seed, math.floor(cx / tile) + 1000, math.floor(cz / tile) + 1000)
+			local shade = shades[pick % #shades + 1]
+			return shade.color, shade.material
+		end
+		return zone.groundColor, zone.groundMaterial or TUNING.groundMaterial
+	end
+
+	-- Runs of cells that look the same along each row, then rows of identical runs merged downward.
 	local done: { Run } = {}
 	local open: { Run } = {}
 	for j = 1, #zs - 1 do
@@ -2093,13 +2366,12 @@ local function addGround(ctx: Ctx, zones: { ZoneData })
 			if insideLake(lakes, cx, cz) then
 				continue
 			end
-			local zone = zoneAt(zones, Vector2.new(cx, cz))
-			local color = if zone then zone.groundColor else country
+			local color, material = lookAt(cx, cz)
 			local last = row[#row]
-			if last and last.color == color and math.abs(last.x1 - x0) < 1e-6 then
+			if last and last.color == color and last.material == material and math.abs(last.x1 - x0) < 1e-6 then
 				last.x1 = x1
 			else
-				table.insert(row, { x0 = x0, x1 = x1, z0 = z0, z1 = z1, color = color })
+				table.insert(row, { x0 = x0, x1 = x1, z0 = z0, z1 = z1, color = color, material = material })
 			end
 		end
 		local nextOpen: { Run } = {}
@@ -2110,6 +2382,7 @@ local function addGround(ctx: Ctx, zones: { ZoneData })
 					math.abs(prior.x0 - run.x0) < 1e-6
 					and math.abs(prior.x1 - run.x1) < 1e-6
 					and prior.color == run.color
+					and prior.material == run.material
 					and math.abs(prior.z1 - run.z0) < 1e-6
 				then
 					prior.z1 = run.z1
@@ -2133,19 +2406,7 @@ local function addGround(ctx: Ctx, zones: { ZoneData })
 	end
 	for i, run in done do
 		local name = `Ground{i}`
-		addSlab(
-			ctx,
-			"Ground",
-			name,
-			run.x0,
-			run.x1,
-			run.z0,
-			run.z1,
-			0,
-			TUNING.groundThickness,
-			run.color,
-			TUNING.groundMaterial
-		)
+		addSlab(ctx, "Ground", name, run.x0, run.x1, run.z0, run.z1, 0, TUNING.groundThickness, run.color, run.material)
 	end
 end
 
@@ -2204,17 +2465,18 @@ local function addLakes(ctx: Ctx)
 	end
 end
 
--- A mesa is a truncated pyramid: a box for its flat top, a wedge down each side and a corner wedge at each
--- corner (whose sloped faces meet along the diagonal, like MapLayout.groundHeight's max(dx, dz)). Every piece
--- reaches TUNING.bury below the ground along the same slope, so no seam shows at the foot.
-local function addMesas(ctx: Ctx)
+-- A mesa (or a hill) is a truncated pyramid: a box for its flat top, a wedge down each side and a corner wedge at
+-- each corner (whose sloped faces meet along the diagonal, like MapLayout.groundHeight's max(dx, dz)). Every piece
+-- reaches TUNING.bury below the ground along the same slope, so no seam shows at the foot. Its foot goes into the
+-- placement grid as `kind`.
+local function addFrustums(ctx: Ctx, mesas: { MesaData }, kind: string, looks: { GroundShade })
 	local bury = TUNING.bury
-	local mesas: { MesaData } = ctx.layout.mesas or {}
-	for _, mesa in mesas do
+	for index, mesa in mesas do
 		local h = mesa.height
 		local run = (h + bury) / mesa.slope -- horizontal reach of a side, top edge to y = -bury
 		local x0, x1, z0, z1 = mesa.topMin.X, mesa.topMax.X, mesa.topMin.Y, mesa.topMax.Y
-		local color, material = TUNING.mesaColor, Enum.Material.Ground
+		local look = looks[(index - 1) % #looks + 1]
+		local color, material = look.color, look.material
 		local topFrame = CFrame.new((x0 + x1) / 2, (h - bury) / 2, (z0 + z1) / 2)
 		add(
 			ctx,
@@ -2268,9 +2530,20 @@ local function addMesas(ctx: Ctx)
 		gridInsert(
 			ctx.grid,
 			{ c = Vector2.new((x0 + x1) / 2, (z0 + z1) / 2), u = Vector2.xAxis, ha = foot.X, hc = foot.Y },
-			"mesa"
+			kind
 		)
 	end
+end
+
+local MESA_LOOK: { GroundShade } = { { color = TUNING.mesaColor, material = Enum.Material.Ground } }
+
+local function addMesas(ctx: Ctx)
+	addFrustums(ctx, ctx.layout.mesas or {}, "mesa", MESA_LOOK)
+end
+
+-- The grass hills at the edge of the map, each in one of Config/Environment's hill shades. Trees grow on them.
+local function addHills(ctx: Ctx)
+	addFrustums(ctx, ctx.layout.hills or {}, "hill", Environment.ground.hillShades)
 end
 
 -- Jump ramps: a wedge rising toward the way the ramp faces, its lip at the front.
@@ -2345,6 +2618,59 @@ local function addLandmarks(ctx: Ctx)
 			local cabAt = Vector3.new(towerAt.X, size.Y * 2 + cab.Y / 2, 0)
 			local glass = part("Cab", cabAt, cab, TUNING.glassColor, Enum.Material.Glass)
 			glass.transparency = 0.2
+		end
+
+		-- The brand's name on a board on the roof, facing out of the entrance, with a light bar under it.
+		local brandId = landmark.signBrand
+		if brandId then
+			local brand = Brands[brandId]
+			if brand == nil then
+				note(ctx, `landmark {landmark.id}: no brand "{brandId}" for its roof sign`)
+			else
+				local sign = TUNING.roofSign
+				local width = math.min(size.X * sign.widthShare, sign.maxWidth)
+				local z = -size.Z / 2 + sign.setback
+				local postSize = Vector3.new(sign.post, sign.postHeight, sign.post)
+				for i, side in { -1, 1 } do
+					local postAt = Vector3.new(side * (width / 2 - sign.postInset), size.Y + sign.postHeight / 2, z)
+					part(`SignPost{i}`, postAt, postSize, TUNING.propColor, Enum.Material.Metal)
+				end
+				local boardAt = Vector3.new(0, size.Y + sign.postHeight + sign.height / 2, z)
+				local board = part(
+					"Sign",
+					boardAt,
+					Vector3.new(width, sign.height, sign.thickness),
+					sign.color,
+					Enum.Material.SmoothPlastic
+				)
+				board.labels = {
+					{
+						face = Enum.NormalId.Front,
+						text = brand.displayName,
+						color = sign.textColor,
+						pixelsPerStud = sign.pixelsPerStud,
+					},
+					{
+						face = Enum.NormalId.Back,
+						text = brand.displayName,
+						color = sign.textColor,
+						pixelsPerStud = sign.pixelsPerStud,
+					},
+				}
+				local barAt = Vector3.new(
+					0,
+					size.Y + sign.postHeight - sign.lightBar / 2,
+					z - sign.thickness / 2 - sign.lightBar / 2
+				)
+				local bar = part(
+					"SignLight",
+					barAt,
+					Vector3.new(width, sign.lightBar, sign.lightBar),
+					sign.lightColor,
+					Enum.Material.SmoothPlastic
+				)
+				nightLight(decor(bar), "floodlight")
+			end
 		end
 		local look = flat(facing.LookVector).Unit
 		gridInsert(ctx.grid, { c = flat(landmark.position), u = look, ha = size.Z / 2, hc = size.X / 2 }, "landmark")
@@ -2931,6 +3257,266 @@ local function addBillboards(ctx: Ctx)
 end
 
 ---------------------------------------------------------------------------------------------------------------
+-- Features (MapLayout.features): the water tower, the diner, the bridge's arches
+---------------------------------------------------------------------------------------------------------------
+
+-- What a water tower or diner must not stand on (the bridge's arches stand beside their deck by design).
+local FEATURE_BLOCKERS: { [string]: boolean } = {
+	road = true,
+	sidewalk = true,
+	driveway = true,
+	support = true,
+	landmark = true,
+	location = true,
+	access = true,
+	prop = true,
+	ramp = true,
+	mesa = true,
+	lake = true,
+	feature = true,
+}
+
+-- Adds one part of a feature at `cframe` in the feature's own frame (`base`). Solid parts collide like walls; the
+-- rest are decoration that still casts a shadow.
+type FeaturePiece = (
+	name: string,
+	cframe: CFrame,
+	size: Vector3,
+	color: Color3,
+	material: Enum.Material,
+	solid: boolean
+) -> PartSpec
+
+local function featurePiece(ctx: Ctx, folder: string, base: CFrame): FeaturePiece
+	return function(name, cframe, size, color, material, solid)
+		local spec = block(folder, name, "feature", base * cframe, size, color, material)
+		if not solid then
+			decor(spec)
+			spec.shadow = true
+		end
+		add(ctx, spec)
+		return spec
+	end
+end
+
+-- A tank on four legs, braced, with a walkway, a painted band, a roof cap and a red beacon that glows at night.
+local function addWaterTower(ctx: Ctx, folder: string, feature: FeatureData, base: CFrame)
+	local t = TUNING.waterTower
+	local piece = featurePiece(ctx, folder, base)
+	local bury = TUNING.bury
+	local height = feature.size.Y
+	local width = math.min(feature.size.X, feature.size.Z)
+	local legTop = height * t.legShare
+	local reach = width / 2 - t.legInset
+	local legSize = Vector3.new(t.leg, legTop + bury, t.leg)
+	for i, corner in { { 1, 1 }, { -1, 1 }, { -1, -1 }, { 1, -1 } } do
+		local at = CFrame.new(corner[1] * reach, (legTop - bury) / 2, corner[2] * reach)
+		piece(`Leg{i}`, at, legSize, t.legColor, Enum.Material.Metal, true)
+	end
+	-- Two beams crossing from leg to opposite leg.
+	local diagonal = 2 * reach * math.sqrt(2)
+	for i, turn in { 45, -45 } do
+		local at = CFrame.new(0, legTop * t.braceShare, 0) * CFrame.Angles(0, math.rad(turn), 0)
+		piece(`Brace{i}`, at, Vector3.new(diagonal, t.brace, t.brace), t.legColor, Enum.Material.Metal, false)
+	end
+	-- Upright cylinders (a cylinder part runs along its X axis, so each is turned a quarter about Z).
+	local tankWidth = width * t.tankWidth
+	local tankHeight = height * t.tankShare
+	local function cylinder(name: string, y: number, tall: number, across: number, color: Color3, solid: boolean)
+		local at = CFrame.new(0, y, 0) * CFrame.Angles(0, 0, math.rad(90))
+		local spec = piece(name, at, Vector3.new(tall, across, across), color, Enum.Material.SmoothPlastic, solid)
+		spec.shape = "cylinder"
+	end
+	cylinder("Catwalk", legTop + 0.25, 0.5, tankWidth + 2 * t.catwalk, t.legColor, false)
+	cylinder("Tank", legTop + tankHeight / 2, tankHeight, tankWidth, t.tankColor, true)
+	cylinder("Band", legTop + tankHeight * t.bandAt, t.bandHeight, tankWidth + 0.4, t.bandColor, false)
+	local roofTop = legTop + tankHeight + t.roofHeight
+	cylinder("Roof", roofTop - t.roofHeight / 2, t.roofHeight, tankWidth * t.roofWidth, t.roofColor, false)
+	local beaconSize = Vector3.new(t.beacon, t.beacon, t.beacon)
+	local at = CFrame.new(0, roofTop + t.beacon / 2, 0)
+	nightLight(piece("Beacon", at, beaconSize, t.beaconColor, Enum.Material.SmoothPlastic, false), "beacon")
+end
+
+-- A roadside diner: the building at the back of its site (a stainless base, a band of windows that glow at night, a
+-- red roof band with the diner's name, a door and a neon stripe), a car park in front and a tall sign by the road.
+-- The site faces its road: local -Z is toward it, local X runs along it.
+local function addDiner(ctx: Ctx, folder: string, feature: FeatureData, base: CFrame)
+	local d = TUNING.diner
+	local piece = featurePiece(ctx, folder, base)
+	local bury = TUNING.bury
+	local site = feature.size
+	local back = site.Z / 2
+	local front = back - d.depth -- the building's front face
+	local middle = back - d.depth / 2
+	piece(
+		"Base",
+		CFrame.new(0, (d.base - bury) / 2, middle),
+		Vector3.new(d.width, d.base + bury, d.depth),
+		d.baseColor,
+		Enum.Material.Metal,
+		true
+	)
+	local glassSize = Vector3.new(d.width - 2 * d.glassInset, d.glass, d.depth - 2 * d.glassInset)
+	local glass = piece(
+		"Windows",
+		CFrame.new(0, d.base + d.glass / 2, middle),
+		glassSize,
+		d.glassColor,
+		Enum.Material.Glass,
+		true
+	)
+	nightLight(glass, "window")
+	local roofHeight = site.Y - d.base - d.glass
+	local roof = piece(
+		"Roof",
+		CFrame.new(0, d.base + d.glass + roofHeight / 2, middle),
+		Vector3.new(d.width, roofHeight, d.depth),
+		d.roofColor,
+		Enum.Material.SmoothPlastic,
+		true
+	)
+	roof.labels = {
+		{
+			face = Enum.NormalId.Front,
+			text = string.upper(feature.displayName),
+			color = d.textColor,
+			pixelsPerStud = d.labelPixelsPerStud,
+		},
+	}
+	local doorAt = CFrame.new(-d.width / 4, d.door.Y / 2, front - d.door.Z / 2)
+	piece("Door", doorAt, d.door, d.doorColor, Enum.Material.SmoothPlastic, false)
+	local stripeAt = CFrame.new(0, d.base + d.glass - d.stripe / 2, front - 0.2)
+	local stripe =
+		piece("Neon", stripeAt, Vector3.new(d.width, d.stripe, 0.4), d.stripeColor, Enum.Material.SmoothPlastic, false)
+	nightLight(stripe, "sign")
+	local apronDepth = front + site.Z / 2
+	local apron = piece(
+		"CarPark",
+		CFrame.new(0, d.apron / 2, (front - site.Z / 2) / 2),
+		Vector3.new(site.X, d.apron, apronDepth),
+		d.apronColor,
+		Enum.Material.Asphalt,
+		false
+	)
+	apron.shadow = false
+	-- The sign: a pole at the front corner, its board's faces along the road (both ways of traffic read it).
+	local x, z = site.X / 2 - d.signInset, -site.Z / 2 + d.signInset
+	local poleSize = Vector3.new(d.signPole.X, d.signPole.Y + bury, d.signPole.X)
+	piece(
+		"SignPole",
+		CFrame.new(x, (d.signPole.Y - bury) / 2, z),
+		poleSize,
+		TUNING.propColor,
+		Enum.Material.Metal,
+		true
+	)
+	local boardAt = CFrame.new(x, d.signPole.Y + d.signBoard.Y / 2, z)
+	local board = piece("Sign", boardAt, d.signBoard, d.signColor, Enum.Material.SmoothPlastic, false)
+	local words = feature.sign or feature.displayName
+	board.labels = {
+		{ face = Enum.NormalId.Right, text = words, color = d.textColor, pixelsPerStud = d.labelPixelsPerStud },
+		{ face = Enum.NormalId.Left, text = words, color = d.textColor, pixelsPerStud = d.labelPixelsPerStud },
+	}
+end
+
+-- Steel arches either side of a bridge deck (the feature's frame sits on the deck surface, local Z along the deck):
+-- each arch in straight segments that glow at night, hung from a tie beam along the deck edge by hangers, standing
+-- on a pier at each foot; struts brace the two arches at the crown.
+local function addBridgeArch(ctx: Ctx, folder: string, feature: FeatureData, base: CFrame)
+	local a = TUNING.bridgeArch
+	local piece = featurePiece(ctx, folder, base)
+	local span, rise = feature.size.Z, feature.size.Y
+	local footY = a.tieTop + a.rib.Y / 2 -- the ribs' centre line at their feet, standing on the tie beams
+	local function archPoint(t: number, lateral: number): Vector3
+		return Vector3.new(lateral, footY + rise * 4 * t * (1 - t), -span / 2 + span * t)
+	end
+	for _, side in { -1, 1 } do
+		local letter = if side < 0 then "L" else "R"
+		local lateral = side * feature.size.X / 2
+		for i = 1, a.segments do
+			local p, q = archPoint((i - 1) / a.segments, lateral), archPoint(i / a.segments, lateral)
+			local size = Vector3.new(a.rib.X, a.rib.Y, (q - p).Magnitude + a.rib.Y) -- overlapped at the joints
+			local at = CFrame.lookAt((p + q) / 2, q)
+			nightLight(piece(`Rib{letter}{i}`, at, size, a.ribColor, Enum.Material.Metal, false), "arch")
+		end
+		for j = 1, a.hangers do
+			local top = archPoint(j / (a.hangers + 1), lateral)
+			local length = top.Y - a.rib.Y / 2 - a.tieTop
+			local at = CFrame.new(lateral, a.tieTop + length / 2, top.Z)
+			local size = Vector3.new(a.hanger, length, a.hanger)
+			piece(`Hanger{letter}{j}`, at, size, a.hangerColor, Enum.Material.Metal, false)
+		end
+		local tieAt = CFrame.new(lateral, a.tieTop - a.tie.Y / 2, 0)
+		piece(`Tie{letter}`, tieAt, Vector3.new(a.tie.X, a.tie.Y, span), a.ribColor, Enum.Material.Metal, false)
+		-- A pier under each foot, from under the tie beam down into the ground (the lake bed).
+		for k, z in { -span / 2, span / 2 } do
+			local world = base * Vector3.new(lateral, 0, z)
+			local bottom = ctx.groundAt(world.X, world.Z) - TUNING.bury - feature.position.Y
+			local top = a.tieTop - a.tie.Y
+			if top - bottom > 0.1 then
+				local at = CFrame.new(lateral, (top + bottom) / 2, z)
+				local size = Vector3.new(a.pier.X, top - bottom, a.pier.Y)
+				piece(`Pier{letter}{k}`, at, size, a.pierColor, Enum.Material.Concrete, true)
+			end
+		end
+		local strip: Rect = {
+			c = flat((base * CFrame.new(lateral, 0, 0)).Position),
+			u = flat(base.LookVector).Unit,
+			ha = span / 2 + a.pier.Y / 2,
+			hc = math.max(a.rib.X, a.pier.X) / 2,
+		}
+		gridInsert(ctx.grid, strip, "feature")
+	end
+	for k = 1, a.struts do
+		local p = archPoint(0.5 + (k - (a.struts + 1) / 2) * a.strutSpacing, 0)
+		local size = Vector3.new(feature.size.X, a.strut, a.strut)
+		piece(`Strut{k}`, CFrame.new(0, p.Y, p.Z), size, a.ribColor, Enum.Material.Metal, false)
+	end
+end
+
+local FEATURE_BUILDERS: { [string]: (Ctx, string, FeatureData, CFrame) -> () } = {
+	water_tower = addWaterTower,
+	diner = addDiner,
+	bridge_arch = addBridgeArch,
+}
+
+-- Each feature as a Model under Features. A water tower or diner whose footprint would land on a road, a pad or
+-- another thing's ground is left out with a note; lots, buildings, streetlights and trees keep off every footprint.
+local function addFeatures(ctx: Ctx)
+	local list = ctx.layout.features
+	if list == nil or #list == 0 then
+		return
+	end
+	container(ctx, "Features", "Folder")
+	for _, feature in list do
+		local builder = FEATURE_BUILDERS[feature.kind]
+		if builder == nil then
+			note(ctx, `feature {feature.id}: no builder for kind "{feature.kind}", left out`)
+			continue
+		end
+		local facing = CFrame.Angles(0, math.rad(feature.yaw), 0)
+		local base = CFrame.new(feature.position) * facing
+		local footprint: Rect = {
+			c = flat(feature.position),
+			u = flat(facing.LookVector).Unit,
+			ha = feature.size.Z / 2,
+			hc = feature.size.X / 2,
+		}
+		local spansRoad = feature.kind == "bridge_arch"
+		if not spansRoad and gridHits(ctx.grid, footprint, FEATURE_BLOCKERS, 0) then
+			note(ctx, `feature {feature.id} would stand on a road, a pad or a landmark, left out`)
+			continue
+		end
+		local folder = `Features/{feature.id}`
+		container(ctx, folder, "Model", Enum.ModelStreamingMode.Atomic)
+		builder(ctx, folder, feature, base)
+		if not spansRoad then
+			gridInsert(ctx.grid, footprint, "feature")
+		end
+	end
+end
+
+---------------------------------------------------------------------------------------------------------------
 -- Streetlights
 ---------------------------------------------------------------------------------------------------------------
 
@@ -2944,11 +3530,14 @@ local LIGHT_BLOCKERS: { [string]: boolean } = {
 	lake = true,
 	light = true,
 	driveway = true,
+	feature = true,
 }
 
 -- Posts at an even spacing along each street and arterial, alternating sides road by road. A post's light
 -- only switches on when no other lit post is within TUNING.lightEmitSpacing, so at most one light per 200
--- studs of street actually emits.
+-- studs of street actually emits. Every head is a night light (Config/Environment nightLights "streetlight"):
+-- built in its day look with its light off, lit from dusk to dawn by Services/DayNightService. Each head's
+-- footprint goes into the grid as "lamp", which only trees keep clear of.
 local function addStreetlights(ctx: Ctx)
 	local lit: { [number]: { Vector2 } } = {}
 	local cell = TUNING.lightEmitSpacing
@@ -3014,6 +3603,7 @@ local function addStreetlights(ctx: Ctx)
 			local head = TUNING.headSize
 			local headAt = lift(at + toward * TUNING.headReach, base + TUNING.postHeight + head.Y / 2)
 			local headFrame = CFrame.lookAt(headAt, headAt + lift(toward, 0))
+			-- Built in its day look (nightLight below): Neon from dusk to dawn.
 			local headSpec = decor(
 				block(
 					"Streetlights",
@@ -3022,7 +3612,7 @@ local function addStreetlights(ctx: Ctx)
 					headFrame,
 					head,
 					TUNING.headColor,
-					Enum.Material.Neon
+					Enum.Material.SmoothPlastic
 				)
 			)
 			local headPlan = flat(headAt)
@@ -3039,8 +3629,9 @@ local function addStreetlights(ctx: Ctx)
 				lit[key] = lit[key] or {}
 				table.insert(lit[key], headPlan)
 			end
-			add(ctx, headSpec)
+			add(ctx, nightLight(headSpec, "streetlight"))
 			gridInsert(ctx.grid, footprint, "light")
+			gridInsert(ctx.grid, { c = headPlan, u = toward, ha = head.Z / 2, hc = head.X / 2 }, "lamp")
 		end
 	end
 end
@@ -3093,10 +3684,129 @@ local LOT_BLOCKERS: { [string]: boolean } = {
 	prop = true,
 	light = true,
 	lot = true,
+	park = true,
+	feature = true,
 }
 
 local function inflate(rect: Rect, by: number): Rect
 	return { c = rect.c, u = rect.u, ha = rect.ha + by, hc = rect.hc + by }
+end
+
+-- One building on its plot: `c` the centre of its footprint (plan), `u` the way its road runs, `depth` across the
+-- road, `width` along it, `height` to its roof. In a zone with a facade (Config/Environment facades) it is glass set
+-- in from the footprint with floor bands proud of it and a roof edge on the footprint, or from towerFrom up a
+-- glass tower with corner piers and a band over its ground floor; some get a plant box on the roof, and litShare of
+-- them a run of floors whose windows glow at night (the glass split at a floor line, hidden behind a band). In a zone
+-- without one, a plain block. Its own random numbers come from `shade` and its index, so the plots never reshuffle.
+local function addBuilding(
+	ctx: Ctx,
+	folder: string,
+	index: number,
+	c: Vector2,
+	u: Vector2,
+	depth: number,
+	width: number,
+	height: number,
+	color: Color3,
+	zone: ZoneData,
+	shade: number
+)
+	local name = `Building{index}`
+	local bury = TUNING.bury
+	local base = CFrame.lookAt(lift(c, 0), lift(c + u, 0))
+	local style = Environment.facades[zone.id]
+	if style == nil then
+		local frame = base * CFrame.new(0, (height - bury) / 2, 0)
+		local size = Vector3.new(depth, height + bury, width)
+		add(ctx, block(folder, name, "building", frame, size, color, TUNING.buildingMaterial))
+		return
+	end
+	local rng = Random.new(mixSeed(ctx.layout.seed, shade, index))
+	local tint = style.tints[rng:NextInteger(1, #style.tints)]
+	local material = style.materials[rng:NextInteger(1, #style.materials)]
+	local litRoll, litFloor, litUpper = rng:NextNumber(), rng:NextNumber(), rng:NextNumber()
+	local roofRoll, roofX, roofZ, roofTall = rng:NextNumber(), rng:NextNumber(), rng:NextNumber(), rng:NextNumber()
+
+	-- A box from y0 to y1, `inset` inside the footprint on every side.
+	local function slab(
+		suffix: string,
+		y0: number,
+		y1: number,
+		inset: number,
+		partColor: Color3,
+		partMaterial: Enum.Material
+	)
+		local frame = base * CFrame.new(0, (y0 + y1) / 2, 0)
+		local size = Vector3.new(depth - 2 * inset, y1 - y0, width - 2 * inset)
+		local spec = block(folder, name .. suffix, "building", frame, size, partColor, partMaterial)
+		add(ctx, spec)
+		return spec
+	end
+
+	local tower = style.towerFrom ~= nil and height >= (style.towerFrom :: number)
+	local floors = math.clamp(math.round(height / style.floorHeight), 1, style.maxFloors)
+	local floor = if tower then style.floorHeight else height / floors
+	local band = floor * (1 - style.windowShare) -- a floor band's height, centred on its floor line
+	local glassTop = height - (if tower then TUNING.towerCrown else band / 2)
+	-- Floor lines below the roof edge: where the glass may split.
+	local lines = if tower then math.max(0, math.ceil(glassTop / floor) - 1) else floors - 1
+
+	-- The glass, whole or split at a floor line with one piece lit at night.
+	local lit = litRoll < style.litShare
+	if lit and lines > 0 then
+		local split = floor * (1 + math.floor(litFloor * lines))
+		local lower = slab("", -bury, split, TUNING.glassInset, tint, Enum.Material.Glass)
+		local upper = slab("Upper", split, glassTop, TUNING.glassInset, tint, Enum.Material.Glass)
+		nightLight(if litUpper < 0.5 then lower else upper, "window")
+	else
+		local glass = slab("", -bury, glassTop, TUNING.glassInset, tint, Enum.Material.Glass)
+		if lit then
+			nightLight(glass, "window")
+		end
+	end
+
+	if tower then
+		-- Corner piers on the footprint, and a band over the ground floor.
+		local pier = TUNING.towerPier
+		local pierSize = Vector3.new(pier, glassTop + bury, pier)
+		for i, corner in { { 1, 1 }, { -1, 1 }, { -1, -1 }, { 1, -1 } } do
+			local offset =
+				Vector3.new(corner[1] * (depth - pier) / 2, (glassTop - bury) / 2, corner[2] * (width - pier) / 2)
+			add(ctx, block(folder, `{name}Pier{i}`, "building", base * CFrame.new(offset), pierSize, color, material))
+		end
+		local podium = TUNING.podiumBand
+		slab("Band1", floor - podium / 2, floor + podium / 2, TUNING.bandInset, color, material)
+	else
+		for k = 1, floors - 1 do
+			slab(`Band{k}`, k * floor - band / 2, k * floor + band / 2, TUNING.bandInset, color, material)
+		end
+	end
+
+	-- The roof edge: on the footprint, proud of the bands and the glass, rising past the roof.
+	local roof = height + TUNING.parapetHeight
+	slab("Top", glassTop, roof, 0, color, material)
+
+	-- A plant box on some roofs, inside the roof edge.
+	if style.rooftopShare > 0 and height >= style.rooftopFrom and roofRoll < style.rooftopShare then
+		local boxDepth, boxWidth = depth * TUNING.rooftopSize.X, width * TUNING.rooftopSize.Y
+		local tall = TUNING.rooftopHeight[1] + roofTall * (TUNING.rooftopHeight[2] - TUNING.rooftopHeight[1])
+		local spareX = math.max(0, depth / 2 - boxDepth / 2 - TUNING.rooftopEdge)
+		local spareZ = math.max(0, width / 2 - boxWidth / 2 - TUNING.rooftopEdge)
+		local offset = Vector3.new((2 * roofX - 1) * spareX, roof + tall / 2, (2 * roofZ - 1) * spareZ)
+		local size = Vector3.new(boxDepth, tall, boxWidth)
+		add(
+			ctx,
+			block(
+				folder,
+				`{name}Roof`,
+				"building",
+				base * CFrame.new(offset),
+				size,
+				TUNING.rooftopColor,
+				Enum.Material.Metal
+			)
+		)
+	end
 end
 
 -- Lots along both sides of every town street and arterial, each one a plot from the sidewalk back to a fixed
@@ -3201,27 +3911,298 @@ local function addBuildings(ctx: Ctx, zones: { ZoneData })
 					buildings += 1
 					local height = zone.buildingHeight.min + tall * (zone.buildingHeight.max - zone.buildingHeight.min)
 					local c = planAt(edge, along + width / 2, side * (front + setback + depth / 2))
-					local y = (height - TUNING.bury) / 2
-					local frame = CFrame.lookAt(lift(c, y), lift(c + edge.u, y))
-					local size = Vector3.new(depth, height + TUNING.bury, width - TUNING.buildingGap)
 					local colors = zone.buildingColors
 					local color = if #colors > 0 then colors[shade % #colors + 1] else TUNING.landmarkDefaultColor
-					local spec = block(
+					addBuilding(
+						ctx,
 						`Buildings/{blockName}`,
-						`Building{buildings}`,
-						"building",
-						frame,
-						size,
+						buildings,
+						c,
+						edge.u,
+						depth,
+						width - TUNING.buildingGap,
+						height,
 						color,
-						TUNING.buildingMaterial
+						zone,
+						shade
 					)
-					add(ctx, spec)
 				else
 					closeRun()
 				end
 				along += width
 			end
 			closeRun()
+		end
+	end
+end
+
+---------------------------------------------------------------------------------------------------------------
+-- Parks and trees
+---------------------------------------------------------------------------------------------------------------
+
+-- A park's ground as rectangles: the whole park, or the bands round its hole.
+local function parkRects(park: ParkData): { Rect }
+	local rects: { Rect } = {}
+	local function rect(x0: number, x1: number, z0: number, z1: number)
+		if x1 - x0 > 1e-6 and z1 - z0 > 1e-6 then
+			table.insert(rects, {
+				c = Vector2.new((x0 + x1) / 2, (z0 + z1) / 2),
+				u = Vector2.xAxis,
+				ha = (x1 - x0) / 2,
+				hc = (z1 - z0) / 2,
+			})
+		end
+	end
+	local min, max = park.min, park.max
+	local hole = park.hole
+	if hole == nil then
+		rect(min.X, max.X, min.Y, max.Y)
+		return rects
+	end
+	local hx0, hx1 = math.clamp(hole.min.X, min.X, max.X), math.clamp(hole.max.X, min.X, max.X)
+	local hz0, hz1 = math.clamp(hole.min.Y, min.Y, max.Y), math.clamp(hole.max.Y, min.Y, max.Y)
+	rect(min.X, max.X, min.Y, hz0)
+	rect(min.X, max.X, hz1, max.Y)
+	rect(min.X, hx0, hz0, hz1)
+	rect(hx1, max.X, hz0, hz1)
+	return rects
+end
+
+-- Parks keep lots and buildings out (run before addBuildings).
+local function addParks(ctx: Ctx)
+	for _, park in ctx.layout.parks or {} do
+		for _, rect in parkRects(park) do
+			gridInsert(ctx.grid, rect, "park")
+		end
+	end
+end
+
+-- What a tree's trunk keeps its distance from (Config/Environment trees.roadClearance or parkRoadClearance)...
+local TREE_ROAD_KINDS: { [string]: boolean } = { road = true, sidewalk = true, driveway = true, support = true }
+-- ...what its leaves keep off (a park tree's trunk may stand near a road, but its leaves never hang over one)...
+local TREE_BLOCKERS: { [string]: boolean } = {
+	road = true,
+	support = true,
+	landmark = true,
+	location = true,
+	access = true,
+	prop = true,
+	light = true,
+	lamp = true,
+	lot = true,
+	feature = true,
+	ramp = true,
+	mesa = true,
+	lake = true,
+}
+-- ...and what keeps trunks apart.
+local TREE_KIND: { [string]: boolean } = { tree = true }
+
+-- The random numbers one tree takes, drawn before anything is checked so a tree that doesn't fit never shifts the
+-- next one's.
+type TreeRolls = { species: number, scale: number, yaw: number, leaves: number, trunk: number }
+
+local function treeRolls(rng: Random): TreeRolls
+	return {
+		species = rng:NextNumber(),
+		scale = rng:NextNumber(),
+		yaw = rng:NextNumber(),
+		leaves = rng:NextNumber(),
+		trunk = rng:NextNumber(),
+	}
+end
+
+local function square(c: Vector2, half: number): Rect
+	return { c = c, u = Vector2.xAxis, ha = half, hc = half }
+end
+
+-- Trees (Config/Environment trees): first the parks, a tree per cell by chance; then the groves, zone by zone in
+-- the configured order (the open country last, outskirts groves past outskirtsFrom), each cell of a zone's grid
+-- a grove by chance, its trees scattered round a point in the cell and kept inside that zone. A tree goes only
+-- where its trunk clears the roads and sidewalks, its leaves clear lots, pads, house plots, props, streetlights,
+-- landmarks, features and water, and no other trunk is within `spacing`; never west of reservedWestOfX, never on
+-- the lake bed. Planting stops at maxTrees or the tree part budget. Each park cell and each grove has its own seeded
+-- random stream, so the same trees grow every build.
+local function addTrees(ctx: Ctx, zones: { ZoneData })
+	local config = Environment.trees
+	local layout = ctx.layout
+	local seed = layout.seed
+	local reserved = layout.reservedWestOfX or -HUGE
+	local inner = ctx.half - config.edgeMargin
+	local country = config.countryZone
+	local hasCountry = layout.zones[country] ~= nil
+	local budget = Environment.budget.treeParts
+	local trees, parts = 0, 0
+	local tiles: { [string]: string } = {}
+
+	-- The zone a point counts as for the groves (the open land outside every zone is the country's).
+	local function regionAt(p: Vector2): string?
+		local zone = zoneAt(zones, p)
+		if zone then
+			return zone.id
+		end
+		return if hasCountry then country else nil
+	end
+
+	local function speciesFor(mixName: string, roll: number): string?
+		local list = config.mixes[mixName]
+		if list == nil or #list == 0 then
+			return nil
+		end
+		local total = 0
+		for _, entry in list do
+			total += entry.weight
+		end
+		local left = roll * total
+		for _, entry in list do
+			left -= entry.weight
+			if left < 0 then
+				return entry.species
+			end
+		end
+		return list[#list].species
+	end
+
+	local function pick<T>(list: { T }, roll: number): T
+		return list[math.clamp(math.floor(roll * #list) + 1, 1, #list)]
+	end
+
+	-- Plants one tree at `p` if it fits. True when it did.
+	local function plant(p: Vector2, rolls: TreeRolls, mixName: string, roadClearance: number): boolean
+		local speciesName = speciesFor(mixName, rolls.species)
+		local shape = if speciesName then TUNING.treeSpecies[speciesName] else nil
+		if shape == nil or trees >= config.maxTrees then
+			return false
+		end
+		if p.X < reserved or math.abs(p.X) > inner or math.abs(p.Y) > inner then
+			return false
+		end
+		local scale = config.scale[1] + rolls.scale * (config.scale[2] - config.scale[1])
+		local reach = 0
+		for _, leaf in shape.leaves do
+			reach = math.max(reach, math.sqrt(leaf.size.X * leaf.size.X + leaf.size.Z * leaf.size.Z) / 2)
+		end
+		reach *= scale
+		local trunkWidth, trunkHeight = shape.trunk.X * scale, shape.trunk.Y * scale
+		if gridHits(ctx.grid, square(p, trunkWidth / 2 + roadClearance), TREE_ROAD_KINDS, 0) then
+			return false
+		end
+		if gridHits(ctx.grid, square(p, reach + TUNING.treeMargin), TREE_BLOCKERS, 0) then
+			return false
+		end
+		local room = square(p, config.spacing / 2)
+		if gridHits(ctx.grid, room, TREE_KIND, 0) then
+			return false
+		end
+		local ground = ctx.groundAt(p.X, p.Y)
+		if ground < -TUNING.maxLevelError then
+			return false -- the lake bed
+		end
+		local count = 1 + #shape.leaves
+		if parts + count > budget then
+			return false
+		end
+		trees += 1
+		parts += count
+		gridInsert(ctx.grid, room, "tree")
+
+		local tile = TUNING.treeTile
+		local key = `{math.floor(p.X / tile)}_{math.floor(p.Y / tile)}`
+		local folder = tiles[key]
+		if folder == nil then
+			folder = `Trees/Tile{key}`
+			tiles[key] = folder
+			container(ctx, folder, "Model", Enum.ModelStreamingMode.Atomic)
+		end
+		local treeFolder = folder :: string
+		local name = `Tree{trees}`
+		local turn = CFrame.Angles(0, rolls.yaw * TAU, 0)
+		-- The trunk: solid, a little into the ground (it may stand on a slope).
+		local bury = TUNING.bury
+		local trunk = block(
+			treeFolder,
+			`{name}Trunk`,
+			"tree",
+			CFrame.new(p.X, ground + (trunkHeight - bury) / 2, p.Y) * turn,
+			Vector3.new(trunkWidth, trunkHeight + bury, trunkWidth),
+			pick(config.trunkColors, rolls.trunk),
+			Enum.Material.Wood
+		)
+		trunk.shadow = false
+		add(ctx, trunk)
+		-- The leaves: cars and players pass through them; they cast a shadow.
+		local palette = if shape.pine then config.pineColors else config.leafColors
+		local leafColor = pick(palette, rolls.leaves)
+		local leafMaterial = if shape.pine then Enum.Material.Grass else Enum.Material.LeafyGrass
+		for i, leaf in shape.leaves do
+			local size = leaf.size * scale
+			local y = ground + leaf.bottom * scale + size.Y / 2
+			local frame = CFrame.new(p.X, y, p.Y) * turn * CFrame.Angles(0, math.rad(leaf.turn), 0)
+			local spec = decor(block(treeFolder, `{name}Leaves{i}`, "tree", frame, size, leafColor, leafMaterial))
+			spec.shadow = true
+			add(ctx, spec)
+		end
+		return true
+	end
+
+	-- The parks.
+	for parkIndex, park in layout.parks or {} do
+		local params = config.parks[park.id] or config.parks.default
+		local cell = params.cell
+		local nx = math.ceil((park.max.X - park.min.X) / cell)
+		local nz = math.ceil((park.max.Y - park.min.Y) / cell)
+		for i = 0, nx - 1 do
+			for j = 0, nz - 1 do
+				local rng = Random.new(mixSeed(seed + 101 * parkIndex, i, j))
+				local jx, jz, roll = rng:NextNumber(), rng:NextNumber(), rng:NextNumber()
+				local rolls = treeRolls(rng)
+				local x = park.min.X + (i + 0.15 + 0.7 * jx) * cell
+				local z = park.min.Y + (j + 0.15 + 0.7 * jz) * cell
+				if roll < params.chance and insidePark(park, x, z) then
+					plant(Vector2.new(x, z), rolls, "park", config.parkRoadClearance)
+				end
+			end
+		end
+	end
+
+	-- The groves.
+	for groveIndex, grove in config.groves do
+		if layout.zones[grove.zone] == nil then
+			continue
+		end
+		local cell = grove.cell
+		local cells = math.ceil(2 * ctx.half / cell)
+		for i = 0, cells - 1 do
+			for j = 0, cells - 1 do
+				local rng = Random.new(mixSeed(seed + 7907 * groveIndex, i, j))
+				local jx, jz, roll = rng:NextNumber(), rng:NextNumber(), rng:NextNumber()
+				local countRoll, radiusRoll = rng:NextNumber(), rng:NextNumber()
+				local centre =
+					Vector2.new(-ctx.half + (i + 0.2 + 0.6 * jx) * cell, -ctx.half + (j + 0.2 + 0.6 * jz) * cell)
+				if regionAt(centre) ~= grove.zone or centre.X < reserved then
+					continue
+				end
+				local outskirts = math.max(math.abs(centre.X), math.abs(centre.Y)) > config.outskirtsFrom
+				local chance = if outskirts then grove.outskirtsChance or grove.chance else grove.chance
+				if roll >= chance then
+					continue
+				end
+				if gridHits(ctx.grid, square(centre, config.groveRoadClearance), TREE_ROAD_KINDS, 0) then
+					continue
+				end
+				local low, high = grove.trees[1], grove.trees[2]
+				local count = math.min(high, low + math.floor(countRoll * (high - low + 1)))
+				local radius = grove.radius[1] + radiusRoll * (grove.radius[2] - grove.radius[1])
+				local mixName = if outskirts then "outskirts" else grove.species
+				for _ = 1, count do
+					local angle, distance = rng:NextNumber() * TAU, radius * math.sqrt(rng:NextNumber())
+					local rolls = treeRolls(rng)
+					local p = centre + Vector2.new(math.cos(angle), math.sin(angle)) * distance
+					if regionAt(p) == grove.zone then
+						plant(p, rolls, mixName, config.roadClearance)
+					end
+				end
+			end
 		end
 	end
 end
@@ -3264,6 +4245,7 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 	container(ctx, "Streetlights", "Folder")
 	container(ctx, "Lots", "Folder")
 	container(ctx, "Buildings", "Folder")
+	container(ctx, "Trees", "Folder")
 
 	local zones = zonesBySize(layout)
 	prepare(ctx)
@@ -3277,14 +4259,18 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 	addGround(ctx, zones)
 	addLakes(ctx)
 	addMesas(ctx)
+	addHills(ctx)
 	addJumpRamps(ctx)
 	addLandmarks(ctx)
 	addLocations(ctx)
 	addSpawns(ctx)
 	addDisplayPads(ctx)
 	addBillboards(ctx)
+	addFeatures(ctx)
 	addStreetlights(ctx)
+	addParks(ctx)
 	addBuildings(ctx, zones)
+	addTrees(ctx, zones)
 
 	-- Notes once each, in order.
 	local seen: { [string]: boolean } = {}
@@ -3372,6 +4358,7 @@ local function createPart(spec: PartSpec): BasePart
 		instance.Brightness = light.brightness
 		instance.Color = light.color
 		instance.Shadows = false
+		instance.Enabled = light.enabled ~= false
 		instance.Parent = part
 	end
 	local labels: { LabelSpec } = spec.labels or {}
@@ -3380,7 +4367,7 @@ local function createPart(spec: PartSpec): BasePart
 		gui.Name = `Label{i}`
 		gui.Face = label.face
 		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-		gui.PixelsPerStud = TUNING.labelPixelsPerStud
+		gui.PixelsPerStud = label.pixelsPerStud or TUNING.labelPixelsPerStud
 		gui.LightInfluence = 0 -- readable by night too
 		gui.Parent = part
 		local center = label.center or Vector2.new(0.5, 0.5)

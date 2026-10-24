@@ -9,7 +9,10 @@
 --      (plus DisplayName and Zone), and that its footprint comes within RoadGraph.roadReach of a road;
 --   4. checks every road node is reachable from the node nearest the used lot;
 --   5. times Pathfind.route from the player spawn to every location, GPS destinations included (max and mean
---      ms; each call must stay under 5 ms).
+--      ms; each call must stay under 5 ms);
+--   6. checks every night light (parts tagged Config/Environment nightLights.tag) has a kind Services/DayNightService
+--      knows and its day colour, and every MapLayout feature has its model under Generated.Features; it notes how
+--      many night lights of each kind and how many trees the map holds.
 -- It also confirms the Ground and Roads models stream as Persistent (so a fast car never outruns its road).
 --
 -- Edit-mode tool only (CLAUDE.md hard rule 9). Run it from MCP execute_luau (Edit datamodel) or the command bar:
@@ -25,6 +28,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 local Graph = require(ReplicatedStorage.Shared.Road.Graph)
 local MapBuilder = require(script.Parent.MapBuilder)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
@@ -644,6 +648,57 @@ local function timeRoutes(report: Report)
 	end
 end
 
+-- Step 6: the night lights DayNightService switches, the features, and how many trees.
+local function checkLooks(generated: Instance, report: Report)
+	local lights = Environment.nightLights
+	local kinds: { [string]: number } = {}
+	local names: { string } = {}
+	for _, instance in CollectionService:GetTagged(lights.tag) do
+		if not instance:IsDescendantOf(generated) then
+			continue
+		end
+		local kind = instance:GetAttribute(lights.kindAttribute)
+		if type(kind) ~= "string" or lights.kinds[kind] == nil then
+			table.insert(
+				report.missing,
+				`{pathBelow(instance, generated)}: night light of unknown kind {tostring(kind)}`
+			)
+			continue
+		end
+		if typeof(instance:GetAttribute(lights.dayColorAttribute)) ~= "Color3" then
+			table.insert(report.missing, `{pathBelow(instance, generated)}: night light without its day colour`)
+		end
+		if kinds[kind] == nil then
+			table.insert(names, kind)
+		end
+		kinds[kind] = (kinds[kind] or 0) + 1
+	end
+	table.sort(names)
+	local counts: { string } = {}
+	for _, kind in names do
+		table.insert(counts, `{kind} {kinds[kind]}`)
+	end
+	table.insert(report.notes, `night lights: {if #counts > 0 then table.concat(counts, ", ") else "none"}`)
+
+	local features = generated:FindFirstChild("Features")
+	for _, feature in MapLayout.features do
+		if features == nil or features:FindFirstChild(feature.id) == nil then
+			table.insert(report.missing, `Features/{feature.id} (MapLayout feature {feature.displayName})`)
+		end
+	end
+
+	local trees = 0
+	local folder = generated:FindFirstChild("Trees")
+	if folder then
+		for _, descendant in folder:GetDescendants() do
+			if descendant:IsA("BasePart") and string.sub(descendant.Name, -5) == "Trunk" then
+				trees += 1
+			end
+		end
+	end
+	table.insert(report.notes, `{trees} trees`)
+end
+
 -- Cars drive on Ground and Roads, so both must be Persistent: never streamed out under a fast car.
 local function checkStreaming(generated: Instance, report: Report)
 	for _, name in { "Ground", "Roads" } do
@@ -772,6 +827,7 @@ function MapCheck.run(opts: Options?): Report
 		checkLocations(generated, report)
 		checkReachable(report)
 		timeRoutes(report)
+		checkLooks(generated, report)
 
 		report.ok = countsMatch
 			and #report.overlaps == 0

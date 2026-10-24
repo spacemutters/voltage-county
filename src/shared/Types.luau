@@ -58,7 +58,25 @@ export type FleetData = {
 	lastOnlineAt: number, -- v6: earnings are counted up to here; saved on the fleet timer and on leaving
 }
 
--- Schema version 7 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
+-- The first-session path (schema 8; Config/Goals path, Services/GoalsService). A new profile starts it; a save from
+-- before schema 8 starts with it done.
+export type GoalsPath = {
+	done: boolean, -- every step paid, or skipped: the path is over for good
+	finished: { [string]: boolean }, -- Config/Goals path goal id -> true once its server event happened
+	claimed: { [string]: boolean }, -- goal id -> true once its reward was paid (never paid twice)
+}
+
+-- Today's three daily goals (schema 8; Config/Goals daily). GoalsService replaces them when the goals day changes.
+export type GoalsDaily = {
+	day: number, -- the goals day these are for (GoalsService.dayOf); 0 = none picked yet
+	ids: { string }, -- the day's goal ids, one from each Config/Goals daily slot, in card order
+	progress: { [string]: number }, -- goal id -> how much is done (miles, $ or a count; never past its target)
+	claimed: { [string]: boolean }, -- goal id -> true once collected
+}
+
+export type GoalsData = { path: GoalsPath, daily: GoalsDaily }
+
+-- Schema version 8 (Config/Data.schemaVersion). DataService/Migrations upgrades older saves step by step.
 export type PlayerData = {
 	version: number,
 	cash: number,
@@ -85,6 +103,7 @@ export type PlayerData = {
 	settings: Settings,
 	firstJoinAt: number,
 	boosts: { Boost }, -- v2: timed earnings boosts
+	goals: GoalsData, -- v8: the first-session path and the daily goals
 }
 
 -- What a player's client knows about their own profile: the Net ProfileSnapshot payload, sent by

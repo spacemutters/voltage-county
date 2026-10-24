@@ -12,8 +12,12 @@
 -- from MarketplaceService (cached), so Managed Pricing and price tests can change them; tests/NoRobuxPrices.spec
 -- fails on any price written into the source. Nothing sold here is random, and credits only ever buy looks.
 
+local Audio = require(script.Parent.Audio)
+local Customization = require(script.Parent.Customization)
 local Economy = require(script.Parent.Economy)
 local Fleet = require(script.Parent.Fleet)
+local LightShows = require(script.Parent.LightShows)
+local Season = require(script.Parent.Season)
 
 export type ProductKind = "credits" | "cash" | "slot" | "starter" | "cosmetic"
 
@@ -88,6 +92,58 @@ export type Monetization = {
 local GARAGE_PLUS: SlotBonus = { garageSlots = 10, customSlots = 2 }
 local CLUB_MONTHLY_CREDITS = 10
 local CLUB_SLOTS: SlotBonus = { garageSlots = 0, customSlots = 2 }
+local CLUB_LOOK = "club_wrap" -- Config/Customization.exclusiveWraps
+
+-- "A", "A and B", "A, B and C".
+local function joinNames(names: { string }): string
+	if #names <= 1 then
+		return names[1] or ""
+	end
+	return table.concat(names, ", ", 1, #names - 1) .. " and " .. names[#names]
+end
+
+-- Light Show Pro's perk lines, from Config/LightShows and Config/Audio: the Pro routines by name, and, while any of
+-- them has no music (a track's assetId is 0), plainly that they are lights and doors only.
+local function lightShowPerks(): { string }
+	local names: { string } = {}
+	local silent = false
+	for _, id in LightShows.routineOrder do
+		local routine = LightShows.routines[id]
+		if routine ~= nil and routine.pro then
+			table.insert(names, routine.displayName)
+			local track = Audio.tracks[routine.trackId]
+			silent = silent or track == nil or track.assetId == 0
+		end
+	end
+	local perks = {
+		string.format("The %s light show%s at car meets", joinNames(names), if #names == 1 then "" else "s"),
+	}
+	if silent then
+		table.insert(perks, "Lights and doors only, no music")
+	end
+	return perks
+end
+
+-- The Season Pass's look line: how many exclusive car looks its premium track gives (Config/Season).
+local function seasonLooksPerk(): string?
+	local looks = 0
+	for _, tier in Season.tiers do
+		local reward = tier.premium
+		if reward ~= nil and reward.kind ~= "cash" and reward.kind ~= "credits" then
+			looks += 1
+		end
+	end
+	if looks == 0 then
+		return nil
+	end
+	return if looks == 1 then "An exclusive car look" else string.format("%d exclusive car looks", looks)
+end
+
+local seasonPerks = { "The premium reward track this season" }
+local seasonLooks = seasonLooksPerk()
+if seasonLooks ~= nil then
+	table.insert(seasonPerks, seasonLooks)
+end
 
 local Monetization: Monetization = {
 	-- Game pass ids (Creator Dashboard > Monetization > Passes). 0 = not created yet.
@@ -185,9 +241,10 @@ local Monetization: Monetization = {
 			},
 		},
 		lightShowPro = {
-			-- PLAN.md's "Boombox & Light Show Pro": the name gets "Boombox &" back when the boombox ships.
+			-- PLAN.md's "Boombox & Light Show Pro": the name gets "Boombox &" back when the boombox ships. Its
+			-- routines have no music until Config/Audio has their tracks, and the card says so (lightShowPerks).
 			name = "Light Show Pro",
-			perks = { "Every Pro light show routine at car meets" },
+			perks = lightShowPerks(),
 		},
 		customPlates = {
 			name = "Custom Plates",
@@ -195,7 +252,7 @@ local Monetization: Monetization = {
 		},
 		seasonPass = {
 			name = "Season Pass",
-			perks = { "The premium reward track this season" },
+			perks = seasonPerks,
 		},
 	},
 	passOrder = { "vip", "fleetManager", "garagePlus", "lightShowPro", "customPlates", "seasonPass" },
@@ -215,7 +272,8 @@ local Monetization: Monetization = {
 		perks = {
 			string.format("%d Design Credits every month", CLUB_MONTHLY_CREDITS),
 			string.format("+%d custom car slots while you're a member", CLUB_SLOTS.customSlots),
-			"The members-only Voltage Club wrap",
+			-- The look's own words (Config/Customization blurb), so the card says what it is.
+			string.format("Members-only look: %s", Customization.lookBlurb(CLUB_LOOK) or "the Voltage Club wrap"),
 			-- Planned (§11), listed here once built: a members-only plate frame (plate frames aren't a look yet; add
 			-- its id to `cosmetics` then) and the club lounge (reads the player attribute attributes.club).
 		},
@@ -223,7 +281,7 @@ local Monetization: Monetization = {
 		slots = CLUB_SLOTS,
 		-- Exclusive looks members may use while subscribed (MonetizationService.ownsCosmetic; ids from
 		-- Config/Customization.exclusiveWraps).
-		cosmetics = { "club_wrap" },
+		cosmetics = { CLUB_LOOK },
 		minRecheckSeconds = 300,
 	},
 

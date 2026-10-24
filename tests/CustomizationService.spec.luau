@@ -295,6 +295,31 @@ return function(t: Harness.Api)
 			t.expect(cost).toBe(0)
 		end)
 
+		t.it("never sells an exclusive look's finish, and charges only the shop price of what else changed", function()
+			local vehicle = car()
+			local class = classOf(VEHICLE_ID)
+			for _, finish in Customization.exclusiveFinishes do
+				local ok, message, cost, after =
+					CustomizationService.validate(vehicle, class, { finish = finish.id } :: any)
+				t.expect(ok).toBe(false)
+				t.expect(message).toBe(Customization.messages.unknownFinish)
+				t.expect(cost).toBe(0)
+				t.expect(after).toBe(nil)
+			end
+			local current = CustomizationService.lookOf(vehicle, nil)
+			for _, wrap in Customization.exclusiveWraps do
+				local ok, _, cost, after = CustomizationService.validate(vehicle, class, { wrap = wrap.id } :: any)
+				t.expect(ok).toBe(true)
+				t.expect(cost).toBe(0)
+				-- The look's finish is worn, never saved: the car keeps its own on record.
+				t.expect(after ~= nil and after.finish).toBe(vehicle.finish)
+				t.expect(after ~= nil and after.paint).toBe(vehicle.paint)
+				local _, _, both =
+					CustomizationService.validate(vehicle, class, { wrap = wrap.id, finish = "matte" } :: any)
+				t.expect(both).toBe((Customization.priceOf({ finish = "matte" }, current, class)))
+			end
+		end)
+
 		t.it("refuses stripes on a final-art body, and lets every exclusive look and plain paint through", function()
 			local striped: any = { wrap = "rally" }
 			t.expect((CustomizationService.wrapFits(striped, nil, true))).toBe(true) -- a greybox or designed body

@@ -8,8 +8,12 @@
 --   above gas     Phase 10, only in a car with a thruster ability: the Boost / Fly button (what a press does now,
 --                 with "Ready" or the seconds left under it), and the gas pedal shortens to make room
 --                 (Config/Controls touch.abilityGasSize), so the pedal block keeps its size
+--   above pedals  roast fixes (2026-10-24): Horn (hold) over the gas column and Lights (tap) over the brake column,
+--                 one row exactly as wide as the pedal block (Config/Controls touch.signalSize). Lights is filled
+--                 with the accent while the car's headlights shine (VehicleSoundController.signalsChanged).
 --
--- Held controls write InputController.setTouchState; the buttons call InputController.trigger, and the Boost /
+-- Held controls write InputController.setTouchState; the buttons call InputController.trigger, the Horn and Lights
+-- buttons call VehicleSoundController.setHorn and signal (the server decides), and the Boost /
 -- Fly button calls `onAbility` the moment it is pressed (HudController hands it to AbilityController). Every control
 -- tracks its own touches, so steering and gas work at the same time (multi-touch), and a finger that slides
 -- off a pedal still releases it when it lifts. Sizes come from Config/Controls (all at least 44 px).
@@ -19,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React = require(ReplicatedStorage.Packages.React)
 local Controls = require(ReplicatedStorage.Shared.Config.Controls)
 local InputController = require(script.Parent.Parent.Controllers.InputController)
+local VehicleSoundController = require(script.Parent.Parent.Controllers.VehicleSoundController)
 local Hud = require(script.Parent.Hud)
 
 local e = React.createElement
@@ -148,20 +153,22 @@ local function HoldButton(props: Placement & {
 	})
 end
 
--- A tap button for one-shot actions (mode, camera, exit).
-local function TapButton(props: Placement & { label: string, onTap: () -> () })
+-- A tap button for one-shot actions (mode, camera, exit, lights). `active` fills it with the accent (the lights
+-- are on).
+local function TapButton(props: Placement & { label: string, onTap: () -> (), active: boolean? })
 	local theme = Controls.theme
+	local active = props.active == true
 	return e("TextButton", {
 		AnchorPoint = props.anchor,
 		Position = props.position,
 		Size = UDim2.fromOffset(props.size.X, props.size.Y),
-		BackgroundColor3 = theme.panel,
-		BackgroundTransparency = theme.panelTransparency,
+		BackgroundColor3 = if active then theme.accent else theme.panel,
+		BackgroundTransparency = if active then 0 else theme.panelTransparency,
 		BorderSizePixel = 0,
 		Selectable = false,
-		FontFace = theme.fonts.medium,
+		FontFace = if active then theme.fonts.bold else theme.fonts.medium,
 		Text = props.label,
-		TextColor3 = theme.text,
+		TextColor3 = if active then theme.onAccent else theme.text,
 		TextSize = Controls.touch.labelTextSize,
 		[React.Event.Activated] = function()
 			props.onTap()
@@ -252,7 +259,24 @@ local function TouchControls(props: { ability: Hud.AbilityChip?, onAbility: (() 
 		end
 	end, {})
 
+	-- Whether the car's headlights shine, for the Lights button.
+	local lightsOn, setLightsOn = React.useState(VehicleSoundController.getDriverSignals().headlights)
+	React.useEffect(function()
+		local connection = VehicleSoundController.signalsChanged:Connect(
+			function(signals: VehicleSoundController.DriverSignals)
+				setLightsOn(signals.headlights)
+			end
+		)
+		setLightsOn(VehicleSoundController.getDriverSignals().headlights)
+		return function()
+			connection:Disconnect()
+		end
+	end, {})
+
 	local pedalColumn = margin + touch.gasSize.X + gap -- right edge offset of the brake / handbrake column
+	-- The Horn / Lights row stands one gap above the pedal block (UI/Phone/Layout's touchZones pedals include it).
+	local pedalHeight = math.max(touch.gasSize.Y, touch.brakeSize.Y + gap + touch.handbrakeSize.Y)
+	local signalBottom = margin + pedalHeight + gap
 	local buttonStep = touch.buttonSize.X + gap
 	-- In a car with a thruster ability the gas pedal shortens and the Boost / Fly button sits above it.
 	local ability = props.ability
@@ -321,6 +345,25 @@ local function TouchControls(props: { ability: Hud.AbilityChip?, onAbility: (() 
 				end,
 			})
 			else nil,
+		Horn = e(HoldButton, {
+			anchor = Vector2.new(1, 1),
+			position = UDim2.new(1, -margin, 1, -signalBottom),
+			size = touch.signalSize,
+			label = labels.horn,
+			onHeldChanged = function(held: boolean)
+				VehicleSoundController.setHorn(held, "touch")
+			end,
+		}),
+		Lights = e(TapButton, {
+			anchor = Vector2.new(1, 1),
+			position = UDim2.new(1, -pedalColumn, 1, -signalBottom),
+			size = touch.signalSize,
+			label = labels.lights,
+			active = lightsOn,
+			onTap = function()
+				VehicleSoundController.signal("headlights")
+			end,
+		}),
 		Exit = e(TapButton, {
 			anchor = Vector2.new(1, 0),
 			position = UDim2.new(1, -margin, 0, margin),

@@ -24,6 +24,7 @@ type Look = CustomizeModel.Look
 local CLASS = "sedan" -- the Ohm Spark's class: takes spoilers, roof carriers, a splitter and a diffuser
 local UID = "spec-car"
 local TOLERANCE = 1e-6
+local MAX_NOTE = 80 -- characters: a note's two lines of small text on the narrowest panel (UI/Customize/Style)
 
 -- Screens in unscaled pixels inside the safe area.
 local LANDSCAPE_PHONE_TOPBAR = Vector2.new(667, 317) -- what's left under the Roblox top bar
@@ -346,6 +347,44 @@ return function(t: Harness.Api)
 				CustomizeModel.tabView(input(stock(), stock(), { tab = "wrap", looks = { [exclusive] = true } }))
 			local card = choiceWith(owned.cards, exclusive)
 			t.expect(card ~= nil and card.priceText).toBe(copy.free)
+		end)
+
+		t.it("says what an exclusive look is when it's tried on, and that it covers paint and finish", function()
+			for _, wrap in Customization.exclusiveWraps do
+				local pending = with(stock(), { wrap = wrap.id })
+				local looks = { [wrap.id] = true }
+				local view = CustomizeModel.tabView(input(stock(), pending, { tab = "wrap", looks = looks }))
+				t.expect(view.note).toBe(string.format(copy.lookNote, wrap.blurb :: string))
+				t.expect(#(view.note or "") <= MAX_NOTE).toBe(true)
+				-- On a curved body too: the look goes on in full there.
+				local curved =
+					CustomizeModel.tabView(input(stock(), pending, { tab = "wrap", looks = looks, paintOnly = true }))
+				t.expect(curved.note).toBe(view.note)
+				for _, tab in { "paint", "finish" } do
+					local covered = CustomizeModel.tabView(input(stock(), pending, { tab = tab }))
+					t.expect(covered.note).toBe(string.format(copy.coveredByLook, wrap.displayName))
+					t.expect(#(covered.note or "") <= MAX_NOTE).toBe(true)
+				end
+			end
+			-- A shop wrap: no look note (the curved-body note on a mesh body), nothing on Paint or Finish.
+			local striped = with(stock(), { wrap = "rally" })
+			t.expect(CustomizeModel.tabView(input(stock(), striped, { tab = "wrap" })).note).toBe(nil)
+			t.expect(CustomizeModel.tabView(input(stock(), stock(), { tab = "wrap", paintOnly = true })).note)
+				.toBe(copy.paintOnlyWraps)
+			t.expect(CustomizeModel.tabView(input(stock(), striped, { tab = "paint" })).note).toBe(nil)
+			t.expect(CustomizeModel.tabView(input(stock(), striped, { tab = "finish" })).note).toBe(nil)
+			t.expect(#copy.paintOnlyWraps <= MAX_NOTE).toBe(true)
+		end)
+
+		t.it("puts an exclusive look on for nothing and charges exactly the shop price of anything else", function()
+			for _, wrap in Customization.exclusiveWraps do
+				local alone = CustomizeModel.totalOf(stock(), with(stock(), { wrap = wrap.id }), CLASS)
+				t.expect(alone.hasChanges).toBe(true)
+				t.expect(alone.amount).toBe(0)
+				local withFinish =
+					CustomizeModel.totalOf(stock(), with(stock(), { wrap = wrap.id, finish = "metallic" }), CLASS)
+				t.expect(withFinish.amount).toBe((Customization.priceOf({ finish = "metallic" }, stock(), CLASS)))
+			end
 		end)
 
 		t.it("lists only the extras the class takes", function()

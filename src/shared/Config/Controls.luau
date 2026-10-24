@@ -1,13 +1,15 @@
 --!strict
 -- Driving controls and the driving HUD (PLAN.md Phase 1, docs/phase-1-contracts.md "Client").
 -- Read by Controllers/InputController (bindings, deadzones, steering ramp), DriveController (drive-mode and
--- regen cycles, lamps), VehicleVisualsController (other players' cars), HudController and the UI components
--- (layout, touch sizes, theme, copy), and the controllers that bind their own keys only while they apply
--- (HitchInputController's hitch, AbilityController's ability).
+-- regen cycles, lamps), VehicleVisualsController (other players' cars, and every car's headlights and
+-- indicators), HudController and the UI components (layout, touch sizes, theme, copy), and the controllers that
+-- bind their own keys only while they apply (HitchInputController's hitch, AbilityController's ability,
+-- VehicleSoundController's horn, headlights and indicators). Services/CarSignalService reads `carSignals`.
 --
 -- GUI sizes are in pixels at UI scale 1, which is a landscape phone (`hud.referenceShortSide`). HudController
 -- only ever scales the UI up from there, never down, so every touch target stays at least `touch.minTarget`.
 
+local Environment = require(script.Parent.Environment)
 local Types = require(script.Parent.Parent.Types)
 
 -- Each driving action is bound to a list of keys; the first key is the one the HUD hint row shows.
@@ -23,6 +25,12 @@ export type KeyboardBindings = {
 	regen: { Enum.KeyCode },
 	hitch: { Enum.KeyCode }, -- couple / uncouple a trailer or towed car (Controllers/HitchInputController)
 	ability: { Enum.KeyCode }, -- the Arc's boost-hop or flight (Controllers/AbilityController)
+	-- The car's signals (Controllers/VehicleSoundController sends them, Services/CarSignalService decides).
+	horn: { Enum.KeyCode }, -- held
+	headlights: { Enum.KeyCode },
+	indicatorLeft: { Enum.KeyCode },
+	indicatorRight: { Enum.KeyCode },
+	hazards: { Enum.KeyCode },
 }
 
 export type GamepadBindings = {
@@ -36,9 +44,19 @@ export type GamepadBindings = {
 	regen: { Enum.KeyCode },
 	hitch: { Enum.KeyCode }, -- couple / uncouple (Controllers/HitchInputController)
 	ability: { Enum.KeyCode }, -- boost-hop or flight (Controllers/AbilityController)
+	-- The car's signals, as on the keyboard (Controllers/VehicleSoundController). An empty list: no button.
+	horn: { Enum.KeyCode },
+	headlights: { Enum.KeyCode },
+	indicatorLeft: { Enum.KeyCode },
+	indicatorRight: { Enum.KeyCode },
+	hazards: { Enum.KeyCode },
 	-- Swallowed while driving and otherwise ignored: the default gamepad jump would stand the driver up.
 	sink: { Enum.KeyCode },
 }
+
+-- The car's signal state as the server writes it on the car model (carSignals.attributes).
+export type HeadlightMode = "on" | "off" -- nil: automatic (on at night)
+export type Indicator = "left" | "right" | "hazards" -- nil: off
 
 -- One entry in the HUD's key hint row: the first key of each listed action, then the label.
 export type Hint = { actions: { string }, label: string }
@@ -67,6 +85,13 @@ local Controls = {
 		-- Phase 10: bound by AbilityController (not InputController) and only while driving a car whose trim has a
 		-- thruster ability (Config/Abilities.byTrim), so Q stays free on foot.
 		ability = { Enum.KeyCode.Q },
+		-- Roast fixes (2026-10-24): bound by VehicleSoundController (not InputController) only while driving. C is
+		-- the camera, so the right indicator is V: Z, X and V read left, hazards, right along the bottom row.
+		horn = { Enum.KeyCode.H },
+		headlights = { Enum.KeyCode.L },
+		indicatorLeft = { Enum.KeyCode.Z },
+		indicatorRight = { Enum.KeyCode.V },
+		hazards = { Enum.KeyCode.X },
 	} :: KeyboardBindings,
 
 	gamepad = {
@@ -85,6 +110,14 @@ local Controls = {
 		-- steers: the triggers, X, Y, B, R3, D-pad up, A and RB drive, LB opens the phone, and A also opens the
 		-- Customize shop in a bay (UI/Customize/Style).
 		ability = { Enum.KeyCode.ButtonL3 },
+		-- Roast fixes, bound like the keyboard's. Only the D-pad's down, left and right were free (up is regen), so
+		-- the horn and the indicators get them; the headlights come on by themselves at night, and hazards stay on
+		-- the keyboard.
+		horn = { Enum.KeyCode.DPadDown },
+		headlights = {},
+		indicatorLeft = { Enum.KeyCode.DPadLeft },
+		indicatorRight = { Enum.KeyCode.DPadRight },
+		hazards = {},
 		sink = { Enum.KeyCode.ButtonA },
 	} :: GamepadBindings,
 
@@ -100,6 +133,9 @@ local Controls = {
 		DPadUp = "D-pad up",
 		ButtonR1 = "RB",
 		ButtonL3 = "L3",
+		DPadDown = "D-pad down",
+		DPadLeft = "D-pad left",
+		DPadRight = "D-pad right",
 	} :: { [string]: string },
 
 	-- Analog input below these magnitudes reads as zero; the rest is rescaled to the full 0..1 range.
@@ -136,6 +172,35 @@ local Controls = {
 		-- attribute set true is see-through while dark and shows at overlayLitTransparency while lit.
 		overlayAttribute = "LampOverlay",
 		overlayLitTransparency = 0,
+	},
+
+	-- Roast fixes (2026-10-24): the horn, headlights and indicators. Only the driver signals (Net CarSignal); the
+	-- server (Services/CarSignalService) writes these attributes on the car model and every client reads them:
+	-- VehicleSoundController plays the horn and the driver's tick, VehicleVisualsController lights the lamps.
+	carSignals = {
+		attributes = {
+			horn = "Horn", -- true while the horn sounds
+			headlights = "Headlights", -- HeadlightMode "on" / "off", or nil for automatic
+			indicator = "Indicator", -- Indicator "left" / "right" / "hazards", or nil
+		},
+		-- A horn left on this long goes off by itself, so a "horn off" lost on the way can't leave it stuck.
+		hornMaxSeconds = 8,
+		-- Lighting.ClockTime hours of daylight: outside [dayStart, dayEnd) headlights in automatic come on. The
+		-- same dawn and dusk as the streetlights (Config/Environment dayNight), so the two can't drift apart.
+		dayStart = Environment.dayNight.dawnClock,
+		dayEnd = Environment.dayNight.duskClock,
+		-- Indicators flash on for blinkOnShare of every blinkPeriod seconds, timed from the server clock
+		-- (workspace:GetServerTimeNow()) so every client flashes a car's lamps together.
+		blinkPeriod = 0.7,
+		blinkOnShare = 0.5,
+		amber = Color3.fromRGB(255, 158, 24), -- an indicator lamp while it flashes
+		-- The lamps the headlights light (the tail lamps glow with them), and each side's indicator lamps
+		-- (Lights/<name>, the vehicle model contract).
+		headlightLamps = { "HeadL", "HeadR", "TailL", "TailR" },
+		indicatorLamps = {
+			left = { "HeadL", "TailL" },
+			right = { "HeadR", "TailR" },
+		} :: { [string]: { string } },
 	},
 
 	-- Other players' cars, animated on this client by VehicleVisualsController.
@@ -237,6 +302,10 @@ local Controls = {
 		abilitySize = Vector2.new(88, 52),
 		abilityGasSize = Vector2.new(88, 108),
 		abilityStatusTextSize = 12, -- "Ready" / "12 s" under the button's label
+		-- Roast fixes: Horn (hold) and Lights (tap) in one row one gap above the pedal block and exactly as wide as
+		-- it: Horn over the gas pedal, Lights over the brake column. The row stays below the GPS button
+		-- (tests/CarSignal.spec checks it on the reference phone).
+		signalSize = Vector2.new(88, 48),
 		cornerRadius = 16,
 		chevronSize = 26, -- steering arrow drawn on each hold zone
 		chevronThickness = 5,
@@ -248,6 +317,8 @@ local Controls = {
 			mode = "Mode",
 			camera = "Camera",
 			exit = "Exit",
+			horn = "Horn",
+			lights = "Lights",
 		},
 	},
 
@@ -294,16 +365,22 @@ local Controls = {
 			{ actions = { "steerLeft", "steerRight" }, label = "Steer" },
 			{ actions = { "handbrake" }, label = "Handbrake" },
 			{ actions = { "ability" }, label = "Boost" },
+			{ actions = { "horn" }, label = "Horn" },
+			{ actions = { "headlights" }, label = "Lights" },
+			{ actions = { "indicatorLeft", "hazards", "indicatorRight" }, label = "Signals" }, -- "Z/X/V Signals"
 			{ actions = { "mode" }, label = "Mode" },
 			{ actions = { "regen" }, label = "Regen" },
 			{ actions = { "camera" }, label = "Camera" },
 			{ actions = { "exit" }, label = "Exit" },
 		} :: { Hint },
+		-- Every action listed here must have a gamepad button (tests/InputController.spec counts the entries).
 		gamepad = {
 			{ actions = { "throttle", "brake" }, label = "Drive" },
 			{ actions = { "steer" }, label = "Steer" },
 			{ actions = { "handbrake" }, label = "Handbrake" },
 			{ actions = { "ability" }, label = "Boost" },
+			{ actions = { "horn" }, label = "Horn" },
+			{ actions = { "indicatorLeft", "indicatorRight" }, label = "Signals" },
 			{ actions = { "mode" }, label = "Mode" },
 			{ actions = { "regen" }, label = "Regen" },
 			{ actions = { "camera" }, label = "Camera" },
@@ -311,5 +388,40 @@ local Controls = {
 		} :: { Hint },
 	},
 }
+
+-- Car signals (pure, shared by Services/CarSignalService and the client controllers; tests/CarSignal.spec) -------
+
+-- True when Lighting.ClockTime `clockTime` is outside carSignals' daylight window.
+function Controls.isNight(clockTime: number): boolean
+	local signals = Controls.carSignals
+	local hour = clockTime % 24
+	return hour < signals.dayStart or hour >= signals.dayEnd
+end
+
+-- Whether a car's headlights shine: "on" and "off" are the driver's choice, nil (automatic) shines at night.
+function Controls.headlightsLit(mode: HeadlightMode?, night: boolean): boolean
+	if mode == "on" then
+		return true
+	elseif mode == "off" then
+		return false
+	end
+	return night
+end
+
+-- Whether an indicator lamp is in the lit half of its flash at server time `serverTime` (seconds).
+function Controls.blinkOn(serverTime: number): boolean
+	local signals = Controls.carSignals
+	return serverTime % signals.blinkPeriod < signals.blinkPeriod * signals.blinkOnShare
+end
+
+-- The headlight mode the attribute holds, or nil (automatic) for anything else.
+function Controls.readHeadlights(value: any): HeadlightMode?
+	return if value == "on" or value == "off" then value else nil
+end
+
+-- The indicator the attribute holds, or nil (off) for anything else.
+function Controls.readIndicator(value: any): Indicator?
+	return if value == "left" or value == "right" or value == "hazards" then value else nil
+end
 
 return Controls

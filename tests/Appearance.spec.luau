@@ -2,7 +2,9 @@
 -- Vehicle/Appearance on real greybox models (Dev/VehicleBuilder.assemble, built in memory only, so nothing in
 -- ServerStorage.VehicleModels is touched): applying a look is idempotent, paints the body, puts extras on the
 -- right mount, rebuilds the wheel faces without touching the wheels' joints, shows the right plate, and never
--- changes a physics property. Edit-mode safe.
+-- changes a physics property. Exclusive looks, on a greybox and on a body that is one painted mesh (final art's
+-- shape): their color, own finish, pearl marks, colored glass and underglow go on in full and come off again, and
+-- no shop paint, finish and wrap shows the same finish and effects. Edit-mode safe.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -169,6 +171,116 @@ local function visualRuleBreakers(model: Model): { string }
 		end
 	end
 	return bad
+end
+
+-- A greybox with its Body swapped for one painted mesh and one window mesh, the shape of final art (Dev/ArtPass):
+-- it takes no wrap bands.
+local function meshBodied(vehicleId: string): Model
+	local model = build(vehicleId)
+	local chassis = chassisOf(model)
+	local body = model:FindFirstChild("Body") :: Folder
+	body:ClearAllChildren()
+	local function bodyMesh(name: string, tag: string, size: Vector3, y: number, transparency: number)
+		local part = Instance.new("MeshPart")
+		part.Name = name
+		part.Size = size
+		part.CFrame = chassis.CFrame * CFrame.new(0, y, 0)
+		part.Transparency = transparency
+		part.Massless, part.CanCollide, part.CanTouch, part.CanQuery = true, false, false, false
+		part.Anchored = false
+		CollectionService:AddTag(part, tag)
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0, weld.Part1, weld.Parent = chassis, part, part
+		part.Parent = body
+	end
+	bodyMesh("BodyShell", "Paint", Vector3.new(6, 2, 13), 0.5, 0)
+	bodyMesh("Windows", "Glass", Vector3.new(5, 1, 6), 1.8, 0.3)
+	model:SetAttribute(Appearance.artAttribute, true)
+	return model
+end
+
+local function sortedKeys(set: { [string]: boolean }): { string }
+	local keys: { string } = {}
+	for key in set do
+		table.insert(keys, key)
+	end
+	table.sort(keys)
+	return keys
+end
+
+-- What a car shows that a look decides: its Paint parts' colors, materials and shine, the parts marked as pearls,
+-- its Glass parts' colors, the underglow strips (and their colors) and lights, and the wrap vinyl.
+type Shown = {
+	paint: { [string]: boolean }, -- hex colors
+	materials: { [string]: boolean },
+	reflectance: number, -- the shiniest Paint part
+	pearls: number,
+	pearlTo: { [string]: boolean }, -- hex colors the pearls drift to
+	glass: { [string]: boolean },
+	strips: number,
+	stripColors: { [string]: boolean },
+	stripTop: number, -- chassis space: the highest strip top (-inf without strips)
+	bodyBottom: number, -- chassis space: the lowest Body part
+	lights: number,
+	vinyl: number,
+}
+
+local function shownOn(model: Model): Shown
+	local chassis = chassisOf(model)
+	local glowTag = Customization.underglow.lightTag
+	local pearl = Customization.pearl
+	local shown: Shown = {
+		paint = {},
+		materials = {},
+		reflectance = 0,
+		pearls = 0,
+		pearlTo = {},
+		glass = {},
+		strips = 0,
+		stripColors = {},
+		stripTop = -math.huge,
+		bodyBottom = math.huge,
+		lights = 0,
+		vinyl = 0,
+	}
+	local body = model:FindFirstChild("Body")
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("PointLight") and CollectionService:HasTag(descendant, glowTag) then
+			shown.lights += 1
+		end
+		if not descendant:IsA("BasePart") then
+			continue
+		end
+		local lookPart = CollectionService:HasTag(descendant, Customization.lookTag)
+		if CollectionService:HasTag(descendant, "Paint") and not lookPart then
+			shown.paint[descendant.Color:ToHex()] = true
+			shown.materials[descendant.Material.Name] = true
+			shown.reflectance = math.max(shown.reflectance, descendant.Reflectance)
+		end
+		if CollectionService:HasTag(descendant, pearl.tag) then
+			shown.pearls += 1
+			local to = descendant:GetAttribute(pearl.toAttribute)
+			shown.pearlTo[if typeof(to) == "Color3" then to:ToHex() else "missing"] = true
+		end
+		if CollectionService:HasTag(descendant, "Glass") and not lookPart then
+			shown.glass[descendant.Color:ToHex()] = true
+		end
+		local rel = chassis.CFrame:ToObjectSpace(descendant.CFrame)
+		if lookPart and descendant.Name == Appearance.underglowStripName then
+			shown.strips += 1
+			shown.stripColors[descendant.Color:ToHex()] = true
+			shown.stripTop = math.max(shown.stripTop, rel.Position.Y + descendant.Size.Y / 2)
+		elseif lookPart and descendant.Name == "Wrap" then
+			shown.vinyl += 1
+		elseif body ~= nil and not lookPart and descendant:IsDescendantOf(body) then
+			local half = descendant.Size / 2
+			local reach = math.abs(rel.XVector.Y) * half.X
+				+ math.abs(rel.YVector.Y) * half.Y
+				+ math.abs(rel.ZVector.Y) * half.Z
+			shown.bodyBottom = math.min(shown.bodyBottom, rel.Position.Y - reach)
+		end
+	end
+	return shown
 end
 
 -- The first Paint-tagged part in Body (a panel that ride height moves).
@@ -550,6 +662,128 @@ return function(t: Harness.Api)
 			t.expect(stored.caliper).toBe(Customization.defaults.caliper)
 			t.expect(stored.plateFormat).toBe(Customization.defaults.plateFormat)
 			t.expect(stored.extras).toEqual({})
+		end)
+	end)
+
+	t.describe("Appearance exclusive looks", function()
+		local bodies: { { label: string, make: (vehicleId: string) -> Model, banded: boolean } } = {
+			{ label = "a greybox", make = build, banded = true },
+			{ label = "a one-mesh body (final art's shape)", make = meshBodied, banded = false },
+		}
+		for _, body in bodies do
+			t.it(`wears every exclusive look in full on {body.label}, and takes it all off again`, function()
+				for _, wrap in Customization.exclusiveWraps do
+					local model = body.make("ohm_spark")
+					Appearance.apply(model, stockLook())
+					local stock = shownOn(model)
+					-- The car's own paint and finish are something else: the look's win while it is on.
+					local look = stockLook()
+					look.paint, look.finish, look.wrap = "cobalt", "matte", wrap.id
+					look.extras = { "lip_spoiler" }
+					Appearance.apply(model, look)
+					local first = inventory(model)
+					local worn = shownOn(model)
+					Appearance.apply(model, look)
+					local second = inventory(model)
+					local breakers = visualRuleBreakers(model)
+					Appearance.apply(model, stockLook())
+					local back = shownOn(model)
+					model:Destroy()
+
+					local finish = Customization.wornFinish(wrap, look.finish) :: Customization.Finish
+					t.expect(worn.paint).toEqual({ [(wrap.artColor :: Color3):ToHex()] = true })
+					t.expect(worn.materials).toEqual({ [finish.material.Name] = true })
+					t.expect(worn.reflectance).toBeNear(finish.reflectance, TOLERANCE)
+					local shift = wrap.shift
+					if shift ~= nil then
+						t.expect(worn.pearls).toBeGreaterThan(0)
+						t.expect(worn.pearlTo).toEqual({ [shift:ToHex()] = true })
+					else
+						t.expect(worn.pearls).toBe(0)
+					end
+					local glass = wrap.glass
+					t.expect(worn.glass).toEqual(if glass ~= nil then { [glass:ToHex()] = true } else stock.glass)
+					local glow = wrap.underglow
+					if glow ~= nil then
+						t.expect(`{wrap.id} underglow strips: {worn.strips}`).toBe(`{wrap.id} underglow strips: 2`)
+						t.expect(worn.stripColors).toEqual({ [glow:ToHex()] = true })
+						t.expect(worn.stripTop <= worn.bodyBottom + TOLERANCE).toBe(true) -- under the body
+						t.expect(worn.lights).toBe(1)
+					else
+						t.expect(worn.strips).toBe(0)
+						t.expect(worn.lights).toBe(0)
+					end
+					-- Stripes on a body that takes them (sharing the wrap part cap with the strips), none on a mesh.
+					t.expect(`{wrap.id} stripes: {worn.vinyl > 0}`).toBe(`{wrap.id} stripes: {body.banded}`)
+					t.expect(worn.vinyl + worn.strips <= Customization.wrapMaxParts).toBe(true)
+					t.expect(second).toEqual(first)
+					for _, name in breakers do
+						print(`  physics rule broken with {wrap.id}: {name}`)
+					end
+					t.expect(#breakers).toBe(0)
+					t.expect(back).toEqual(stock)
+				end
+			end)
+		end
+
+		t.it("swaps one pearl for another without losing the drift", function()
+			local pearls: { Customization.Wrap } = {}
+			for _, wrap in Customization.exclusiveWraps do
+				if wrap.shift ~= nil then
+					table.insert(pearls, wrap)
+				end
+			end
+			t.expect(#pearls >= 2).toBe(true)
+			local model = build("ohm_spark")
+			local look = stockLook()
+			look.wrap = pearls[1].id
+			Appearance.apply(model, look)
+			look.wrap = pearls[2].id
+			Appearance.apply(model, look)
+			local shown = shownOn(model)
+			model:Destroy()
+			t.expect(shown.paint).toEqual({ [(pearls[2].artColor :: Color3):ToHex()] = true })
+			t.expect(shown.pearlTo).toEqual({ [(pearls[2].shift :: Color3):ToHex()] = true })
+		end)
+
+		t.it("can't be copied with any shop paint, finish or wrap on the same car", function()
+			local model = build("ohm_spark")
+			-- Everything a look decides except the body color itself: the finish and the effects.
+			local function signature(): string
+				local s = shownOn(model)
+				return table.concat({
+					table.concat(sortedKeys(s.materials), ","),
+					tostring(math.floor(s.reflectance * 100 + 0.5)),
+					tostring(s.pearls > 0),
+					table.concat(sortedKeys(s.glass), ","),
+					tostring(s.strips),
+					tostring(s.lights),
+				}, "|")
+			end
+			local shopMade: { [string]: string } = {}
+			local exclusives = Customization.exclusiveWraps
+			local turn = 0
+			for _, wrap in Customization.wraps do
+				for _, finish in Customization.finishes do
+					-- The exclusive looks' own colors in turn, as near as custom paint gets to each.
+					turn += 1
+					local h, s, v = (exclusives[(turn - 1) % #exclusives + 1].artColor :: Color3):ToHSV()
+					local look = stockLook()
+					look.paint = Customization.customPaintId({ h = h, s = s, v = v })
+					look.finish, look.wrap = finish.id, wrap.id
+					Appearance.apply(model, look)
+					shopMade[signature()] = `{look.paint} {finish.id} {wrap.id}`
+				end
+			end
+			for _, exclusive in Customization.exclusiveWraps do
+				local look = stockLook()
+				look.wrap = exclusive.id
+				Appearance.apply(model, look)
+				local mine = signature()
+				t.expect(`{exclusive.id} copied by: {shopMade[mine] or "nothing"}`)
+					.toBe(`{exclusive.id} copied by: nothing`)
+			end
+			model:Destroy()
 		end)
 	end)
 end

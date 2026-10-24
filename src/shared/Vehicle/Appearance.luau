@@ -33,6 +33,13 @@
 --     Wrap bands need flat panels, so none go on a mesh body (Appearance.takesWraps): a wrap with a full-body color
 --     (Config/Customization artColor: every exclusive look) goes on as that color, and the Wrap tab and the server
 --     refuse the others.
+--   * Exclusive looks (Config/Customization exclusiveWraps) paint the whole body in their artColor on every car and
+--     wear what the shop can't sell: their own finish (chrome, brushed metal, pearl coat) in place of the car's, a
+--     pearl drift (Paint parts and paint-colored extra pieces tagged Customization.pearl.tag with their two colors;
+--     Controllers/LookEffectsController moves the color on each client), colored glass (the tint level still
+--     darkens it) and underglow (a Neon strip under each sill and a PointLight under the car, tagged
+--     Customization.underglow.lightTag, at the brightness for the time of day). Bodies that take bands wear the
+--     look's stripes on top. The underglow strips count toward Customization.wrapMaxParts with the stripes.
 --
 -- The first apply records each part's factory state in attributes (LookBase, LookBaseColor, ...), so every
 -- later apply works from the factory state and never drifts. Plate text: `look.plateText` must already be
@@ -41,6 +48,7 @@
 
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
 
 local Catalog = require(script.Parent.Catalog)
 local Controls = require(script.Parent.Parent.Config.Controls)
@@ -76,6 +84,11 @@ local BASE_COLOR = "LookBaseColor"
 local BASE_TRANSPARENCY = "LookBaseTransparency"
 local LOOK_DATA = "LookData" -- JSON of the applied look (Appearance.lookOf)
 local EXTRA_ID = "ExtraId" -- on each extra's Model
+local UNDERGLOW_STRIP = "Underglow" -- the Neon strips an underglow look lays under the sills (in the Look folder)
+Appearance.underglowStripName = UNDERGLOW_STRIP
+
+local PEARL = Customization.pearl
+local GLOW = Customization.underglow
 
 -- Numerical slack: Vector3 and CFrame are 32-bit floats.
 local ALIGNED = 0.999 -- a part axis this parallel to a chassis axis counts as aligned with it
@@ -90,8 +103,11 @@ type Resolved = {
 	look: Look,
 	paint: Color3, -- for the factory paint: the car's own color (extras painted to match)
 	factoryPaint: boolean, -- Paint parts go back to the color they were built in
-	finish: Customization.Finish,
+	finish: Customization.Finish, -- the car's own, or an exclusive look's (Customization.wornFinish)
 	wrap: Customization.Wrap,
+	shift: Color3?, -- a pearl look: painted parts drift from `paint` to this color and back
+	glass: Color3?, -- a look's window color
+	underglow: Color3?, -- a look's underglow color
 	wheel: Customization.Wheel,
 	caliper: Customization.Caliper,
 	tint: Customization.TintLevel,
@@ -192,17 +208,22 @@ local function resolve(model: Model, look: Look): Resolved
 	local swatch = need(Customization.paintColor(paintId), "paint")
 	local wrap = need(Customization.getWrap(full.wrap) or Customization.getWrap(defaults.wrap), "wrap")
 	local paint = if factoryPaint then factoryColor(model) or swatch else swatch
-	-- A body that takes no bands wears a wrap with a full-body color (every exclusive look) as that color.
+	-- An exclusive look paints every body its color; a body that takes no bands wears any other wrap with a
+	-- full-body color as that color.
 	local fullWrap = wrap.artColor
-	if fullWrap ~= nil and not Appearance.takesWraps(model) then
+	if fullWrap ~= nil and (Customization.paintsWholeBody(wrap) or not Appearance.takesWraps(model)) then
 		paint, factoryPaint = fullWrap, false
 	end
+	local finish = Customization.wornFinish(wrap, full.finish) or Customization.getFinish(defaults.finish)
 	return {
 		look = full,
 		paint = paint,
 		factoryPaint = factoryPaint,
-		finish = need(Customization.getFinish(full.finish) or Customization.getFinish(defaults.finish), "finish"),
+		finish = need(finish, "finish"),
 		wrap = wrap,
+		shift = if Customization.paintsWholeBody(wrap) then wrap.shift else nil, -- drifts from the body color
+		glass = wrap.glass,
+		underglow = wrap.underglow,
 		wheel = need(Customization.getWheel(full.wheels) or Customization.getWheel(defaults.wheels), "wheels"),
 		caliper = need(Customization.getCaliper(full.caliper) or Customization.getCaliper(defaults.caliper), "caliper"),
 		tint = Customization.nearestTintLevel(full.tint),
@@ -443,6 +464,21 @@ local function baseTransparency(part: BasePart): number
 	return part.Transparency
 end
 
+-- Marks a painted part as a pearl drifting from `from` to `to` (Controllers/LookEffectsController moves it), or, with
+-- `to` nil, clears the mark. The colors go on before the tag, and the tag comes off before the caller sets the new
+-- color, so a client always reads a complete pearl and ends on the server's color.
+local function setPearl(part: BasePart, from: Color3, to: Color3?)
+	if to ~= nil then
+		part:SetAttribute(PEARL.fromAttribute, from)
+		part:SetAttribute(PEARL.toAttribute, to)
+		CollectionService:AddTag(part, PEARL.tag)
+	elseif CollectionService:HasTag(part, PEARL.tag) or part:GetAttribute(PEARL.toAttribute) ~= nil then
+		CollectionService:RemoveTag(part, PEARL.tag)
+		part:SetAttribute(PEARL.fromAttribute, nil)
+		part:SetAttribute(PEARL.toAttribute, nil)
+	end
+end
+
 local function paintBody(model: Model, r: Resolved)
 	local trimColor = r.wrap.trimColor
 	for _, descendant in model:GetDescendants() do
@@ -452,9 +488,16 @@ local function paintBody(model: Model, r: Resolved)
 		if CollectionService:HasTag(descendant, "Paint") then
 			-- Recorded on every apply, so the first look (whatever paint it has) saves the brand color to go back to.
 			local factory = baseColor(descendant)
-			descendant.Color = if r.factoryPaint then factory else r.paint
+			local color = if r.factoryPaint then factory else r.paint
+			if r.shift == nil then
+				setPearl(descendant, color, nil)
+			end
+			descendant.Color = color
 			descendant.Material = r.finish.material
 			descendant.Reflectance = r.finish.reflectance
+			if r.shift ~= nil then
+				setPearl(descendant, color, r.shift)
+			end
 		end
 		if CollectionService:HasTag(descendant, "Trim") then
 			local factory = baseColor(descendant)
@@ -462,10 +505,11 @@ local function paintBody(model: Model, r: Resolved)
 		end
 		if CollectionService:HasTag(descendant, "Glass") then
 			local factory, factoryTransparency = baseColor(descendant), baseTransparency(descendant)
-			-- The factory level keeps the glass exactly as built; darker levels set their own transparency.
+			-- The factory level keeps the glass exactly as built; darker levels set their own transparency. A look's
+			-- colored glass takes the place of the factory color, and the tint still darkens it.
 			local factoryLevel = r.tint.darken == 0
 			descendant.Transparency = if factoryLevel then factoryTransparency else r.tint.transparency
-			descendant.Color = factory:Lerp(BLACK, r.tint.darken)
+			descendant.Color = (r.glass or factory):Lerp(BLACK, r.tint.darken)
 		end
 	end
 end
@@ -559,11 +603,12 @@ local function addVinyl(build: WrapBuild, size: Vector3, relCFrame: CFrame, colo
 	)
 end
 
--- Lays the wrap's bands on the painted panels of the body.
-local function buildWrap(model: Model, chassis: BasePart, folder: Folder, wrap: Customization.Wrap)
+-- Lays the wrap's bands on the painted panels of the body (after the underglow strips: they share the part cap).
+local function buildWrap(model: Model, build: WrapBuild, wrap: Customization.Wrap)
 	if #wrap.bands == 0 then
 		return
 	end
+	local chassis = build.chassis
 	local chassisCFrame = chassis.CFrame
 	local thickness, proud = Customization.wrapThickness, Customization.wrapProud
 	local minWidth, minLength = Customization.wrapMinWidth, Customization.wrapMinSegment
@@ -618,7 +663,6 @@ local function buildWrap(model: Model, chassis: BasePart, folder: Folder, wrap: 
 		return
 	end
 
-	local build: WrapBuild = { chassis = chassis, folder = folder, count = 0 }
 	for _, band in wrap.bands do
 		local roofBand = band.face == "top" and band.minHeight ~= nil and roofLine ~= nil
 		for _, panel in if roofBand then roofPanels else painted do
@@ -690,6 +734,77 @@ local function buildWrap(model: Model, chassis: BasePart, folder: Folder, wrap: 
 			end
 		end
 	end
+end
+
+----------------------------------------------------------------------------------------------------------------
+-- Underglow
+----------------------------------------------------------------------------------------------------------------
+
+-- An underglow look's Neon strip under each sill, from just behind the front tires to just ahead of the rear ones,
+-- and its PointLight under the middle of the car (on an Attachment on the Chassis). Placed from the body as it
+-- stands now (after the ride height moved it), so they ride with it; the strips are left out on a wheelbase too
+-- short for them. Works on any body: greybox panels, a design's kit parts or one art mesh.
+local function buildUnderglow(model: Model, build: WrapBuild, color: Color3)
+	local chassis = build.chassis
+	local chassisCFrame = chassis.CFrame
+	local bottom, halfWidth = math.huge, 0
+	local front, rear = math.huge, -math.huge -- the body's ends along Z (forward is -Z)
+	for _, part in partsIn(model, { "Body" }) do
+		local box = panelOf(part, chassisCFrame).box
+		bottom = math.min(bottom, box.min.Y)
+		halfWidth = math.max(halfWidth, math.abs(box.min.X), math.abs(box.max.X))
+		front, rear = math.min(front, box.min.Z), math.max(rear, box.max.Z)
+	end
+	if bottom == math.huge then
+		-- No body to sit under: the chassis box stands in for it.
+		local half = chassis.Size / 2
+		bottom, halfWidth, front, rear = -half.Y, half.X, -half.Z, half.Z
+	end
+
+	-- Between the tires: from the back of the front tires to the front of the rear ones, inside the body.
+	local wheels = model:FindFirstChild("Wheels")
+	local stripFront, stripRear = front, rear
+	for _, name in WHEEL_NAMES do
+		local hub = chassis:FindFirstChild("Wheel" .. name)
+		local wheel = if wheels then wheels:FindFirstChild(name) else nil
+		if hub and hub:IsA("Attachment") and wheel and wheel:IsA("BasePart") then
+			local reach = math.min(wheel.Size.Y, wheel.Size.Z) / 2 + GLOW.tireGap
+			if string.sub(name, 1, 1) == "F" then
+				stripFront = math.max(stripFront, hub.Position.Z + reach)
+			else
+				stripRear = math.min(stripRear, hub.Position.Z - reach)
+			end
+		end
+	end
+	local length = stripRear - stripFront
+	if length >= GLOW.minLength then
+		local y = bottom - GLOW.drop - GLOW.stripThickness / 2
+		local size = Vector3.new(GLOW.stripWidth, GLOW.stripThickness, length)
+		for _, side in { -1, 1 } do
+			if build.count >= Customization.wrapMaxParts then
+				break
+			end
+			build.count += 1
+			local at = CFrame.new(side * GLOW.inset * halfWidth, y, (stripFront + stripRear) / 2)
+			local strip =
+				newPart("Part", UNDERGLOW_STRIP, size, chassisCFrame * at, color, GLOW.material, chassis, build.folder)
+			strip.CastShadow = false
+		end
+	end
+
+	local holder = Instance.new("Attachment")
+	holder.Name = GLOW.lightName
+	holder.Position = Vector3.new(0, bottom - GLOW.lightDrop, (front + rear) / 2) -- chassis space
+	CollectionService:AddTag(holder, Customization.lookTag)
+	local light = Instance.new("PointLight")
+	light.Color = color
+	light.Range = GLOW.range
+	-- Lighting's clock where the look goes on; Controllers/LookEffectsController follows dusk and dawn after that.
+	light.Brightness = Customization.underglowBrightness(Lighting.ClockTime)
+	light.Shadows = false
+	CollectionService:AddTag(light, GLOW.lightTag)
+	light.Parent = holder
+	holder.Parent = chassis
 end
 
 ----------------------------------------------------------------------------------------------------------------
@@ -940,6 +1055,9 @@ local function buildExtras(model: Model, chassis: BasePart, folder: Folder, r: R
 			if piece.shape == "cylinder" then
 				(part :: Part).Shape = Enum.PartType.Cylinder
 			end
+			if piece.color == "paint" and r.shift ~= nil then
+				setPearl(part, color, r.shift) -- a body-colored piece drifts with the body
+			end
 			if piece.light then
 				local settings = Customization.extraLight
 				local light = Instance.new("PointLight")
@@ -1021,7 +1139,13 @@ function Appearance.apply(model: Model, look: Look)
 	paintBody(model, r)
 
 	local folder = lookFolder(model)
-	buildWrap(model, chassis, folder, r.wrap)
+	-- The underglow strips first: they and the stripes share Customization.wrapMaxParts.
+	local build: WrapBuild = { chassis = chassis, folder = folder, count = 0 }
+	local underglow = r.underglow
+	if underglow ~= nil then
+		buildUnderglow(model, build, underglow)
+	end
+	buildWrap(model, build, r.wrap)
 	buildWheels(model, r)
 	buildExtras(model, chassis, folder, r)
 	buildPlates(chassis, folder, r)
@@ -1070,8 +1194,9 @@ end
 
 -- How many parts `model` gains when a look with this wheel style goes on: each wheel's face for the style in place
 -- of what apply clears there (VehicleBuilder's stock rim and spoke, or an earlier look's face), and a plate on each
--- plate point that has none yet. Not a wrap's vinyl or extras. Vehicle/SpecBuilder keeps this room free in the
--- part budget (BodyKit.MAX_PARTS) when it lays a design's stripes.
+-- plate point that has none yet. Not a wrap's vinyl, a look's underglow strips (they share Customization.wrapMaxParts
+-- with the vinyl) or extras. Vehicle/SpecBuilder keeps this room free in the part budget (BodyKit.MAX_PARTS) when it
+-- lays a design's stripes.
 function Appearance.addedParts(model: Model, wheelId: string?): number
 	local added = 0
 	local perWheel = Appearance.wheelFaceParts(wheelId)

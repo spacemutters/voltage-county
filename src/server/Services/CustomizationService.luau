@@ -11,7 +11,10 @@
 --                                      DataService.update, then puts the look on the car. Answers
 --                                      { ok, message, cost }. An exclusive wrap (Phase 12,
 --                                      Customization.exclusiveWraps) goes on free, and only for a player who has
---                                      it (MonetizationService.ownsCosmetic; exclusiveAllowed). A wrap that can't
+--                                      it (MonetizationService.ownsCosmetic; exclusiveAllowed). What makes it
+--                                      exclusive (its chrome, brushed or pearl finish, pearl drift, colored glass,
+--                                      underglow: Customization.effectsOf) comes with the look and is never sold on
+--                                      its own: Customization.check knows only the shop's finishes. A wrap that can't
 --                                      go on the car's body (stripes on final art: wrapFits) is refused unpaid.
 --   SetPlate { uid, text }             function: custom plate text (the Custom Plates pass; Studio only until that
 --                                      pass exists). Empty text goes back to the free standard plate. Answers

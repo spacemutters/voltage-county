@@ -27,13 +27,14 @@
 --   dayIndex(now)               the UTC day number the streak counts in
 --   seasonView(season, input, now)  the Season Pass card: tier, XP, the countdown and the next reward each track can
 --                               claim, from Config/Season and the attributes Services/SeasonService keeps
---   rewardText(reward)          a season reward in plain words ("$5,000", "2 Design Credits", "An exclusive wrap")
+--   rewardText(reward)          a season reward in plain words ("$5,000", "2 Design Credits", "Season One Gold look")
 --   canBuyDrop(event, now)      whether a limited drop in the banner can be bought now (on now and open)
 --
 -- Every word comes from UI/Store/StoreStyle; every price and grant from the server; time comes in as `now`.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Customization = require(ReplicatedStorage.Shared.Config.Customization)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Season = require(ReplicatedStorage.Shared.Config.Season)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
@@ -596,13 +597,35 @@ function StoreModel.grantLines(grants: { [string]: any }): { string }
 	if text(grants.plateFrame) ~= nil or grants.plateFrame == true or look == "plate" or look == "plateFrame" then
 		table.insert(lines, copy.grantPlateFrame)
 	end
-	local looks = if type(grants.cosmetics) == "table" then #grants.cosmetics else 0
+	-- Exclusive looks the shop knows are named, with what makes them special; any others are counted.
+	local looks = 0
+	if type(grants.cosmetics) == "table" then
+		for _, id in grants.cosmetics do
+			local named = if type(id) == "string" then StoreModel.lookName(id) else nil
+			if named ~= nil then
+				table.insert(lines, named)
+			else
+				looks += 1
+			end
+		end
+	end
 	if looks == 1 then
 		table.insert(lines, copy.grantLook)
 	elseif looks > 1 then
 		table.insert(lines, string.format(copy.grantLooks, looks))
 	end
 	return lines
+end
+
+-- An exclusive look's line: "Starter Spark look: Amber pearl that slowly shifts to coral". nil for a look id the
+-- shop doesn't know (Config/Customization exclusiveWraps).
+function StoreModel.lookName(lookId: string): string?
+	local wrap = Customization.getWrap(lookId)
+	local blurb = Customization.lookBlurb(lookId)
+	if wrap == nil or blurb == nil then
+		return nil
+	end
+	return string.format(copy.grantNamedLook, wrap.displayName, blurb)
 end
 
 -- A pack card's title: "15 credits", "$50,000", else the product's name.
@@ -891,7 +914,8 @@ end
 
 -- The Season Pass ----------------------------------------------------------------------------------------------------
 
--- A season reward in plain words: "$5,000", "2 Design Credits", "An exclusive wrap".
+-- A season reward in plain words: "$5,000", "2 Design Credits", "Season One Gold look" ("An exclusive wrap" for a
+-- look the shop doesn't know).
 function StoreModel.rewardText(reward: Season.Reward): string
 	local amount = positiveWhole(reward.amount) or 0
 	if reward.kind == "cash" then
@@ -902,6 +926,13 @@ function StoreModel.rewardText(reward: Season.Reward): string
 			else string.format(copy.grantCredits, StoreModel.groupDigits(amount))
 	elseif reward.kind == "plate" then
 		return copy.grantPlateFrame
+	end
+	-- A look the shop knows is named ("Season One Gold look").
+	local wrap = if reward.ref ~= nil and Customization.isExclusive(reward.ref)
+		then Customization.getWrap(reward.ref)
+		else nil
+	if wrap ~= nil then
+		return string.format(copy.rewardLook, wrap.displayName)
 	end
 	return copy.grantWrap
 end

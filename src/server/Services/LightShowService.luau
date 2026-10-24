@@ -43,6 +43,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local Catalog = require(Shared.Vehicle.Catalog)
+local Customization = require(Shared.Config.Customization)
 local Garage = require(Shared.Config.Garage)
 local LightShows = require(Shared.Config.LightShows)
 local MapLayout = require(Shared.Config.MapLayout)
@@ -182,8 +183,9 @@ local function hasPro(player: Player): boolean
 	return ok and owned == true
 end
 
--- True when the player's saved car (by the OwnedUid attribute GarageService sets) has a light-bar extra.
-local function hasLightBar(owner: Player, model: Model): boolean
+-- True when the player's saved car (by the OwnedUid attribute GarageService sets) has a light-bar extra, or wears an
+-- exclusive look with underglow (Config/Customization: the Club and Launch Week looks).
+local function hasUnderglow(owner: Player, model: Model): boolean
 	local uid = model:GetAttribute(Garage.ownedUidAttribute)
 	local data = if type(uid) == "string" then DataService.get(owner) else nil
 	if data == nil then
@@ -191,6 +193,10 @@ local function hasLightBar(owner: Player, model: Model): boolean
 	end
 	for _, vehicle in data.vehicles do
 		if vehicle.uid == uid then
+			local look = Customization.getWrap(vehicle.wrap)
+			if look ~= nil and look.underglow ~= nil then
+				return true
+			end
 			-- `extras` arrives with schema v5 (CustomizationService); read it loosely until then.
 			local extras = (vehicle :: any).extras
 			if type(extras) ~= "table" then
@@ -398,7 +404,7 @@ local function addCar(show: Show, model: Model, owner: Player?, test: boolean)
 	table.insert(show.cars, entry)
 	showByCar[model] = show
 	model:SetAttribute(attributes.showId, show.id)
-	model:SetAttribute(attributes.underglow, owner ~= nil and hasLightBar(owner, model))
+	model:SetAttribute(attributes.underglow, owner ~= nil and hasUnderglow(owner, model))
 end
 
 -- Audience ---------------------------------------------------------------------------------------------------

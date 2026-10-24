@@ -2,6 +2,58 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-24 — Roast fixes: sound, day and night, price ladder, first session, exclusive looks
+
+A fresh reviewer roasted the game before launch (`docs/roast-2026-10-24.md`, 10 points). Five helpers fixed what code
+can fix this round, then a reviewer checked their work (14 findings, all handled by the fixer). Nothing here has been
+run in Studio yet: Davis was playing in Studio, so no Studio tool was used. The lead runs the checks below.
+
+**Shipped**
+- **Car sounds and car signals (point 2):** `Controllers/VehicleSoundController` plays an EV whine that rises with
+  speed, fuel engines that rev through the 5-gear automatic and dip at each shift, tyre squeal on a handbrake slide,
+  and wind at speed. Horn (H, held), headlights (L), indicators (Z, V) and hazards (X) go through Net `CarSignal`
+  (`Services/CarSignalService`: the driver of their own car only); headlights come on by themselves at night. Touch
+  phones get a Horn and Lights row above the pedals (`UI/Phone/Layout.touchZones` counts it, so the phone button,
+  phone sheet, job slot, hitch row, fleet chip, charging card and goals card all keep clear of it).
+  - The 8 sounds were made with ElevenLabs (about 210 credits) and their asset ids are in `Config/Audio`. They were
+    still under Roblox's audio review at upload, so they stay silent until approved.
+- **Day, night and the county art pass (point 3, partly):** a 24-minute day (8 minutes of night,
+  `Services/DayNightService`), streetlights, lit windows and lit landmarks (tag `NightLight`; claimed houses'
+  windows and porch lights too). `Dev/MapBuilder` adds 1,200 to 1,800 trees, grass patchwork, hills, parks, building
+  facades (glass per floor or corner piers, roof edges) and 4 landmarks (water tower, Overlook Diner, bridge arches,
+  the Ohm roof sign). The map budget is now 16,000 parts (`Config/Environment.budget`; PLAN.md §5 says why). Not
+  done: the stadium, 2,000+ trees, and traffic made from real car bodies.
+- **Price ladder (point 5):** only exotics and hypercars are under 3 s to 60 (exotics 2.1-2.6 s, handling 0.87-0.95).
+  The free starter is 100 mph, 7.0 s, 22 min; the Ohm Mesa is $86,000; the Fernlow and Fernlow Deluxe on the used
+  lot are now quicker and grippier than the starter (6.8 s / 0.46 and 6.4 s / 0.48). New specs: Catalog.spec
+  "Catalog price ladder" (every car under $40,000 must beat the starter at 0-60, top speed or work pay) and
+  Tuning.spec (no AI-designed car out-launches the Arc).
+  - Designs that already exist in the sedan, pickup, sports, muscle and luxury classes get 0.2-0.5 s slower at
+    their quickest, because their stats come from the new bands.
+  - EconSim, expected (mid player, no VIP; still to be run in Studio): New Ohm Spark 0.55 h, crossover or pickup
+    1.98 h (was 2.05), semi 4.77 h, Arc 15.92 h, Arc Boost 43.82 h, all on target.
+- **The first five minutes (point 8, partly):** a new player spawns seated in their free Spark on the street by the
+  used lot, and the Arc boost-hops over them (`Controllers/ArcFlyoverController`, drawn on their screen only). The
+  goals card then walks them through three steps, each one tap, each paid once (`Services/GoalsService`, Net
+  `ClaimGoal` / `GoalsUpdate`, schema 8): a first fare that starts by itself and pays a $3,000 bonus (the passenger
+  now sits in the car), a test drive of the Arc ($1,000; the GPS leads to the Arc itself, and the car they had out
+  comes back when the drive ends), and designing their free car ($1,500). After that come three daily goals. Skipping
+  the steps takes two taps, because it gives up the bonuses for good.
+- **Exclusive looks and launch day (point 9):** every exclusive look paints the whole body of any car and adds what
+  paint can't: mirror chrome, brushed metal or a pearl coat, plus a colour drift, coloured glass or underglow. Season
+  One Gold now drifts gold to champagne with gold underglow, and Arc Streak has ice-blue underglow, since chrome alone
+  may not show on a phone. The store names each look ("Starter Spark look: Amber pearl that slowly shifts to coral"),
+  and looks with underglow join the light shows' underglow cues. Launch day is one number in `Config/Launch`, read by
+  the season, the launch-week limiteds and the launch events.
+
+**Checked in Studio:** not yet (see the lead's report for the list).
+
+**Open issues**
+- Points 1 (car art), 4 (keeping the designed body), 6 (emergency services), 7 (roleplay depth) and 10 (more to
+  chase) are not started. Point 3 is missing the stadium, more trees and real traffic.
+- Davis: approve or wait out the audio review for the 8 sounds; the light-show music (about 2,700 ElevenLabs
+  credits, needs his yes); a Car Radio pass; the launch date; check the bigger map on a real phone.
+
 ## 2026-10-21 — Phase 14: performance, security, soft launch
 
 **Shipped**
