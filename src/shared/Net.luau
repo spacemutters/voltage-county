@@ -653,6 +653,33 @@ local REMOTES: { [string]: Spec } = {
 		burst = 4,
 		perSecond = 1,
 	},
+	-- Roast fixes (2026-10-24): the driver's horn, headlights and indicators. The server checks the caller drives
+	-- that car and sets attributes on it that every client reads (sound and lamps).
+	CarSignal = {
+		kind = "event",
+		direction = "toServer",
+		validate = Check.shape({
+			action = Check.oneOf({ "hornOn", "hornOff", "headlights", "indicatorLeft", "indicatorRight", "hazards" }),
+		}),
+		burst = 8,
+		perSecond = 4,
+	},
+	-- Roast fixes (2026-10-24): the first-session goals and the daily goals, server -> the player.
+	GoalsUpdate = {
+		kind = "event",
+		direction = "toClient",
+		validate = Check.none(),
+		burst = 0,
+		perSecond = 0,
+	},
+	-- Claim a finished goal's reward (the server checks it is finished and not yet claimed).
+	ClaimGoal = {
+		kind = "function",
+		direction = "toServer",
+		validate = Check.shape({ goalId = Check.string(ID_LENGTH) }),
+		burst = 4,
+		perSecond = 2,
+	},
 }
 
 local FOLDER_NAME = "Remotes"

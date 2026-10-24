@@ -130,6 +130,9 @@ design prompt 800 (the server then counts 200 characters), a report reason 40.
 | `DevSetCash` | function, client → server | `{ amount: whole 0..100,000,000 }` | 3, 1/s | Studio only | Free cash |
 | `DevFuzz` | function, client → server | `{ action: "begin" or "finish" }` | 4, 1/s | Studio only: `Services/DevFuzzService` answers `{ ok = false }` and warns outside Studio. In Studio it records the server's error and warning lines, Net rejections and an economy snapshot for the caller between begin and finish; it never writes data | Reading server errors and save changes on a live server |
 | `DevPerf` | function, client → server | `{ action: "start" or "stop" }` | 4, 1/s | Studio only: `Services/DevPerfService` answers `{ ok = false }` and warns outside Studio; its sampler stops itself after Config/Perf `dev.maxSampleSeconds` (900 s) and when the player who started it leaves | Sampling the server's frame times on a live server |
+| `CarSignal` | event, client → server | `{ action: "hornOn", "hornOff", "headlights", "indicatorLeft", "indicatorRight" or "hazards" }` | 8, 4/s | only the driver of the car (VehicleService checks the caller sits in that car's driver seat); sets attributes on the car that every client reads | Honking or flashing lights on someone else's car; horn spam past the rate limit |
+| `GoalsUpdate` | event, server → client | nothing from clients | none (server only) | server → client (the player) | A client faking finished goals (rejected and logged) |
+| `ClaimGoal` | function, client → server | `{ goalId ≤ 40 bytes }` | 4, 2/s | the player, for their own goal; the server checks the goal is finished and not yet claimed | Claiming a goal's reward twice or before it is done |
 <!-- remotes:end -->
 
 Server → client remotes are declared with `Check.none()` and a limit of 0, 0. They carry no client data. A client

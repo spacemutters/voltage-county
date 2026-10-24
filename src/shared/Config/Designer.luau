@@ -42,8 +42,10 @@ local Designer = {
 	networkRetries = 1,
 
 	-- Studio only (RunService:IsStudio()): answer requests with a local fake that returns a valid fixed spec per
-	-- class, so the designer can be tested without the real backend. Live servers ignore this.
-	devFakeBackend = true,
+	-- class, so the designer can be tested without the real backend. Live servers ignore this. Off since 2026-10-24
+	-- so Davis's Studio play uses the real AI (with designer_key in Studio's Local Secrets); turn it on to run
+	-- Dev/DesignerTests, which refuse to run without it.
+	devFakeBackend = false,
 	devFake = {
 		delaySeconds = 1.5, -- pretend the backend takes this long
 		-- A prompt starting with one of these makes the fake fail that way (to test refunds in Studio). `empty`
