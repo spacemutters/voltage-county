@@ -34,7 +34,19 @@
 -- the tow yard or a TowDrop footprint. A TrailerSpawn is long enough for a trailer standing on it nose to the
 -- road; a Breakdown spot runs along its road with room for the broken-down car and a tow truck.
 --
--- tests/RoadGraph.spec checks the locations, lake, mesas, ramps and landmarks against the road graph.
+-- The look beyond the roads (docs/roast-2026-10-24.md point 3): each zone's ground material and, for the green ones,
+-- grass shades MapBuilder patchworks in tiles (Config/Environment ground.tile); gentle grass hills at the edge of the
+-- map (`hills`, outside the County Loop, part of groundHeight); parks (`parks`: no buildings, thick with trees, and
+-- their own grass where they say so); and the features MapBuilder builds as landmarks you can tell from the road
+-- (`features`: the Riverside water tower, the Overlook Diner by the Lakeview Overlook, the Cedar Lake Bridge's
+-- arches). The Ohm Motors Plant carries a rooftop sign (its landmark's signBrand). Trees, windows and the day/night
+-- cycle are tuned in Config/Environment.
+--
+-- tests/RoadGraph.spec checks the locations, lake, mesas, ramps and landmarks against the road graph;
+-- tests/MapBuilder.spec checks the hills, parks and features.
+
+-- A shade of ground: one tile of a zone's patchwork.
+export type GroundShade = { color: Color3, material: Enum.Material }
 
 export type Zone = {
 	id: string,
@@ -42,6 +54,8 @@ export type Zone = {
 	min: Vector2, -- X and Z bounds of the zone on the ground
 	max: Vector2,
 	groundColor: Color3,
+	groundMaterial: Enum.Material?, -- default Grass
+	groundShades: { GroundShade }?, -- when set, each ground tile takes one of these instead of groundColor
 	buildingColors: { Color3 },
 	buildingHeight: { min: number, max: number }, -- studs
 	buildingDensity: number, -- 0..1, how full the city blocks are
@@ -103,6 +117,38 @@ export type Landmark = {
 	position: Vector3, -- centre of the footprint, on the ground
 	yaw: number, -- the side it faces (its entrance)
 	size: Vector3,
+	signBrand: string?, -- a Config/Brands id: a sign with the brand's name stands on the roof, facing the entrance
+}
+
+-- A park: no buildings or lots inside (min..max, less the `hole`), trees planted thick (Config/Environment trees.parks),
+-- and its own grass when groundColor is set (else the zone's ground shows).
+export type Park = {
+	id: string,
+	displayName: string,
+	zone: string,
+	min: Vector2,
+	max: Vector2,
+	hole: { min: Vector2, max: Vector2 }?, -- left out (the lake inside Lakefront Park)
+	groundColor: Color3?,
+	groundMaterial: Enum.Material?,
+}
+
+-- A feature MapBuilder builds to be told apart from the road (Generated.Features/<id>). `position` is the centre of
+-- its footprint on the ground and `size` its footprint (X across, Z front to back) and height, facing `yaw`:
+--   water_tower   a tank on four legs, `size.Y` tall, with a red beacon on top
+--   diner         a site: the diner at the back (away from the road `yaw` faces), its car park in front and a tall
+--                 sign by the road reading `sign`
+--   bridge_arch   steel arches either side of a bridge deck: `position` is the middle of the deck on its surface,
+--                 size.X the distance between the two arches, size.Y their rise, size.Z the span between their feet
+export type Feature = {
+	id: string,
+	displayName: string,
+	zone: string,
+	kind: "water_tower" | "diner" | "bridge_arch",
+	position: Vector3,
+	yaw: number,
+	size: Vector3,
+	sign: string?,
 }
 
 -- Display pads (Phase 4; docs/phase-4-contracts.md "Map: dealership pads and used-lot pads"). A pad's CFrame is
@@ -149,6 +195,9 @@ export type MapLayout = {
 	playerSpawns: { CFrame },
 	lakes: { Lake },
 	mesas: { Mesa },
+	hills: { Mesa }, -- grass hills at the edge of the map: the mesa shape, gentler
+	parks: { Park },
+	features: { Feature },
 	jumpRamps: { JumpRamp },
 	landmarks: { Landmark },
 	dealership: DealershipLayout,
@@ -242,6 +291,7 @@ local zones: { [string]: Zone } = {
 		min = Vector2.new(-1000, -1000),
 		max = Vector2.new(1000, 1000),
 		groundColor = Color3.fromRGB(132, 128, 118),
+		groundMaterial = Enum.Material.Pavement,
 		buildingColors = {
 			Color3.fromRGB(152, 108, 88),
 			Color3.fromRGB(176, 160, 136),
@@ -258,7 +308,11 @@ local zones: { [string]: Zone } = {
 		displayName = "Riverside",
 		min = Vector2.new(-3100, -1100),
 		max = Vector2.new(-1200, 1300),
-		groundColor = Color3.fromRGB(112, 138, 90),
+		groundColor = Color3.fromRGB(106, 134, 82),
+		groundShades = {
+			{ color = Color3.fromRGB(106, 134, 82), material = Enum.Material.Grass },
+			{ color = Color3.fromRGB(98, 128, 76), material = Enum.Material.LeafyGrass },
+		},
 		buildingColors = {
 			Color3.fromRGB(214, 204, 184),
 			Color3.fromRGB(186, 170, 150),
@@ -276,6 +330,7 @@ local zones: { [string]: Zone } = {
 		min = Vector2.new(1200, -1100),
 		max = Vector2.new(3100, 1200),
 		groundColor = Color3.fromRGB(122, 122, 118),
+		groundMaterial = Enum.Material.Concrete,
 		buildingColors = {
 			Color3.fromRGB(150, 156, 162),
 			Color3.fromRGB(118, 124, 132),
@@ -292,6 +347,7 @@ local zones: { [string]: Zone } = {
 		min = Vector2.new(-800, -3100),
 		max = Vector2.new(3000, -1300),
 		groundColor = Color3.fromRGB(196, 162, 120),
+		groundMaterial = Enum.Material.Sand,
 		buildingColors = {
 			Color3.fromRGB(170, 150, 124),
 			Color3.fromRGB(140, 130, 118),
@@ -305,7 +361,11 @@ local zones: { [string]: Zone } = {
 		displayName = "Lakefront",
 		min = Vector2.new(-1400, 1300),
 		max = Vector2.new(1400, 3100),
-		groundColor = Color3.fromRGB(122, 150, 96),
+		groundColor = Color3.fromRGB(112, 144, 86),
+		groundShades = {
+			{ color = Color3.fromRGB(112, 144, 86), material = Enum.Material.Grass },
+			{ color = Color3.fromRGB(104, 136, 80), material = Enum.Material.LeafyGrass },
+		},
 		buildingColors = {
 			Color3.fromRGB(220, 214, 200),
 			Color3.fromRGB(176, 196, 206),
@@ -314,14 +374,21 @@ local zones: { [string]: Zone } = {
 		buildingHeight = { min = 12, max = 40 },
 		buildingDensity = 0.2,
 	},
-	-- The ring highway. Its bounds are the ring's outer box and its ground colour is the open
-	-- country between the zones; Graph.zoneAt finds it by road (highway and ramp edges), not by bounds.
+	-- The ring highway. Its bounds are the ring's outer box and its ground is the open country between the zones
+	-- and out to the edge of the map, a patchwork of grass; Graph.zoneAt finds it by road (highway and ramp
+	-- edges), not by bounds.
 	county_loop = {
 		id = "county_loop",
 		displayName = "County Loop",
 		min = Vector2.new(-3450, -3450),
 		max = Vector2.new(3450, 3450),
-		groundColor = Color3.fromRGB(152, 148, 104),
+		groundColor = Color3.fromRGB(108, 136, 78),
+		groundShades = {
+			{ color = Color3.fromRGB(108, 136, 78), material = Enum.Material.Grass },
+			{ color = Color3.fromRGB(98, 128, 72), material = Enum.Material.LeafyGrass },
+			{ color = Color3.fromRGB(120, 142, 84), material = Enum.Material.Grass },
+			{ color = Color3.fromRGB(92, 120, 70), material = Enum.Material.LeafyGrass },
+		},
 		buildingColors = {
 			Color3.fromRGB(160, 150, 130),
 		},
@@ -690,6 +757,101 @@ local mesas: { Mesa } = {
 	},
 }
 
+-- Grass hills at the edge of the map, outside the County Loop (its outer edge is 3,432 studs out; every foot stays
+-- 450+ studs past it) and inside the map (every foot within 4,990 of the centre), none west of reservedWestOfX
+-- (the dev track's ground). Each foot is its top grown by (height + 1) / slope; the slopes are gentle enough to
+-- drive up.
+local function hill(
+	id: string,
+	displayName: string,
+	x0: number,
+	x1: number,
+	z0: number,
+	z1: number,
+	height: number,
+	slope: number
+): Mesa
+	return {
+		id = id,
+		displayName = displayName,
+		zone = "county_loop",
+		topMin = Vector2.new(x0, z0),
+		topMax = Vector2.new(x1, z1),
+		height = height,
+		slope = slope,
+	}
+end
+
+local hills: { Mesa } = {
+	hill("north_ridge_west", "North Ridge", -2400, -900, -4620, -4520, 45, 0.13),
+	hill("north_ridge_east", "Cotton Ridge", 700, 2300, -4600, -4480, 55, 0.16),
+	hill("east_ridge_north", "East Ridge", 4500, 4620, -2400, -1000, 50, 0.14),
+	hill("east_ridge_south", "Pecan Ridge", 4420, 4560, 700, 2200, 70, 0.18),
+	hill("south_ridge_west", "South Ridge", -2600, -800, 4520, 4620, 50, 0.14),
+	hill("south_ridge_east", "Lake Ridge", 1200, 2800, 4480, 4600, 65, 0.17),
+	hill("northeast_knob", "Signal Hill", 4300, 4500, -4500, -4300, 80, 0.2),
+	hill("southeast_knob", "Bluebonnet Hill", 4270, 4500, 4270, 4500, 60, 0.16),
+}
+
+-- Parks. Town Square fills the downtown block north-west of Main Avenue and Commerce Avenue (cb_c3..cb_d4) out to the
+-- sidewalks (a street's reaches 23 studs from its centre line, an arterial's 38); Lakefront Park rings Cedar Lake,
+-- clear of Lakeshore Drive's lots.
+local parks: { Park } = {
+	{
+		id = "town_square",
+		displayName = "Town Square",
+		zone = "cedar_bend",
+		min = Vector2.new(-277, -277),
+		max = Vector2.new(-38, -38),
+		groundColor = Color3.fromRGB(90, 128, 68),
+		groundMaterial = Enum.Material.LeafyGrass,
+	},
+	{
+		id = "lakefront_park",
+		displayName = "Lakefront Park",
+		zone = "lakefront",
+		min = Vector2.new(-1050, 1650),
+		max = Vector2.new(1050, 2700),
+		hole = { min = lakes[1].min, max = lakes[1].max },
+	},
+}
+
+-- Features (see Feature above). The water tower stands south of River Avenue in Riverside, 72 studs clear of its
+-- sidewalk, seen from the avenue and Elm Street. The diner's site is just south of the Lakeview Overlook, between
+-- it and Lakeshore Drive's east side (x = 1,150, its edge at 1,135): the site runs x 1,072..1,128, z 2,260..2,320.
+-- The bridge's arches stand 3 studs outside its deck (half-width 27) over the water, their feet at the lake's
+-- shores (z 1,800 and 2,550).
+local features: { Feature } = {
+	{
+		id = "riverside_water_tower",
+		displayName = "Riverside Water Tower",
+		zone = "riverside",
+		kind = "water_tower",
+		position = v3(-1800, 0, 125),
+		yaw = 0,
+		size = v3(30, 112, 30),
+	},
+	{
+		id = "overlook_diner",
+		displayName = "Overlook Diner",
+		zone = "lakefront",
+		kind = "diner",
+		position = v3(1100, 0, 2290),
+		yaw = -90,
+		size = v3(60, 13, 56),
+		sign = "DINER",
+	},
+	{
+		id = "cedar_lake_bridge_arches",
+		displayName = "Cedar Lake Bridge",
+		zone = "lakefront",
+		kind = "bridge_arch",
+		position = v3(0, 20.2, 2175),
+		yaw = 0,
+		size = v3(60, 90, 750),
+	},
+}
+
 -- Display pads. The dealership is an auto mall on both sides of the street south of Cedar Bend Motors (row 6,
 -- z = 600, between columns f and g): Ohm Motors in one row behind the showroom facing that street, and the other
 -- seven brands across it, filling the block between x = 600..900 and z = 600..900 (MapBuilder clears its
@@ -795,7 +957,7 @@ local billboards: { Billboard } = {
 	billboard("bb_loop_stop", "county_loop", 3162 - 18, 1821, -90, PLAZA_CLEARANCE, "ironwood"),
 }
 
--- Top of the ground at (x, z): the lake bed in a lake, the mesa surface on a mesa, 0 elsewhere.
+-- Top of the ground at (x, z): the lake bed in a lake, the mesa or hill surface on a mesa or hill, 0 elsewhere.
 local function groundHeight(x: number, z: number): number
 	for _, lake in lakes do
 		if x >= lake.min.X and x <= lake.max.X and z >= lake.min.Y and z <= lake.max.Y then
@@ -803,11 +965,13 @@ local function groundHeight(x: number, z: number): number
 		end
 	end
 	local height = 0
-	for _, mesa in mesas do
-		-- How far outside the flat top, along X and along Z (0 on the top).
-		local dx = math.max(mesa.topMin.X - x, 0, x - mesa.topMax.X)
-		local dz = math.max(mesa.topMin.Y - z, 0, z - mesa.topMax.Y)
-		height = math.max(height, mesa.height - mesa.slope * math.max(dx, dz))
+	for _, list in { mesas, hills } do
+		for _, mesa in list do
+			-- How far outside the flat top, along X and along Z (0 on the top).
+			local dx = math.max(mesa.topMin.X - x, 0, x - mesa.topMax.X)
+			local dz = math.max(mesa.topMin.Y - z, 0, z - mesa.topMax.Y)
+			height = math.max(height, mesa.height - mesa.slope * math.max(dx, dz))
+		end
 	end
 	return height
 end
@@ -826,6 +990,9 @@ local MapLayout: MapLayout = {
 	},
 	lakes = lakes,
 	mesas = mesas,
+	hills = hills,
+	parks = parks,
+	features = features,
 	-- Jump ramps on the Mesa: three in the flight field, one on top of Big Mesa.
 	jumpRamps = {
 		{ id = "ms_ramp_1", zone = "mesa_test_site", position = v3(1650, 0, -1900), yaw = 0, size = v3(30, 8, 60) },
@@ -860,6 +1027,7 @@ local MapLayout: MapLayout = {
 			position = v3(2200, 0, -350),
 			yaw = 0,
 			size = v3(900, 60, 450),
+			signBrand = "ohm",
 		},
 		{
 			id = "design_studio",

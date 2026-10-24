@@ -9,14 +9,19 @@
 --   paintColor(paintId), customPaintId(hsv)       palette and custom paint ids to colors
 --   normalizePlateText / isPlateTextAllowed       custom plate rules (the text is still filtered by the server)
 --   standardPlateText(formatId, seed)             the free standard plate for a car
+--   wornFinish, effectsOf, shopCanMake            exclusive looks: what they wear, and what the shop can't sell
+--   pearlMix(now, seconds), underglowBrightness   a pearl's drift and the underglow light, for every client alike
 --
 -- Fair monetization (CLAUDE.md hard rule 6): prices are a money sink (PLAN.md §4), in-game $ only. Nothing here
--- is random or sold for Robux; exclusive wraps (exclusiveWraps) come with Store items, the Voltage Club and the Season
--- Pass (Phase 12) and are free to put on. Every option is original: no real brands, wheel makers or paint names.
+-- is random or sold for Robux; exclusive looks (exclusiveWraps) come with Store items, the Voltage Club and the Season
+-- Pass (Phase 12) and are free to put on. Each one has something the shop can't make (shopCanMake, effectsOf): a
+-- chrome, brushed-metal or pearl finish, a pearl that drifts between two colors, colored glass or underglow. Every
+-- option is original: no real brands, wheel makers or paint names.
 --
 -- Pure: no Roblox services (Color3, Vector3 and Enum are plain data types), so specs run it in Edit mode.
 
 local Classes = require(script.Parent.Classes)
+local Environment = require(script.Parent.Environment)
 
 ----------------------------------------------------------------------------------------------------------------
 -- Types
@@ -60,10 +65,17 @@ export type Wrap = {
 	bands: { Band },
 	trimColor: Color3?, -- recolors every Trim-tagged part (bumpers, mirrors, cladding); nil keeps the car's own
 	exclusive: boolean?, -- an exclusive look (exclusiveWraps): only for players who have it, never sold for cash
-	-- A body that takes no bands (final art: one curved painted mesh, Vehicle/Appearance.takesWraps) wears the wrap
-	-- as a full-body color wrap in this color instead (paint-matched extras too). nil: the wrap can't go on such a
-	-- body (wrapFitsMesh), unless it has no bands.
+	-- The body color. An exclusive look paints every body in it (paint-matched extras too), with its bands on top
+	-- where the body takes them. A body that takes no bands (final art: one curved painted mesh,
+	-- Vehicle/Appearance.takesWraps) wears any other wrap with an artColor as a full-body color wrap. nil: the wrap
+	-- can't go on such a body (wrapFitsMesh), unless it has no bands.
 	artColor: Color3?,
+	-- Exclusive looks only: what the shop can't make (effectsOf; tests/Customization.spec checks none of it is sold).
+	finish: string?, -- an exclusiveFinishes id, worn in place of the car's own finish while the look is on
+	shift: Color3?, -- a pearl: the body drifts from artColor to this color and back (Customization.pearl)
+	glass: Color3?, -- the windows take this color (the car's tint level still darkens it)
+	underglow: Color3?, -- a glow under the car (Customization.underglow)
+	blurb: string?, -- what the look is, in a few plain words (the Wrap tab's note and the store: lookBlurb)
 }
 
 -- A wheel style: the rim parts Vehicle/Appearance builds on each tire. Diameters and lengths are shares of the
@@ -335,6 +347,35 @@ local Customization = {
 		{ id = "metallic", displayName = "Metallic", material = Enum.Material.Metal, reflectance = 0.25, price = 3500 },
 	} :: { Finish },
 
+	-- Finishes only exclusive looks wear (exclusiveWraps `finish`). Never sold: they aren't in `finishes`, so check
+	-- refuses them, and the AI Car Designer's finishes are shop finishes (tests/Customization.spec). Each differs
+	-- from every shop finish in its material or by at least finishGap in reflectance; chrome and brushed metal shine
+	-- more than any shop finish.
+	exclusiveFinishes = {
+		{
+			id = "mirror_chrome",
+			displayName = "Mirror Chrome",
+			material = Enum.Material.SmoothPlastic,
+			reflectance = 0.55,
+			price = 0,
+		},
+		{
+			id = "brushed_metal",
+			displayName = "Brushed Metal",
+			material = Enum.Material.Metal,
+			reflectance = 0.45,
+			price = 0,
+		},
+		{
+			id = "pearl_coat",
+			displayName = "Pearl Coat",
+			material = Enum.Material.SmoothPlastic,
+			reflectance = 0.18,
+			price = 0,
+		},
+	} :: { Finish },
+	finishGap = 0.08,
+
 	-- Original vinyl designs. "none" (no wrap) has a small removal fee like any other change.
 	wraps = {
 		{ id = "none", displayName = "No Wrap", price = 500, bands = {} },
@@ -410,8 +451,20 @@ local Customization = {
 	-- club's, while they are a Voltage Club member (Services/MonetizationService.ownsCosmetic; the profile
 	-- snapshot's `looks`), and Services/CustomizationService refuses it to anyone else. Putting one on is free. Ids are
 	-- the look ids Config/Monetization, Config/Limiteds and Config/Season grant (lookExists; tests/Monetization.spec
-	-- fails when something grants a look that isn't here). Every one has an artColor, so it goes on every catalog
-	-- car: as its stripes on greybox and designed bodies, as a full-body color wrap on final art.
+	-- fails when something grants a look that isn't here).
+	--
+	-- Every one paints the whole body in its artColor on every catalog car, art or greybox, and on player designs,
+	-- and adds what no paint, finish or shop wrap can (effectsOf), each a different mix:
+	--   Starter Spark    pearl coat that drifts amber to coral
+	--   Voltage Club     brushed graphite metal, teal underglow
+	--   Launch Week      red mirror chrome, warm white underglow (the serial-numbered limited)
+	--   Lift Off         pearl coat that drifts violet to blue, lilac glass
+	--   Arc Streak       brushed electric-blue metal, ice-blue glass and underglow
+	--   Season One Gold  gold mirror chrome that drifts to champagne, warm gold underglow (the season's last tier)
+	-- Chrome alone isn't enough for a top reward: reflections may not render on a phone's low graphics, and shop
+	-- metallic in a custom gold comes close, so the higher Season looks add a drift or underglow, which show at any
+	-- quality.
+	-- Bodies that take bands (greybox, designs) wear its stripes on top, in colors that read on its own body color.
 	exclusiveWraps = {
 		{
 			id = "starter_wrap", -- the Starter Pack (Config/Monetization grants.starterPack)
@@ -419,10 +472,13 @@ local Customization = {
 			price = 0,
 			exclusive = true,
 			bands = {
-				{ face = "side", center = 0.38, width = 0.05, color = rgb(255, 190, 60) },
-				{ face = "side", center = 0.46, width = 0.02, color = VINYL_WHITE },
+				{ face = "side", center = 0.38, width = 0.05, color = VINYL_WHITE },
+				{ face = "side", center = 0.46, width = 0.02, color = VINYL_BLACK },
 			},
 			artColor = rgb(255, 190, 60),
+			finish = "pearl_coat",
+			shift = rgb(255, 104, 84),
+			blurb = "Amber pearl that slowly shifts to coral",
 		},
 		{
 			id = "club_wrap", -- Voltage Club members, while subscribed (Config/Monetization club.cosmetics)
@@ -435,7 +491,10 @@ local Customization = {
 				{ face = "side", center = 0.2, width = 0.03, color = rgb(40, 200, 190) },
 			},
 			trimColor = rgb(20, 22, 26),
-			artColor = rgb(40, 200, 190),
+			artColor = rgb(52, 56, 62),
+			finish = "brushed_metal",
+			underglow = rgb(40, 220, 205),
+			blurb = "Brushed graphite metal with teal underglow",
 		},
 		{
 			id = "launch_week_wrap", -- the serial-numbered launch-week limited (Config/Limiteds launch_wrap)
@@ -443,11 +502,14 @@ local Customization = {
 			price = 0,
 			exclusive = true,
 			bands = {
-				{ face = "top", center = 0, width = 0.22, color = rgb(232, 72, 48) },
-				{ face = "top", center = -0.27, width = 0.02, color = VINYL_WHITE },
-				{ face = "top", center = 0.27, width = 0.02, color = VINYL_WHITE },
+				{ face = "top", center = 0, width = 0.16, color = VINYL_WHITE },
+				{ face = "top", center = -0.22, width = 0.02, color = VINYL_BLACK },
+				{ face = "top", center = 0.22, width = 0.02, color = VINYL_BLACK },
 			},
 			artColor = rgb(232, 72, 48),
+			finish = "mirror_chrome",
+			underglow = rgb(255, 236, 210),
+			blurb = "Red mirror chrome with warm white underglow",
 		},
 		{
 			id = "season1_wrap", -- Season 1 premium track (Config/Season)
@@ -455,11 +517,15 @@ local Customization = {
 			price = 0,
 			exclusive = true,
 			bands = {
-				{ face = "side", center = 0.25, width = 0.05, color = rgb(120, 80, 220) },
-				{ face = "side", center = 0.33, width = 0.035, color = rgb(160, 120, 240) },
-				{ face = "side", center = 0.4, width = 0.02, color = rgb(200, 170, 255) },
+				{ face = "side", center = 0.25, width = 0.05, color = VINYL_WHITE },
+				{ face = "side", center = 0.33, width = 0.035, color = rgb(222, 210, 255) },
+				{ face = "side", center = 0.4, width = 0.02, color = rgb(196, 170, 255) },
 			},
 			artColor = rgb(120, 80, 220),
+			finish = "pearl_coat",
+			shift = rgb(60, 120, 255),
+			glass = rgb(176, 150, 255),
+			blurb = "Violet pearl that shifts to blue, with lilac glass",
 		},
 		{
 			id = "season1_arc_wrap", -- Season 1 premium track (Config/Season)
@@ -467,11 +533,15 @@ local Customization = {
 			price = 0,
 			exclusive = true,
 			bands = {
-				{ face = "top", center = -0.35, width = 0.08, color = rgb(60, 140, 255) },
-				{ face = "side", center = 0.5, width = 0.03, color = rgb(60, 140, 255) },
+				{ face = "top", center = -0.35, width = 0.08, color = VINYL_WHITE },
+				{ face = "side", center = 0.5, width = 0.03, color = VINYL_WHITE },
 			},
 			trimColor = VINYL_WHITE,
-			artColor = rgb(60, 140, 255),
+			artColor = rgb(40, 110, 230),
+			finish = "brushed_metal",
+			glass = rgb(150, 210, 255),
+			underglow = rgb(150, 210, 255),
+			blurb = "Brushed electric-blue metal, ice-blue glass and underglow",
 		},
 		{
 			id = "season1_finale_wrap", -- Season 1 premium track, the last tier (Config/Season)
@@ -479,12 +549,53 @@ local Customization = {
 			price = 0,
 			exclusive = true,
 			bands = {
-				{ face = "top", center = 0, width = 1, color = rgb(204, 164, 72), minHeight = 0.8 },
-				{ face = "side", center = 0.5, width = 0.02, color = rgb(204, 164, 72) },
+				{ face = "top", center = 0, width = 1, color = VINYL_BLACK, minHeight = 0.8 },
+				{ face = "side", center = 0.5, width = 0.02, color = VINYL_BLACK },
 			},
 			artColor = rgb(204, 164, 72),
+			finish = "mirror_chrome",
+			shift = rgb(240, 222, 176), -- champagne
+			underglow = rgb(255, 196, 92),
+			blurb = "Gold chrome that shifts to champagne, with gold underglow",
 		},
 	} :: { Wrap },
+
+	-- Pearl looks (`shift`): Vehicle/Appearance tags every painted part (the body and paint-colored extra pieces)
+	-- with `tag` and its two colors (these attributes), and Controllers/LookEffectsController drifts them on each
+	-- client with Customization.pearlMix on the server clock: every client and every part agree, nothing is random.
+	-- It writes `updateHz` times a second, to at most `maxParts` parts at once.
+	pearl = {
+		tag = "PearlShift",
+		fromAttribute = "PearlFrom",
+		toAttribute = "PearlTo",
+		seconds = 12, -- one round trip, own color to shift color and back
+		updateHz = 12,
+		maxParts = 400,
+	},
+
+	-- Underglow (`underglow`): Vehicle/Appearance lays a thin Neon strip under each sill, between the front and rear
+	-- tires, and hangs a PointLight under the middle of the car (tagged lightTag). The light is brighter at night:
+	-- Lighting.ClockTime from nightFrom to nightUntil hours (underglowBrightness); Controllers/LookEffectsController
+	-- switches it when the clock crosses dusk or dawn. Strips count toward wrapMaxParts.
+	underglow = {
+		stripWidth = 0.16, -- studs across
+		stripThickness = 0.06, -- studs tall
+		inset = 0.82, -- the strips' centers as a share of the body's half-width
+		drop = 0.02, -- studs between the body's lowest point and the strips' tops
+		tireGap = 0.25, -- studs kept clear of the tires, front and back
+		minLength = 1, -- studs: a shorter strip (a tiny wheelbase) isn't built; the light still is
+		material = Enum.Material.Neon,
+		lightName = "UnderglowLight", -- the Attachment on the Chassis holding the PointLight
+		lightTag = "UnderglowLight", -- CollectionService tag on the PointLight
+		lightDrop = 0.35, -- studs below the body's lowest point
+		range = 12, -- studs
+		dayBrightness = 1.5,
+		nightBrightness = 5,
+		-- Lighting.ClockTime hours: the streetlights' dusk and dawn (Config/Environment dayNight), so the underglow
+		-- and the streetlights can't drift apart.
+		nightFrom = Environment.dayNight.duskClock,
+		nightUntil = Environment.dayNight.dawnClock,
+	},
 
 	-- Wrap vinyl parts: this thick, standing this far proud of the panel, never shorter than this along the car
 	-- (shorter leftovers between other parts are dropped), and at most this many per car.
@@ -882,8 +993,8 @@ local Customization = {
 		size = Vector3.new(1.3, 0.5, 0.04),
 		pixelsPerStud = 100,
 		captionShare = 0.24, -- share of the plate height the caption line takes
-		font = Enum.Font.GothamBold,
-		captionFont = Enum.Font.Gotham,
+		font = Enum.Font.BuilderSansBold, -- the game's own type (UI/Theme)
+		captionFont = Enum.Font.BuilderSans,
 	},
 
 	-- CollectionService tag on everything Vehicle/Appearance builds (wrap vinyl, rim parts, extras, plates), so
@@ -967,6 +1078,7 @@ end
 
 local paintsById = indexById(Customization.paints)
 local finishesById = indexById(Customization.finishes)
+local exclusiveFinishesById = indexById(Customization.exclusiveFinishes)
 local wrapsById = indexById(Customization.wraps)
 local exclusiveWrapsById = indexById(Customization.exclusiveWraps)
 for id, wrap in exclusiveWrapsById do
@@ -1008,6 +1120,91 @@ end
 -- bands, or a full-body color for such a body (artColor).
 function Customization.wrapFitsMesh(wrap: Wrap): boolean
 	return #wrap.bands == 0 or wrap.artColor ~= nil
+end
+
+-- The finish a car wears with this wrap on: the wrap's own (an exclusive look's chrome, brushed metal or pearl coat)
+-- when it has one, else `finishId`'s shop finish, else nil. Only for drawing a car: the shop sells, checks and prices
+-- `finishes` alone (getFinish), so an exclusive finish can never be bought.
+function Customization.wornFinish(wrap: Wrap?, finishId: string?): Finish?
+	local ownId = if wrap ~= nil then wrap.finish else nil
+	local own = if ownId ~= nil then exclusiveFinishesById[ownId] else nil
+	return own or Customization.getFinish(finishId)
+end
+
+-- Whether a wrap paints the whole body in its artColor on every car (every exclusive look), not only on a body that
+-- takes no bands.
+function Customization.paintsWholeBody(wrap: Wrap?): boolean
+	return wrap ~= nil and wrap.exclusive == true and wrap.artColor ~= nil
+end
+
+-- True when a finish looks like a shop finish: the same material and a reflectance less than finishGap away.
+local function likeShopFinish(finish: Finish): boolean
+	for _, shop in Customization.finishes do
+		if
+			shop.material == finish.material
+			and math.abs(shop.reflectance - finish.reflectance) < Customization.finishGap - EPSILON
+		then
+			return true
+		end
+	end
+	return false
+end
+
+-- What a wrap adds that the shop can't sell, in a fixed order: its exclusive finish's id, then "pearl" (a color
+-- drift), "glass" (colored windows) and "underglow". Empty for every shop wrap.
+function Customization.effectsOf(wrap: Wrap): { string }
+	local effects: { string } = {}
+	local finishId = wrap.finish
+	local finish = if finishId ~= nil then exclusiveFinishesById[finishId] else nil
+	if finish ~= nil and not likeShopFinish(finish) then
+		table.insert(effects, finish.id)
+	end
+	if wrap.shift ~= nil then
+		table.insert(effects, "pearl")
+	end
+	if wrap.glass ~= nil then
+		table.insert(effects, "glass")
+	end
+	if wrap.underglow ~= nil then
+		table.insert(effects, "underglow")
+	end
+	return effects
+end
+
+-- Whether the shop could make this wrap's whole look from what it sells (a shop wrap's bands, a palette or custom
+-- paint, a shop finish). False for every exclusive look (tests/Customization.spec): each has a finish no shop finish
+-- comes near, a pearl drift, colored glass or underglow, and nothing the shop or the AI Car Designer sells adds any.
+function Customization.shopCanMake(wrap: Wrap): boolean
+	return #Customization.effectsOf(wrap) == 0 -- a finish id that isn't an exclusive finish is never worn (wornFinish)
+end
+
+-- An exclusive look's few plain words ("Amber pearl that slowly shifts to coral"), or nil for an id that isn't one.
+function Customization.lookBlurb(lookId: string): string?
+	local wrap = exclusiveWrapsById[lookId]
+	return if wrap ~= nil then wrap.blurb else nil
+end
+
+-- How far a pearl has drifted at server time `now` (seconds): 0 at its own color, 1 at its shift color, eased, one
+-- round trip every `seconds`. The same everywhere at the same time, and never random.
+function Customization.pearlMix(now: number, seconds: number): number
+	if type(now) ~= "number" or now ~= now or not (seconds > 0) or now == math.huge or now == -math.huge then
+		return 0
+	end
+	local phase = (now % seconds) / seconds
+	local rise = 1 - math.abs(2 * phase - 1) -- 0 .. 1 .. 0 over the round trip
+	return rise * rise * (3 - 2 * rise)
+end
+
+-- Whether Lighting.ClockTime `clockTime` (hours) is night for underglow.
+function Customization.isNight(clockTime: number): boolean
+	local glow = Customization.underglow
+	return clockTime >= glow.nightFrom or clockTime < glow.nightUntil
+end
+
+-- The underglow light's brightness at Lighting.ClockTime `clockTime`.
+function Customization.underglowBrightness(clockTime: number): number
+	local glow = Customization.underglow
+	return if Customization.isNight(clockTime) then glow.nightBrightness else glow.dayBrightness
 end
 
 -- The wraps the Wrap tab lists for a player: every shop wrap, then the exclusive wraps they have (`owned`, by look

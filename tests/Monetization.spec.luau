@@ -12,6 +12,8 @@
 --     its slots; DevPurchase is Studio only
 --   * the store waits for a save that is still loading
 --   * schema 7: the 6 -> 7 migration gives every save an empty `cosmetics`
+--   * the store's words: Light Show Pro says plainly its routines are lights only while any has no music, the club
+--     card names its look, the Season Pass counts its looks; the season and the launch-week sales share launch day
 -- It drives the real MonetizationService with fake Roblox pieces (MonetizationService.setDeps): a marketplace that
 -- records every call, a save table, a fixed clock and a Studio switch. Pure: runs in Edit mode.
 
@@ -19,9 +21,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 
+local Audio = require(ReplicatedStorage.Shared.Config.Audio)
 local Customization = require(ReplicatedStorage.Shared.Config.Customization)
+local LightShows = require(ReplicatedStorage.Shared.Config.LightShows)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
+local Events = require(ReplicatedStorage.Shared.Config.Events)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local Limiteds = require(ReplicatedStorage.Shared.Config.Limiteds)
 local Monetization = require(ReplicatedStorage.Shared.Config.Monetization)
@@ -709,6 +714,67 @@ return function(t: Harness.Api)
 		end)
 	end)
 
+	t.describe("Store words and launch day", function()
+		t.it("says Light Show Pro's routines are lights and doors only while any of them has no music", function()
+			local names: { string } = {}
+			local silent = false
+			for _, id in LightShows.routineOrder do
+				local routine = LightShows.routines[id]
+				if routine ~= nil and routine.pro then
+					table.insert(names, routine.displayName)
+					local track = Audio.tracks[routine.trackId]
+					silent = silent or track == nil or track.assetId == 0
+				end
+			end
+			t.expect(#names).toBeGreaterThan(0)
+			local perks = Monetization.passInfo[LightShows.proPass].perks
+			local text = table.concat(perks, " / ")
+			for _, name in names do
+				t.expect(`{name} named: {string.find(text, name, 1, true) ~= nil}`).toBe(`{name} named: true`)
+			end
+			local says = string.find(string.lower(text), "no music", 1, true) ~= nil
+			t.expect(says).toBe(silent)
+			-- Nothing on the card promises music or a boombox.
+			t.expect(string.find(string.lower(text), "boombox", 1, true)).toBe(nil)
+			t.expect(string.find(string.lower(text), "with music", 1, true)).toBe(nil)
+		end)
+
+		t.it("names the club's look and counts the Season Pass's looks", function()
+			local look = Monetization.club.cosmetics[1]
+			local blurb = Customization.lookBlurb(look)
+			t.expect(blurb ~= nil).toBe(true)
+			local clubText = table.concat(Monetization.club.perks, " / ")
+			t.expect(string.find(clubText, blurb :: string, 1, true) ~= nil).toBe(true)
+			local looks = 0
+			for _, tier in Season.tiers do
+				local reward = tier.premium
+				if reward ~= nil and reward.kind ~= "cash" and reward.kind ~= "credits" then
+					looks += 1
+				end
+			end
+			local seasonText = table.concat(Monetization.passInfo[Season.passKey].perks, " / ")
+			t.expect(string.find(seasonText, `{looks} exclusive car looks`, 1, true) ~= nil).toBe(true)
+		end)
+
+		t.it("opens the season, the launch-week limited and the Arc Flight drop on one launch day", function()
+			t.expect(Season.launchAtUtc).toBe(Limiteds.launchAtUtc)
+			t.expect(Events.launchAtUtc).toBe(Season.launchAtUtc)
+			t.expect(Season.startsAtUtc).toBe(Season.launchAtUtc)
+			t.expect(Limiteds.drops.arc_flight_1.startsAtUtc).toBe(Limiteds.launchAtUtc)
+			t.expect(Limiteds.cosmetics.launch_wrap.startsAtUtc).toBe(Limiteds.launchAtUtc)
+			t.expect(Limiteds.cosmetics.launch_wrap.endsAtUtc).toBe(Limiteds.launchAtUtc + 7 * 24 * 60 * 60)
+			t.expect(Limiteds.cosmetics.launch_frame.startsAtUtc).toBe(Limiteds.launchAtUtc)
+			-- The Arc Flight weekend opens with the drop.
+			local opening: Events.Event? = nil
+			for _, event in Events.schedule do
+				if event.id == "arc_flight_weekend" then
+					opening = event
+				end
+			end
+			t.expect((opening :: Events.Event).startsAtUtc).toBe(Limiteds.drops.arc_flight_1.startsAtUtc)
+		end)
+	end)
+
 	t.describe("DevPurchase", function()
 		t.it("is refused outside Studio and grants nothing", function()
 			local config = liveConfig()
@@ -1083,27 +1149,30 @@ return function(t: Harness.Api)
 	end)
 
 	t.describe("Schema 7", function()
-		t.it("is at schema version 7, with a 6 -> 7 step", function()
-			t.expect(Data.schemaVersion).toBe(7)
+		t.it("is at schema version 7 or later, with a 6 -> 7 step", function()
+			t.expect(Data.schemaVersion >= 7).toBe(true)
 			t.expect(type(Migrations.steps[6])).toBe("function")
 			t.expect(Template.new(NOW).cosmetics).toEqual({})
 		end)
 
-		t.it("gives a version 6 save an empty cosmetics table and keeps everything else", function()
-			local save: any = Template.new(NOW)
-			save.version = 6
-			save.cosmetics = nil
-			save.receipts = { "p-1" }
-			save.offersSeen = { starterPack = true }
-			save.club = { lastGrantMonth = "2026-09" }
-			local migrated, fromVersion = Migrations.run(save)
-			t.expect(fromVersion).toBe(6)
-			t.expect(migrated.version).toBe(7)
-			t.expect(migrated.cosmetics).toEqual({})
-			t.expect(migrated.receipts).toEqual({ "p-1" })
-			t.expect(migrated.offersSeen).toEqual({ starterPack = true })
-			t.expect(migrated.club).toEqual({ lastGrantMonth = "2026-09" })
-		end)
+		t.it(
+			"gives a version 6 save an empty cosmetics table and keeps everything else (version 7 or later)",
+			function()
+				local save: any = Template.new(NOW)
+				save.version = 6
+				save.cosmetics = nil
+				save.receipts = { "p-1" }
+				save.offersSeen = { starterPack = true }
+				save.club = { lastGrantMonth = "2026-09" }
+				local migrated, fromVersion = Migrations.run(save)
+				t.expect(fromVersion).toBe(6)
+				t.expect(migrated.version).toBe(Data.schemaVersion)
+				t.expect(migrated.cosmetics).toEqual({})
+				t.expect(migrated.receipts).toEqual({ "p-1" })
+				t.expect(migrated.offersSeen).toEqual({ starterPack = true })
+				t.expect(migrated.club).toEqual({ lastGrantMonth = "2026-09" })
+			end
+		)
 
 		t.it("keeps usable cosmetics and drops what can't be one", function()
 			local save: any = Template.new(NOW)
@@ -1117,12 +1186,12 @@ return function(t: Harness.Api)
 			t.expect(Migrations.run(broken).cosmetics).toEqual({})
 		end)
 
-		t.it("brings older saves up to version 7 with cosmetics", function()
+		t.it("brings older saves up to version 7 or later with cosmetics", function()
 			local old: any = Template.new(NOW)
 			old.version = 5
 			old.cosmetics = nil
 			local migrated = Migrations.run(old)
-			t.expect(migrated.version).toBe(7)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
 			t.expect(migrated.cosmetics).toEqual({})
 		end)
 	end)

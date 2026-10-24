@@ -184,6 +184,8 @@ local random = Random.new()
 local warned: { [string]: boolean } = {} -- each distinct error is logged once
 
 local stillSpeedCache: { [JobKind]: number } = {}
+-- Roast fixes (2026-10-24): onCompleted listeners (Services/GoalsService counts finished jobs).
+local completedListeners: { (player: Player, kind: JobKind) -> () } = {}
 
 -- Pure helpers ------------------------------------------------------------------------------------------------
 
@@ -1106,7 +1108,16 @@ local function completeJob(player: Player, state: PlayerState, now: number)
 		awardXp(player, job.type, xp)
 		queuePush(player) -- progress changed
 	end)
+	for _, listener in completedListeners do
+		task.spawn(listener, player, job.type)
+	end
 	refreshOffers(player, state, now)
+end
+
+-- Roast fixes (2026-10-24): calls fn(player, job type) in its own thread whenever a player's job is completed (not
+-- failed or cancelled). Services/GoalsService counts jobs here.
+function JobService.onCompleted(fn: (player: Player, kind: JobKind) -> ())
+	table.insert(completedListeners, fn)
 end
 
 -- Arrival ---------------------------------------------------------------------------------------------------------

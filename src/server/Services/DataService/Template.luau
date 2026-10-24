@@ -49,6 +49,17 @@ function Template.new(now: number?): Types.PlayerData
 		settings = { units = settings.units, camera = settings.camera, musicVolume = settings.musicVolume },
 		firstJoinAt = stamp,
 		boosts = {},
+		goals = Template.goals(Data.defaults.goals.pathDone), -- v8
+	}
+end
+
+-- Schema 8: the goals a profile starts with (Types.GoalsData): the first-session path, done or not, with nothing
+-- finished or paid, and no daily goals picked yet (Services/GoalsService picks today's on join). Brand-new tables
+-- on every call. The 7 -> 8 migration builds an old save's goals with this too.
+function Template.goals(pathDone: boolean): Types.GoalsData
+	return {
+		path = { done = pathDone, finished = {}, claimed = {} },
+		daily = { day = Data.defaults.goals.unpickedDay, ids = {}, progress = {}, claimed = {} },
 	}
 end
 

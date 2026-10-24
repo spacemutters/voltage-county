@@ -324,6 +324,12 @@ return function(t: Harness.Api)
 			t.expect(DevFuzzService.expected("ServerScriptService.Server.Services.X:10: attempt to index nil"))
 				.toBe(false)
 			t.expect(DevFuzzService.expected("[AntiExploit] Player1 (1): teleport, 3 strikes")).toBe(false)
+			-- The ClaimGoal sample's id is on nobody's list (GoalsService warns once a player).
+			t.expect(
+				DevFuzzService.expected("[GoalsService] Player1 (1) claimed a goal that isn't theirs today: fuzz-id")
+			)
+				.toBe(true)
+			t.expect(DevFuzzService.expected("[GoalsService] no JobService: its goals won't count")).toBe(false)
 		end)
 	end)
 end

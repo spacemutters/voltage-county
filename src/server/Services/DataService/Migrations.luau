@@ -15,7 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Data = require(ReplicatedStorage.Shared.Config.Data)
-local Template = require(script.Parent.Template) -- UNSET_TIME only
+local Template = require(script.Parent.Template) -- UNSET_TIME, and the goals a v8 save starts with
 
 export type Step = (data: { [string]: any }) -> ()
 
@@ -159,6 +159,51 @@ Migrations.steps = {
 			local usable = type(id) == "string" and isFinite(serial) and serial >= 0 and serial % 1 == 0
 			if not usable then
 				cosmetics[id] = nil
+			end
+		end
+	end,
+
+	-- 7 -> 8 (roast fixes 2026-10-24, Config/Goals): the save gains `goals` (Template.goals). The first-session path
+	-- is for new players, so a save that claimed the free starter or owns any car starts with it done; one with
+	-- neither (a player who joined and left before getting a car) walks it like a new player. No daily goals are
+	-- picked yet (Services/GoalsService picks today's when the player joins). Goals already there are kept: each
+	-- part of the right type stays as it is and only a missing or broken part is filled in; a `goals` that isn't a
+	-- table can hold nothing a player owns and is replaced.
+	[7] = function(data: { [string]: any })
+		local vehicles = data.vehicles
+		local hasCar = data.starterClaimed == true or (type(vehicles) == "table" and next(vehicles) ~= nil)
+		local fresh = Template.goals(hasCar)
+		local goals = data.goals
+		if type(goals) ~= "table" then
+			data.goals = fresh
+			return
+		end
+		local path = goals.path
+		if type(path) ~= "table" then
+			goals.path = fresh.path
+		else
+			if type(path.done) ~= "boolean" then
+				path.done = hasCar
+			end
+			if type(path.finished) ~= "table" then
+				path.finished = {}
+			end
+			if type(path.claimed) ~= "table" then
+				path.claimed = {}
+			end
+		end
+		local daily = goals.daily
+		if type(daily) ~= "table" then
+			goals.daily = fresh.daily
+		else
+			local day = daily.day
+			if not isFinite(day) or day < 0 or day % 1 ~= 0 then
+				daily.day = fresh.daily.day
+			end
+			for _, field in { "ids", "progress", "claimed" } do
+				if type(daily[field]) ~= "table" then
+					daily[field] = {}
+				end
 			end
 		end
 	end,

@@ -5,8 +5,12 @@
 -- no gaps and no lips; every location with its part and tag; every part within the size limit and the map;
 -- buildings off roads, sidewalks and locations; a way from every pad to its road with no kerb or post a car
 -- can't drive over (sidewalks stop for a driveway); every dealership and used-lot display pad built where
--- MapLayout puts it, with its tag, attributes and brand sign, and nothing built on it (Phase 4). Pure: builds
--- nothing. Runs on small hand-made junctions and on the real county.
+-- MapLayout puts it, with its tag, attributes and brand sign, and nothing built on it (Phase 4). The look beyond the
+-- roads (docs/roast-2026-10-24.md point 3): the map within Config/Environment's part budget, role by role; the
+-- ground a patchwork of grass; trees between the configured counts, trunks solid and leaves not, clear of roads,
+-- sidewalks, lots, pads, house plots, buildings, features and water; every building with glass, floor bands or
+-- piers and a roof edge, some of it lit at night; the hills, parks and features where MapLayout puts them, off the
+-- roads. Pure: builds nothing. Runs on small hand-made junctions and on the real county.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -14,6 +18,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Brands = require(ReplicatedStorage.Shared.Config.Brands)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Dealership = require(ReplicatedStorage.Shared.Config.Dealership)
+local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local MapBuilder = require(ServerScriptService.Server.Dev.MapBuilder)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
@@ -26,7 +31,7 @@ type Plan = MapBuilder.Plan
 local TOLERANCE = 0.05 -- studs of overlap allowed between two road parts (contracts)
 local BRIDGE_CLEARANCE = 15 -- a bridge may pass over a road this far above it (contracts)
 local MAX_PART_SIZE = 2048 -- Roblox's limit per axis
-local PART_BUDGET = 6500 -- the whole county (the brief aims under about 6,000)
+local BUDGET = Environment.budget -- the whole county and its parts by role (Config/Environment says why)
 local MAX_STEP = 0.05 -- the most the road surface may jump between two samples, beyond its slope
 local MAX_GRADE = 0.4 -- steepest road surface a sample walk expects (trails are 0.25, a little steeper by pads)
 
@@ -278,6 +283,26 @@ local function crossOverlaps(plan: Plan, roleA: { [string]: boolean }, roleB: { 
 		if roleA[spec.role] then
 			table.insert(as, solidOf(spec))
 		elseif roleB[spec.role] then
+			table.insert(bs, solidOf(spec))
+		end
+	end
+	local found: { string } = {}
+	pairs2(as, bs, 0, function(a, b)
+		local depth = overlapDepth(a, b)
+		if depth > TOLERANCE then
+			table.insert(found, `{a.spec.folder}/{a.spec.name} x {b.spec.folder}/{b.spec.name} {depth}`)
+		end
+	end)
+	return found
+end
+
+-- Parts `pick` chooses overlapping parts of the given roles (exactly).
+local function pickedOverlaps(plan: Plan, pick: (PartSpec) -> boolean, roles: { [string]: boolean }): { string }
+	local as: { Solid }, bs: { Solid } = {}, {}
+	for _, spec in plan.specs do
+		if pick(spec) then
+			table.insert(as, solidOf(spec))
+		elseif roles[spec.role] then
 			table.insert(bs, solidOf(spec))
 		end
 	end
@@ -827,6 +852,18 @@ return function(t: Harness.Api)
 			report(t, "note", plan.notes)
 		end)
 
+		t.it("plans the same parts every time", function()
+			local again = MapBuilder.planWith(fixtureLayout(true), graph).specs
+			t.expect(#again).toBe(#plan.specs)
+			for i, spec in plan.specs do
+				local other = again[i]
+				t.expect(other.folder).toBe(spec.folder)
+				t.expect(other.name).toBe(spec.name)
+				t.expect(other.cframe == spec.cframe).toBe(true)
+				t.expect(other.size == spec.size).toBe(true)
+			end
+		end)
+
 		t.it("never overlaps two road parts by more than 0.05 studs, exactly or as MapCheck sees them", function()
 			local found = roadOverlaps(plan)
 			report(t, "exact", found.exact)
@@ -899,28 +936,251 @@ return function(t: Harness.Api)
 	end)
 
 	t.describe("MapBuilder.plan (the county)", function()
+		-- Planned once for every case below: the county is about 15,000 parts, and each plan takes a while in Edit
+		-- mode. (The fixtures check the planner gives the same parts every time; a plain Dev/MapCheck.run() builds
+		-- the county twice and compares.)
 		local plan = MapBuilder.county()
-		local specs = MapBuilder.plan()
 
-		t.it("is the same every time", function()
-			t.expect(#specs).toBe(#plan.specs)
-			for i, spec in plan.specs do
-				local again = specs[i]
-				t.expect(again.folder).toBe(spec.folder)
-				t.expect(again.name).toBe(spec.name)
-				t.expect(again.cframe == spec.cframe).toBe(true)
-				t.expect(again.size == spec.size).toBe(true)
-			end
-		end)
-
-		t.it(`stays under {PART_BUDGET} parts`, function()
+		t.it(`stays within the part budget: {BUDGET.mapParts} in all, and per role`, function()
 			local roles: { string } = {}
 			for role, count in plan.counts do
 				table.insert(roles, `{role} {count}`)
 			end
 			table.sort(roles)
 			print(`  MapBuilder: {#plan.specs} parts ({table.concat(roles, ", ")})`)
-			t.expect(#plan.specs).toBeLessThan(PART_BUDGET)
+			local over: { string } = {}
+			local function within(label: string, count: number, limit: number)
+				if count > limit then
+					table.insert(over, `{label} {count} > {limit}`)
+				end
+			end
+			within("map", #plan.specs, BUDGET.mapParts)
+			within("tree", plan.counts.tree or 0, BUDGET.treeParts)
+			within("building", plan.counts.building or 0, BUDGET.buildingParts)
+			within("feature", plan.counts.feature or 0, BUDGET.featureParts)
+			within("ground", plan.counts.ground or 0, BUDGET.groundParts)
+			report(t, "over budget", over)
+		end)
+
+		t.it("lays the open land and the green zones in a patchwork of grass shades", function()
+			local looks: { [string]: boolean } = {}
+			local shades = 0
+			for _, spec in plan.specs do
+				local grass = spec.material == Enum.Material.Grass or spec.material == Enum.Material.LeafyGrass
+				if spec.folder == "Ground" and string.find(spec.name, "^Ground") and grass then
+					local key = `{spec.color}:{spec.material.Name}`
+					if not looks[key] then
+						looks[key] = true
+						shades += 1
+					end
+				end
+			end
+			-- The County Loop's four shades, and Riverside's and Lakefront's (Config/MapLayout groundShades).
+			t.expect(shades).toBeGreaterThan(4)
+		end)
+
+		t.it("plants trees within the configured count: trunks cars hit, leaves they pass through", function()
+			local config = Environment.trees
+			local trunks, leaves = 0, 0
+			local problems: { string } = {}
+			for _, spec in plan.specs do
+				if spec.role ~= "tree" then
+					continue
+				end
+				if string.find(spec.folder, "^Trees/Tile") == nil then
+					table.insert(problems, `{spec.folder}/{spec.name}: not in a tree tile`)
+				end
+				if string.find(spec.name, "Trunk$") then
+					trunks += 1
+					if not spec.collide or not spec.query then
+						table.insert(problems, `{spec.name}: a trunk cars pass through`)
+					end
+				else
+					leaves += 1
+					if spec.collide or spec.query or spec.touch then
+						table.insert(problems, `{spec.name}: leaves a car would hit`)
+					end
+				end
+			end
+			print(`  MapBuilder: {trunks} trees ({leaves} leaf blocks)`)
+			report(t, "tree", problems)
+			t.expect(trunks >= config.minTrees).toBe(true)
+			t.expect(trunks <= config.maxTrees).toBe(true)
+			t.expect(leaves >= trunks).toBe(true)
+		end)
+
+		t.it("keeps trees off roads, sidewalks, lots, pads, house plots, buildings, features and water", function()
+			report(
+				t,
+				"tree",
+				crossOverlaps(plan, { tree = true }, {
+					road = true,
+					pad = true,
+					sidewalk = true,
+					support = true,
+					lot = true,
+					building = true,
+					landmark = true,
+					location = true,
+					prop = true,
+					displayPad = true,
+					sign = true,
+					billboard = true,
+					feature = true,
+					light = true,
+					spawn = true,
+					water = true,
+					ramp = true,
+				})
+			)
+		end)
+
+		t.it("gives every building glass, floor bands or piers and a roof edge, some of it lit at night", function()
+			local buildings: { [string]: { [string]: PartSpec } } = {}
+			for _, spec in plan.specs do
+				local id = if spec.role == "building" then string.match(spec.name, "^Building%d+") else nil
+				if id then
+					local parts = buildings[id] or {}
+					parts[string.sub(spec.name, #id + 1)] = spec
+					buildings[id] = parts
+				end
+			end
+			local problems: { string } = {}
+			local count, lit, banded = 0, 0, 0
+			for id, parts in buildings do
+				count += 1
+				local glass, top = parts[""], parts.Top
+				if glass == nil or glass.material ~= Enum.Material.Glass then
+					table.insert(problems, `{id}: no glass`)
+					continue
+				end
+				if top == nil then
+					table.insert(problems, `{id}: no roof edge`)
+					continue
+				end
+				-- The roof edge stands on the footprint, proud of the glass, and rises past the glass.
+				local upper = parts.Upper or glass
+				if top.size.X <= glass.size.X or top.size.Z <= glass.size.Z then
+					table.insert(problems, `{id}: its roof edge isn't proud of the glass`)
+				end
+				if top.cframe.Y + top.size.Y / 2 <= upper.cframe.Y + upper.size.Y / 2 then
+					table.insert(problems, `{id}: its roof edge is below its glass`)
+				end
+				if parts.Band1 or parts.Pier1 then
+					banded += 1
+				end
+				for _, spec in parts do
+					if spec.tag == Environment.nightLights.tag then
+						lit += 1
+						break
+					end
+				end
+			end
+			print(`  MapBuilder: {count} buildings, {banded} with floor bands or piers, {lit} with lit windows`)
+			report(t, "building", problems)
+			t.expect(count).toBeGreaterThan(100)
+			t.expect(banded).toBeGreaterThan(count / 2)
+			t.expect(lit).toBeGreaterThan(count / 4)
+		end)
+
+		t.it("builds the hills, parks and features where MapLayout puts them, off the roads", function()
+			local byPath: { [string]: PartSpec } = {}
+			local featureParts: { [string]: number } = {}
+			for _, spec in plan.specs do
+				byPath[`{spec.folder}/{spec.name}`] = spec
+				local id = string.match(spec.folder, "^Features/(.+)$")
+				if id then
+					featureParts[id] = (featureParts[id] or 0) + 1
+				end
+			end
+			local problems: { string } = {}
+			for _, hill in MapLayout.hills do
+				local top = byPath[`Ground/{hill.id}Top`]
+				if top == nil then
+					table.insert(problems, `hill {hill.id}: not built`)
+				elseif math.abs(top.cframe.Y + top.size.Y / 2 - hill.height) > 1e-3 then
+					table.insert(problems, `hill {hill.id}: its top isn't at {hill.height}`)
+				end
+				local ground =
+					MapLayout.groundHeight((hill.topMin.X + hill.topMax.X) / 2, (hill.topMin.Y + hill.topMax.Y) / 2)
+				if math.abs(ground - hill.height) > 1e-3 then
+					table.insert(problems, `hill {hill.id}: MapLayout.groundHeight doesn't know it`)
+				end
+				if hill.topMin.X - (hill.height + 1) / hill.slope < MapLayout.reservedWestOfX then
+					table.insert(problems, `hill {hill.id}: reaches into the dev track's ground`)
+				end
+			end
+			for _, feature in MapLayout.features do
+				if (featureParts[feature.id] or 0) == 0 then
+					table.insert(problems, `feature {feature.id}: not built`)
+				end
+			end
+			for _, park in MapLayout.parks do
+				local color = park.groundColor
+				if color then
+					local found = false
+					for _, spec in plan.specs do
+						local p = spec.cframe.Position
+						if
+							spec.folder == "Ground"
+							and spec.color == color
+							and p.X > park.min.X
+							and p.X < park.max.X
+							and p.Z > park.min.Y
+							and p.Z < park.max.Y
+						then
+							found = true
+							break
+						end
+					end
+					if not found then
+						table.insert(problems, `park {park.id}: no ground of its own`)
+					end
+				end
+				for _, spec in plan.specs do
+					local p = spec.cframe.Position
+					local inPark = p.X > park.min.X and p.X < park.max.X and p.Z > park.min.Y and p.Z < park.max.Y
+					local hole = park.hole
+					if hole and p.X > hole.min.X and p.X < hole.max.X and p.Z > hole.min.Y and p.Z < hole.max.Y then
+						inPark = false
+					end
+					if inPark and (spec.role == "building" or spec.role == "lot") then
+						table.insert(problems, `park {park.id}: {spec.folder}/{spec.name} stands in it`)
+					end
+				end
+			end
+			report(t, "map", problems)
+			-- Hills and features never reach a road, sidewalk, pad or building.
+			local function isHillOrFeature(spec: PartSpec): boolean
+				if spec.role == "feature" then
+					return true
+				end
+				if spec.folder ~= "Ground" then
+					return false
+				end
+				for _, hill in MapLayout.hills do
+					if string.sub(spec.name, 1, #hill.id) == hill.id then
+						return true
+					end
+				end
+				return false
+			end
+			report(
+				t,
+				"hill or feature",
+				pickedOverlaps(plan, isHillOrFeature, {
+					road = true,
+					pad = true,
+					sidewalk = true,
+					support = true,
+					location = true,
+					displayPad = true,
+					building = true,
+					lot = true,
+					landmark = true,
+					light = true,
+				})
+			)
 		end)
 
 		t.it("builds a slab for every road and leaves no notes", function()
@@ -1097,30 +1357,36 @@ return function(t: Harness.Api)
 			report(t, "location", problems)
 		end)
 
-		t.it("streams the ground and roads as Persistent models and blocks as Atomic ones", function()
-			local kinds: { [string]: MapBuilder.Container } = {}
-			for _, entry in plan.containers do
-				kinds[entry.path] = entry
-			end
-			for _, name in { "Ground", "Roads" } do
-				local entry = kinds[name]
-				t.expect(entry ~= nil and entry.class == "Model").toBe(true)
-				t.expect(entry and entry.streaming).toBe(Enum.ModelStreamingMode.Persistent)
-			end
-			local unknown: { string } = {}
-			for _, spec in plan.specs do
-				if kinds[spec.folder] == nil then
-					table.insert(unknown, `{spec.folder}/{spec.name}`)
+		t.it(
+			"streams the ground and roads as Persistent models and blocks, trees and features as Atomic ones",
+			function()
+				local kinds: { [string]: MapBuilder.Container } = {}
+				for _, entry in plan.containers do
+					kinds[entry.path] = entry
 				end
-				if string.find(spec.folder, "^Buildings/") then
-					local entry = kinds[spec.folder]
-					if entry == nil or entry.streaming ~= Enum.ModelStreamingMode.Atomic then
-						table.insert(unknown, `{spec.folder} is not Atomic`)
+				for _, name in { "Ground", "Roads" } do
+					local entry = kinds[name]
+					t.expect(entry ~= nil and entry.class == "Model").toBe(true)
+					t.expect(entry and entry.streaming).toBe(Enum.ModelStreamingMode.Persistent)
+				end
+				local unknown: { string } = {}
+				for _, spec in plan.specs do
+					if kinds[spec.folder] == nil then
+						table.insert(unknown, `{spec.folder}/{spec.name}`)
+					end
+					local tiled = string.find(spec.folder, "^Buildings/")
+						or string.find(spec.folder, "^Trees/")
+						or string.find(spec.folder, "^Features/")
+					if tiled then
+						local entry = kinds[spec.folder]
+						if entry == nil or entry.streaming ~= Enum.ModelStreamingMode.Atomic then
+							table.insert(unknown, `{spec.folder} is not Atomic`)
+						end
 					end
 				end
+				report(t, "container", unknown)
 			end
-			report(t, "container", unknown)
-		end)
+		)
 
 		t.it("lights at most one streetlight per 200 studs", function()
 			local lit: { Vector3 } = {}
@@ -1139,6 +1405,39 @@ return function(t: Harness.Api)
 				end
 			end
 			t.expect(close).toBe(0)
+		end)
+
+		-- Services/DayNightService switches these at dusk and dawn (tests/DayNight.spec has its maths).
+		t.it("tags every night light with a kind DayNightService knows and its day colour, its light off", function()
+			local lights = Environment.nightLights
+			local problems: { string } = {}
+			local counts: { [string]: number } = {}
+			for _, spec in plan.specs do
+				if spec.tag == lights.tag then
+					local attributes: { [string]: any } = spec.attributes or {}
+					local kind = attributes[lights.kindAttribute]
+					local look = if type(kind) == "string" then lights.kinds[kind] else nil
+					if look == nil then
+						table.insert(problems, `{spec.folder}/{spec.name}: kind {tostring(kind)}`)
+					else
+						counts[kind] = (counts[kind] or 0) + 1
+						if spec.material ~= look.dayMaterial then
+							table.insert(problems, `{spec.folder}/{spec.name}: not built in its day look`)
+						end
+					end
+					if typeof(attributes[lights.dayColorAttribute]) ~= "Color3" then
+						table.insert(problems, `{spec.folder}/{spec.name}: no day colour`)
+					end
+					local light = spec.light
+					if light and light.enabled ~= false then
+						table.insert(problems, `{spec.folder}/{spec.name}: its light is built on`)
+					end
+				end
+			end
+			t.expect(table.concat(problems, "; ")).toBe("")
+			for _, kind in { "streetlight", "window", "sign", "beacon", "arch", "floodlight" } do
+				t.expect(counts[kind] or 0).toBeGreaterThan(0)
+			end
 		end)
 	end)
 end

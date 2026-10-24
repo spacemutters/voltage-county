@@ -6,7 +6,8 @@
 -- written out as the literal table that version's template (DataService/Template, and PLAN.md §6 before it) and the
 -- game of that time wrote, holding what a player owned by then: cash, cars with their trims and looks, codes and
 -- boosts, energy, job XP and licenses, plates and kit extras, robotaxi pods and their earnings, designs, mods and
--- credits, cosmetics, receipts, house upgrades, the season, the streak and a drop still waiting to be granted.
+-- credits, cosmetics, receipts, house upgrades, the season, the streak, a drop still waiting to be granted and (since
+-- version 8) the goals' progress and what was collected.
 -- For each fixture (version 1 also without its version field, as the oldest saves have it):
 --   * Migrations.run reaches the latest version, and the result already has every field a new profile has
 --     (Template.new, Template.ownedVehicle) with the right types and nothing else, before ProfileStore's Reconcile;
@@ -674,8 +675,26 @@ local function v7(): Save
 	}
 end
 
+-- Version 8 (roast fixes 2026-10-24: the first-session path and daily goals, Config/Goals): the save gains `goals`.
+-- The version 7 player above, a day into schema 8: their path was done by the migration (they had cars), and today's
+-- three goals are picked, one part done, one collected. Built on v7 (everything else in the save is the same).
+local function v8(): Save
+	local save = v7()
+	save.version = 8
+	save.goals = {
+		path = { done = true, finished = {}, claimed = {} },
+		daily = {
+			day = 20748,
+			ids = { "charge1", "jobs3", "testDrive1" },
+			progress = { charge1 = 1, jobs3 = 2 },
+			claimed = { charge1 = true },
+		},
+	}
+	return save
+end
+
 -- By the version each fixture is at.
-local FIXTURES: { [number]: () -> Save } = { v1, v2, v3, v4, v5, v6, v7 }
+local FIXTURES: { [number]: () -> Save } = { v1, v2, v3, v4, v5, v6, v7, v8 }
 
 -- Every case the specs below run: each fixture, and version 1 again without its version field.
 local CASES: { Case } = {
@@ -724,7 +743,7 @@ local ENTRY_SHAPES: { [string]: { [string]: string } } = {
 	["credits.reserved"] = { id = "string", amount = "number", at = "number" },
 	["fleet.pods"] = { uid = "string", zone = "string" },
 }
--- Lists and sets, by path: the type of every value (receipts is a list; the rest are keyed by string).
+-- Lists and sets, by path: the type of every value (the LISTS are lists; the rest are keyed by string).
 local VALUE_TYPES: { [string]: string } = {
 	receipts = "string",
 	codesRedeemed = "boolean",
@@ -734,7 +753,13 @@ local VALUE_TYPES: { [string]: string } = {
 	["jobs.licenses"] = "boolean",
 	["house.upgrades"] = "boolean",
 	["season.claimed"] = "boolean",
+	["goals.path.finished"] = "boolean", -- v8
+	["goals.path.claimed"] = "boolean",
+	["goals.daily.ids"] = "string",
+	["goals.daily.progress"] = "number",
+	["goals.daily.claimed"] = "boolean",
 }
+local LISTS: { [string]: boolean } = { receipts = true, ["goals.daily.ids"] = true }
 -- Records a new profile starts empty, by path: the optional fields they may hold.
 local OPTIONAL_FIELDS: { [string]: { [string]: string } } = {
 	club = { lastGrantMonth = "string" },
@@ -804,7 +829,7 @@ local function checkEntries(collection: { [any]: any }, path: string, problems: 
 	end
 	local valueType = VALUE_TYPES[path]
 	if valueType ~= nil then
-		local keyType = if path == "receipts" then "number" else "string"
+		local keyType = if LISTS[path] then "number" else "string"
 		for key, item in collection do
 			if type(key) ~= keyType or type(item) ~= valueType then
 				table.insert(
@@ -952,6 +977,14 @@ local function filled(save: Save): Save
 	fill(data, "pendingGrants", { { kind = "limitedDrop", ref = "arc_flight_1:7500000" } })
 	fill(data, "boosts", { { id = "DOUBLEUP", factor = 2, endsAt = T0 + DAY } })
 	fill(data, "cosmetics", { starter_wrap = 0 })
+	local goals = data.goals
+	if type(goals) == "table" then
+		fill(goals.path, "finished", { firstFare = true })
+		fill(goals.path, "claimed", { firstFare = true })
+		fill(goals.daily, "ids", { "drive3", "rides2", "earn10k" })
+		fill(goals.daily, "progress", { drive3 = 1.5 })
+		fill(goals.daily, "claimed", { rides2 = true })
+	end
 	if data.credits.balance == 0 then
 		data.credits.balance = 9
 	end
@@ -1124,7 +1157,29 @@ return function(t: Harness.Api)
 				t.expect(next(data.credits.reserved) ~= nil).toBe(true)
 				t.expect(next(data.fleet.pods) ~= nil).toBe(true)
 				t.expect(next(data.house.upgrades) ~= nil).toBe(true)
+				if data.goals ~= nil then
+					for _, field in { "finished", "claimed" } do
+						t.expect(`{case.label} goals.path.{field} {next(data.goals.path[field]) ~= nil}`)
+							.toBe(`{case.label} goals.path.{field} true`)
+					end
+					for _, field in { "ids", "progress", "claimed" } do
+						t.expect(`{case.label} goals.daily.{field} {next(data.goals.daily[field]) ~= nil}`)
+							.toBe(`{case.label} goals.daily.{field} true`)
+					end
+				end
 			end
+		end)
+
+		t.it("older saves get the path done and the version 8 fixture keeps its goals as they were", function()
+			for _, case in CASES do
+				local migrated = Migrations.run(case.make())
+				if case.from < Data.schemaVersion then
+					t.expect(`{case.label} {migrated.goals.path.done}`).toBe(`{case.label} true`) -- every fixture has cars
+					t.expect(migrated.goals.daily.ids).toEqual({})
+				end
+			end
+			local fixture = v8()
+			t.expect(Migrations.run(v8()).goals).toEqual(fixture.goals)
 		end)
 	end)
 end

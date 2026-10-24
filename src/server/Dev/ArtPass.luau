@@ -44,7 +44,7 @@
 --     fitted meshes, at full collision detail while the fit runs, from their greybox places and the nearest places
 --     around them), each stamped ON_ART. Physics attachments (wheel hubs, TowPoint, TowHitch, Kingpin, thrusters),
 --     the Chassis and the seats never move.
---   * Kept pieces (KEEP: hitch, underlift, fifth wheel, thruster nozzles, landing-gear tubes) stretch from their
+--   * Kept pieces (KEEP: hitch, underlift, fifth wheel, landing-gear tubes) stretch from their
 --     outer end until they meet the art's surface (KEEP_REACH), so none floats off a curved tail or sinks under a
 --     shorter one, and are stamped ON_ART. Their outer ends, where the physics points sit, stay put.
 --   * Trailers. The art never hangs below the kingpin plane over the front, where a coupled tractor's fifth wheel
@@ -120,8 +120,6 @@ local ART = {
 local KEEP_REACH: { [string]: { Vector3 } } = {
 	Hitch = { Vector3.new(0, 0, -1), Vector3.new(0, 1, 0) },
 	Underlift = { Vector3.new(0, 0, -1), Vector3.new(0, 1, 0) },
-	NozzleL = { Vector3.new(0, 0, -1), Vector3.new(0, 1, 0) },
-	NozzleR = { Vector3.new(0, 0, -1), Vector3.new(0, 1, 0) },
 	FifthWheelBase = { Vector3.new(0, -1, 0) },
 }
 
@@ -134,13 +132,13 @@ local WHEEL_SHAPE = { maxWidth = 0.8, minRound = 0.75, samePlace = 0.5 }
 local LENGTH_FIT = { axleWeight = 3, maxEndShift = 1 }
 
 -- Greybox Body parts that stay on the art: functional pieces a physics attachment or a mechanism sits on.
+-- (Not the hypercar's thruster nozzles: the plumes come from the Chassis's Thruster_L / Thruster_R attachments,
+-- and stretched to meet a curved art tail the nozzles stuck out as long black pipes; seen 2026-10-24.)
 local KEEP: { [string]: boolean } = {
 	Hitch = true, -- hitch receivers (TowHitch vehicles): a coupled trailer's ball sits on it
 	Underlift = true, -- the tow truck's underlift carries its TowHitch
 	FifthWheel = true, -- the semi's coupling plate carries its Kingpin (it sits on FifthWheelBase, which meets the art)
 	FifthWheelBase = true,
-	NozzleL = true, -- the hypercar's cold-gas thruster nozzles (Thruster_L / Thruster_R)
-	NozzleR = true,
 	TubeL = true, -- a trailer's landing gear: the tubes its legs (on their own Motor6Ds) slide in (fitGear)
 	TubeR = true,
 }

@@ -10,8 +10,8 @@
 --     walks that list with a cursor and fires every cue whose time has come this frame. Cue times always come
 --     from the shared startAt, never from accumulated waits, so nothing drifts.
 --   * Lamps (the model contract's Lights folder: each part holds a Light named "Light"), the doors (Doors
---     folder, Hinge motors, OpenAngle attribute) and, on cars with a light-bar extra, an underglow light made on
---     this client. Pulses fade and doors swing from the cue's own time, drawn in the same frame walk.
+--     folder, Hinge motors, OpenAngle attribute) and, on cars with a light-bar extra or an underglow look, an
+--     underglow light made on this client. Pulses fade and doors swing from the cue's own time, drawn in the same frame walk.
 --   * The track (Config/Audio) plays from the right offset at the meet spot when its assetId is not 0, and is
 --     re-seeked if it drifts. Placeholder tracks (assetId 0) play nothing; the show runs silently.
 --   * Every lamp, door and light it touched goes back the way it was when the show ends (LightShowEnd, or the

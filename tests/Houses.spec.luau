@@ -10,6 +10,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Energy = require(ReplicatedStorage.Shared.Vehicle.Energy)
 local EnergyConfig = require(ReplicatedStorage.Shared.Config.Energy)
+local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local Houses = require(ReplicatedStorage.Shared.Config.Houses)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
@@ -114,6 +115,28 @@ return function(t: Harness.Api)
 					end
 				end
 				t.expect(found).toBe(true)
+			end)
+
+			t.it("lights the windows and porch lights at night, as kinds Services/DayNightService knows", function()
+				local pieces: { Houses.Piece } = table.clone(Houses.structure)
+				for _, list in Houses.extras do
+					table.move(list, 1, #list, #pieces + 1, pieces)
+				end
+				local lit: { [string]: string } = {}
+				for _, piece in pieces do
+					local night = piece.night
+					if night ~= nil then
+						t.expect(`{piece.name}: {Environment.nightLights.kinds[night] ~= nil}`)
+							.toBe(`{piece.name}: true`)
+						lit[piece.name] = night
+					end
+				end
+				t.expect(lit.WindowLeft).toBe("window")
+				t.expect(lit.WindowRight).toBe("window")
+				t.expect(lit.PorchLightLeft).toBe("streetlight")
+				t.expect(lit.PorchLightRight).toBe("streetlight")
+				-- Solar panels are glass too, but stay dark.
+				t.expect(lit.SolarPanelLeft).toBe(nil)
 			end)
 		end)
 

@@ -5,6 +5,11 @@
 --
 -- price is the in-game $ a trim costs in total (an upgrade trim counts its base trim plus the upgrade).
 -- handling is 0..1: how sharply a car turns and how much grip it has (Vehicle/Tuning maps it to physics).
+--
+-- The price ladder (docs/roast-2026-10-24.md point 5; tests/Catalog.spec): only tiers 4 and 5 reach under 3 s to 60,
+-- and their bands sit wholly ahead of every lower class (slower to 60 at their best, less grip at their most), so
+-- designs and AI mods keep the order too. The exotic band starts at 2.1 s: a fuel exotic designed any quicker would
+-- out-launch the Arc (a fuel car needs a harder peak for the same 0-60; tests/Tuning.spec "Arc tuning").
 
 export type Range = { min: number, max: number }
 
@@ -44,7 +49,7 @@ local Classes: { [string]: Class } = {
 		tier = 1,
 		price = range(0, 75000),
 		topSpeedMph = range(95, 160),
-		zeroToSixtySec = range(2.8, 8),
+		zeroToSixtySec = range(3.4, 8),
 		energyMinutes = range(20, 45),
 		handling = range(0.4, 0.75),
 		seats = range(4, 5),
@@ -92,7 +97,7 @@ local Classes: { [string]: Class } = {
 		tier = 2,
 		price = range(45000, 150000),
 		topSpeedMph = range(95, 135),
-		zeroToSixtySec = range(2.6, 8),
+		zeroToSixtySec = range(3.2, 8),
 		energyMinutes = range(22, 40),
 		handling = range(0.35, 0.6),
 		seats = range(2, 5),
@@ -128,9 +133,9 @@ local Classes: { [string]: Class } = {
 		tier = 3,
 		price = range(60000, 250000),
 		topSpeedMph = range(140, 190),
-		zeroToSixtySec = range(2.6, 5),
+		zeroToSixtySec = range(3, 5),
 		energyMinutes = range(18, 35),
-		handling = range(0.65, 0.9),
+		handling = range(0.65, 0.86),
 		seats = range(2, 4),
 		designable = true,
 	},
@@ -140,7 +145,7 @@ local Classes: { [string]: Class } = {
 		tier = 3,
 		price = range(50000, 220000),
 		topSpeedMph = range(135, 185),
-		zeroToSixtySec = range(2.8, 5.5),
+		zeroToSixtySec = range(3, 5.5),
 		energyMinutes = range(15, 35),
 		handling = range(0.45, 0.7),
 		seats = range(2, 5),
@@ -152,7 +157,7 @@ local Classes: { [string]: Class } = {
 		tier = 3,
 		price = range(120000, 400000),
 		topSpeedMph = range(135, 175),
-		zeroToSixtySec = range(2.2, 6),
+		zeroToSixtySec = range(3, 6),
 		energyMinutes = range(25, 45),
 		handling = range(0.5, 0.75),
 		seats = range(4, 7),
@@ -176,9 +181,9 @@ local Classes: { [string]: Class } = {
 		tier = 4,
 		price = range(300000, 1200000),
 		topSpeedMph = range(180, 215),
-		zeroToSixtySec = range(2, 3.2),
+		zeroToSixtySec = range(2.1, 2.8),
 		energyMinutes = range(18, 30),
-		handling = range(0.75, 0.95),
+		handling = range(0.87, 0.95),
 		seats = range(1, 2),
 		designable = true,
 	},

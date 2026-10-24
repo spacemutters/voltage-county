@@ -15,6 +15,8 @@
 --
 -- Times are Unix seconds in UTC (os.time()).
 
+local Launch = require(script.Parent.Launch)
+
 export type RewardKind = "cash" | "credits" | "wrap" | "plate"
 export type Reward = { kind: RewardKind, amount: number?, ref: string? }
 export type Tier = { xp: number, free: Reward?, premium: Reward? }
@@ -25,6 +27,7 @@ export type StreakReward = { cash: number, credits: number? }
 export type Season = {
 	id: string, -- "" = no season
 	name: string,
+	launchAtUtc: number, -- launch day (LAUNCH_AT_UTC below): Season 1 starts at it
 	startsAtUtc: number,
 	endsAtUtc: number,
 	claimGraceSeconds: number, -- rewards already reached can still be claimed this long after the end
@@ -48,6 +51,12 @@ export type Season = {
 
 local DAY = 24 * 60 * 60
 local WEEK = 7 * DAY
+
+-- LAUNCH DAY (Config/Launch, the one number to set when Davis picks the launch date): Season 1 starts at it and runs
+-- SEASON_WEEKS. Config/Limiteds and Config/Events read the same moment, so the season opens with the launch-week
+-- limited and the Arc Flight drop and its weekend (tests/Monetization.spec checks the three agree).
+local LAUNCH_AT_UTC = Launch.atUtc
+local SEASON_WEEKS = 7
 
 -- Season 1 tier ladder.
 local TIER_COUNT = 30
@@ -87,8 +96,9 @@ end
 local Season: Season = {
 	id = "s1",
 	name = "Season 1: Lift Off",
-	startsAtUtc = 1800036000, -- 2027-01-15 18:00 UTC, with the Arc Flight drop (Config/Limiteds arc_flight_1)
-	endsAtUtc = 1800036000 + 7 * WEEK, -- 2027-03-05 18:00 UTC
+	launchAtUtc = LAUNCH_AT_UTC,
+	startsAtUtc = LAUNCH_AT_UTC, -- with the Arc Flight drop (Config/Limiteds arc_flight_1)
+	endsAtUtc = LAUNCH_AT_UTC + SEASON_WEEKS * WEEK, -- 2027-03-05 18:00 UTC for the launch date above
 	claimGraceSeconds = WEEK,
 	passKey = "seasonPass",
 	xp = {

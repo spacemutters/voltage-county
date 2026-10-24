@@ -3,7 +3,7 @@
 -- schema version 3, docs/phase-4-contracts.md "Data changes"; Phase 5 adds version 4, docs/phase-5-contracts.md
 -- "Schema v4"; Phase 7 adds version 5, docs/phase-7-contracts.md "Schema v5"; Phase 9 adds version 6,
 -- docs/phase-9-contracts.md "Fleet economy"; Phase 12 adds version 7, whose `cosmetics` step tests/Monetization.spec
--- covers). Pure logic: runs in Edit mode.
+-- covers; the roast fixes of 2026-10-24 add version 8, `goals`, Config/Goals). Pure logic: runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -54,6 +54,7 @@ local function v2Save(): { [string]: any }
 	data.boosts = { { id = "LAUNCH2X", factor = 2, endsAt = JOIN_TIME + 1800 } }
 	-- The fleet as every template before version 6 wrote it.
 	data.fleet = { pods = {}, lastCollectedAt = JOIN_TIME }
+	data.goals = nil -- version 8
 	return data
 end
 
@@ -108,6 +109,24 @@ local function v5Save(): { [string]: any }
 	return data
 end
 
+-- A version 7 save as the Phase 12 template wrote it: no `goals` (the v6 fleet fields and v7 cosmetics are there).
+local function v7Save(): { [string]: any }
+	local data = v5Save()
+	data.version = 7
+	data.fleet.uncollected = 0
+	data.fleet.lastOnlineAt = JOIN_TIME
+	data.cosmetics = {}
+	return data
+end
+
+-- A version 7 save of a player who joined and left before getting a car: no starter, no cars.
+local function v7SaveWithoutCar(): { [string]: any }
+	local data = v7Save()
+	data.starterClaimed = false
+	data.vehicles = {}
+	return data
+end
+
 -- The v5 look fields, for the "only these were added" checks.
 local V5_FIELDS = { caliper = true, extras = true, plateFormat = true }
 -- The v6 fleet fields.
@@ -144,8 +163,8 @@ end
 
 return function(t: Harness.Api)
 	t.describe("Migrations", function()
-		t.it("is at schema version 7", function()
-			t.expect(Data.schemaVersion).toBe(7)
+		t.it("is at schema version 8", function()
+			t.expect(Data.schemaVersion).toBe(8)
 		end)
 
 		t.it("has a step from every older version up to the schema version", function()
@@ -500,8 +519,94 @@ return function(t: Harness.Api)
 			t.expect(save).toEqual(once)
 		end)
 
-		t.it("never drops a field and keeps every player-owned value", function()
+		t.it("7 -> 8: a save with a car gains goals with the first-session path done and no daily goals", function()
+			local migrated, fromVersion = Migrations.run(v7Save())
+			t.expect(fromVersion).toBe(7)
+			t.expect(migrated.version).toBe(Data.schemaVersion)
+			t.expect(migrated.goals).toEqual(Template.goals(true))
+			t.expect(migrated.goals.path.done).toBe(true)
+			t.expect(migrated.goals.daily.day).toBe(Data.defaults.goals.unpickedDay)
+			t.expect(migrated.goals.daily.ids).toEqual({})
+		end)
+
+		t.it("7 -> 8: a save that claimed the starter but has no cars listed still has the path done", function()
+			local save = v7Save()
+			save.vehicles = {}
+			t.expect(Migrations.run(save).goals.path.done).toBe(true)
+			local noFlag = v7Save()
+			noFlag.starterClaimed = false
+			t.expect(Migrations.run(noFlag).goals.path.done).toBe(true) -- it owns cars
+		end)
+
+		t.it("7 -> 8: a save with no car yet walks the path like a new player", function()
+			local migrated = Migrations.run(v7SaveWithoutCar())
+			t.expect(migrated.goals).toEqual(Template.goals(false))
+			t.expect(migrated.goals.path.done).toBe(false)
+			-- The same goals a brand-new profile starts with.
+			t.expect(migrated.goals).toEqual(Template.new(JOIN_TIME).goals :: any)
+		end)
+
+		t.it("7 -> 8: older saves reach the schema version with goals too", function()
 			for _, makeSave in { v1Save, v2Save, v3Save, v4Save, v5Save } do
+				local migrated = Migrations.run(makeSave())
+				t.expect(migrated.version).toBe(Data.schemaVersion)
+				t.expect(migrated.goals).toEqual(Template.goals(true))
+			end
+		end)
+
+		t.it("7 -> 8: keeps goals a save already has and fills in only the broken parts", function()
+			local save = v7Save()
+			save.goals = {
+				path = { done = false, finished = { firstFare = true }, claimed = { firstFare = true } },
+				daily = { day = 20737, ids = { "drive3" }, progress = { drive3 = 1.5 }, claimed = {} },
+			}
+			local kept = deepCopy(save.goals)
+			t.expect(Migrations.run(save).goals).toEqual(kept)
+
+			local broken = v7Save()
+			broken.goals = {
+				path = { done = "yes", finished = 3, claimed = { firstFare = true } },
+				daily = { day = 1.5, ids = "drive3", progress = {}, claimed = false },
+			}
+			local fixed = Migrations.run(broken).goals
+			t.expect(fixed.path).toEqual({ done = true, finished = {}, claimed = { firstFare = true } })
+			t.expect(fixed.daily)
+				.toEqual({ day = Data.defaults.goals.unpickedDay, ids = {}, progress = {}, claimed = {} })
+
+			local parts = v7SaveWithoutCar()
+			parts.goals = { path = "gone" }
+			t.expect(Migrations.run(parts).goals).toEqual(Template.goals(false))
+
+			local junk = v7Save()
+			junk.goals = "lots"
+			t.expect(Migrations.run(junk).goals).toEqual(Template.goals(true))
+		end)
+
+		t.it("7 -> 8: leaves everything outside the goals alone", function()
+			local before = v7Save()
+			local snapshot = deepCopy(before)
+			local migrated = Migrations.run(before)
+			for key, value in snapshot do
+				if key ~= "version" then
+					t.expect(migrated[key]).toEqual(value)
+				end
+			end
+		end)
+
+		t.it("running the 7 -> 8 step twice changes nothing the second time", function()
+			local save = v7SaveWithoutCar()
+			Migrations.steps[7](save)
+			local once = deepCopy(save)
+			Migrations.steps[7](save)
+			t.expect(save).toEqual(once)
+			-- Every new save gets its own tables.
+			local other = v7SaveWithoutCar()
+			Migrations.steps[7](other)
+			t.expect(other.goals.path.finished == save.goals.path.finished).toBe(false)
+		end)
+
+		t.it("never drops a field and keeps every player-owned value", function()
+			for _, makeSave in { v1Save, v2Save, v3Save, v4Save, v5Save, v7Save } do
 				local before = makeSave()
 				local snapshot = deepCopy(before)
 				local migrated = Migrations.run(before)

@@ -12,7 +12,9 @@
 --              appears at
 --              once (Config/Houses structure: walls, roof, windows, front door, the garage with its door and the
 --              home charger's bay, the driveway, the mailbox and the owned upgrades), the sign shows the owner's
---              display name (Roblox display names need no filtering) and the prompt goes away.
+--              display name (Roblox display names need no filtering) and the prompt goes away. The windows and the
+--              porch lights are night lights (Config/Houses Piece.night): Services/DayNightService lights them from
+--              dusk to dawn.
 --   releasing  Net LeaveHouse, or the player leaving the server: the house is removed and the plot is free again.
 --   upgrades   Net BuyHouseUpgrade { upgrade }: Config/Houses upgrades, bought once with cash through
 --              EconomyService.trySpend (reason Config/Houses economyReason; refunded if the save can't be written)
@@ -50,6 +52,7 @@ local Shared = ReplicatedStorage.Shared
 local Controls = require(Shared.Config.Controls)
 local Economy = require(Shared.Config.Economy)
 local EnergyConfig = require(Shared.Config.Energy)
+local Environment = require(Shared.Config.Environment)
 local Houses = require(Shared.Config.Houses)
 local MapLayout = require(Shared.Config.MapLayout)
 local Net = require(Shared.Net)
@@ -112,6 +115,8 @@ local DataService: DataServiceModule? = nil
 local EconomyService: EconomyServiceModule? = nil
 
 local plots: { [string]: Plot } = {}
+-- Roast fixes (2026-10-24): onClaimed listeners (Services/GoalsService's "claim a house" goal).
+local claimedListeners: { (player: Player, plotId: string) -> () } = {}
 
 -- Every HousePlot location by id, and its place among them (it picks the wall colour).
 local plotLocations: { [string]: MapLayout.Location } = {}
@@ -314,6 +319,15 @@ local function newPart(piece: Houses.Piece, frame: CFrame, color: Color3, parent
 		light.Brightness = glow.brightness
 		light.Color = glow.color
 		light.Parent = part
+	end
+	local night = piece.night
+	if night ~= nil then
+		-- Lit from dusk to dawn by Services/DayNightService, which gives the part the current look (and switches
+		-- its PointLight) the moment the house enters the world.
+		local lights = Environment.nightLights
+		part:SetAttribute(lights.kindAttribute, night)
+		part:SetAttribute(lights.dayColorAttribute, part.Color)
+		CollectionService:AddTag(part, lights.tag)
 	end
 	part.Parent = parent
 	return part
@@ -822,6 +836,9 @@ claimPlot = function(player: Player, plotId: string, viaPrompt: boolean): Reply
 	setSign(plot, player)
 	local message = string.format(text.claimed, location.displayName)
 	sendUpdate(player, message)
+	for _, listener in claimedListeners do
+		task.spawn(listener, player, plotId)
+	end
 	return reply(true, message, plotId)
 end
 
@@ -897,6 +914,12 @@ end
 -- The plot id the player holds on this server, or nil.
 function HouseService.getPlot(player: Player): string?
 	return HouseService.plotOf(claims, player.UserId)
+end
+
+-- Roast fixes (2026-10-24): calls fn(player, plotId) in its own thread whenever a player claims a house.
+-- Services/GoalsService counts claims here.
+function HouseService.onClaimed(fn: (player: Player, plotId: string) -> ())
+	table.insert(claimedListeners, fn)
 end
 
 -- Boot -------------------------------------------------------------------------------------------------------------

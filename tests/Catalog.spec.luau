@@ -1,18 +1,33 @@
 --!strict
--- The catalog is complete and every trim sits inside its class band (PLAN.md §3.3).
+-- The catalog is complete and every trim sits inside its class band (PLAN.md §3.3). The price ladder holds
+-- (docs/roast-2026-10-24.md point 5): only the top tiers launch under 3 s, and their bands out-launch and out-grip
+-- every class below them; nothing for sale is a downgrade from the free starter; and within a brand every dearer
+-- car is better than each cheaper one at something a player feels.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Brands = require(ReplicatedStorage.Shared.Config.Brands)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
 local Classes = require(ReplicatedStorage.Shared.Config.Classes)
+local Economy = require(ReplicatedStorage.Shared.Config.Economy)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
+local Jobs = require(ReplicatedStorage.Shared.Config.Jobs)
 local Units = require(ReplicatedStorage.Shared.Util.Units)
+local UsedLot = require(ReplicatedStorage.Shared.Config.UsedLot)
 
 -- Launch catalog size (PLAN.md §3.3, docs/phase-4-contracts.md "Catalog expansion").
 local MIN_VEHICLES = 30
 local MIN_PER_BRAND = 3
 local MIN_USED_LOT = 6
+
+-- The price ladder (docs/roast-2026-10-24.md point 5): classes in tiers from TOP_TIER up (exotic, hypercar) are the
+-- only ones whose band reaches under LADDER_FLOOR_SEC to 60.
+local TOP_TIER = 4
+local LADDER_FLOOR_SEC = 3
+-- A first car a new player can save up for in their first session or two (the Fernlows on the used lot, the Tovi).
+local CHEAP_PRICE = 40000
+-- How a car is sold for cash (the starter, the fleet pod and limited drops aren't).
+local CASH_ACQUISITIONS: { [string]: boolean } = { dealership = true, usedLot = true }
 
 -- Every greybox body VehicleBuilder knows (Config/Vehicles BodyStyle).
 local BODY_STYLES: { [string]: boolean } = {
@@ -40,6 +55,81 @@ local function allVehicles(): { any }
 		table.insert(list, Catalog.getVehicle(vehicleId))
 	end
 	return list
+end
+
+-- A trim with what the ladder compares: its vehicle and its total price.
+type Offer = { name: string, vehicle: any, trim: any, price: number }
+
+-- Every drivable trim sold for cash, by its total price (an upgrade trim counts the trim it upgrades).
+local function cashOffers(): { Offer }
+	local offers: { Offer } = {}
+	for _, vehicle in allVehicles() do
+		if not vehicle.playerDrivable then
+			continue
+		end
+		for _, trim in vehicle.trims do
+			local price = Catalog.totalPrice(vehicle.id, trim.id)
+			if CASH_ACQUISITIONS[trim.acquisition] and price ~= nil then
+				table.insert(offers, { name = `{vehicle.id}/{trim.id}`, vehicle = vehicle, trim = trim, price = price })
+			end
+		end
+	end
+	return offers
+end
+
+-- The most a car can earn a minute (Config/Economy.activities, the PLAN.md §4 rates): free driving, or the best job
+-- its class and features can take (Config/Jobs), with rideshare XL and the delivery bonus where they apply. What a
+-- van, a pickup or a semi is for.
+local function workRate(vehicle: any, trim: any): number
+	local rates: { [string]: number } = Economy.activities :: any
+	local best = rates.freeDrive
+	for jobId, job in Jobs.types do
+		local rate = rates[jobId]
+		if rate == nil or table.find(job.classes, vehicle.class) == nil then
+			continue
+		end
+		local feature = job.requiresFeature
+		if feature ~= nil and table.find(vehicle.features, feature) == nil then
+			continue
+		end
+		local xlClasses, xlSeats, xlMultiplier = job.xlClasses, job.xlMinSeats, job.xlMultiplier
+		local xl = (xlClasses ~= nil and table.find(xlClasses, vehicle.class) ~= nil)
+			or (xlSeats ~= nil and trim.seats >= xlSeats)
+		if xl and xlMultiplier ~= nil then
+			rate *= xlMultiplier
+		end
+		local bonusClasses, bonusMultiplier = job.bonusClasses, job.bonusMultiplier
+		if bonusClasses ~= nil and bonusMultiplier ~= nil and table.find(bonusClasses, vehicle.class) ~= nil then
+			rate *= bonusMultiplier
+		end
+		best = math.max(best, rate)
+	end
+	return best
+end
+
+-- What `a` is better at than `b`, of the things a player feels: top speed, 0-60, handling, seats, range and pay.
+local function betterAt(a: Offer, b: Offer): { string }
+	local ta, tb = a.trim, b.trim
+	local edges: { string } = {}
+	if ta.topSpeedMph > tb.topSpeedMph then
+		table.insert(edges, "top speed")
+	end
+	if ta.zeroToSixtySec < tb.zeroToSixtySec then
+		table.insert(edges, "0-60")
+	end
+	if ta.handling > tb.handling then
+		table.insert(edges, "handling")
+	end
+	if ta.seats > tb.seats then
+		table.insert(edges, "seats")
+	end
+	if (ta.energyMinutes or 0) > (tb.energyMinutes or 0) then
+		table.insert(edges, "range")
+	end
+	if workRate(a.vehicle, ta) > workRate(b.vehicle, tb) then
+		table.insert(edges, "work")
+	end
+	return edges
 end
 
 return function(t: Harness.Api)
@@ -193,6 +283,129 @@ return function(t: Harness.Api)
 			local longBody = Catalog.geometry("ohm_current", "long_body")
 			assert(standard and longBody, "geometry exists")
 			t.expect(longBody.length).toBeGreaterThan(standard.length)
+		end)
+	end)
+
+	t.describe("Catalog price ladder", function()
+		t.it(`keeps every class below tier {TOP_TIER} at {LADDER_FLOOR_SEC} s or slower to 60`, function()
+			local problems: { string } = {}
+			for classId, class in Classes do
+				if class.tier < TOP_TIER and class.zeroToSixtySec.min < LADDER_FLOOR_SEC then
+					table.insert(problems, `{classId}: band allows {class.zeroToSixtySec.min} s`)
+				end
+			end
+			table.sort(problems)
+			t.expect(problems).toEqual({})
+		end)
+
+		-- Band against band, so designs and AI mods keep the order too: the slowest top-tier car is still quicker to
+		-- 60 and grippier than the best of any class below.
+		t.it(`puts every tier {TOP_TIER}+ band ahead of every lower band on 0-60 and handling`, function()
+			local problems: { string } = {}
+			for topId, top in Classes do
+				if top.tier < TOP_TIER then
+					continue
+				end
+				for classId, class in Classes do
+					if class.tier >= TOP_TIER then
+						continue
+					end
+					if class.zeroToSixtySec.min <= top.zeroToSixtySec.max then
+						table.insert(problems, `{classId} reaches 60 as soon as the slowest {topId}`)
+					end
+					if class.handling.max >= top.handling.min then
+						table.insert(problems, `{classId} handles as well as the loosest {topId}`)
+					end
+				end
+			end
+			table.sort(problems)
+			t.expect(problems).toEqual({})
+		end)
+
+		t.it("makes no car for sale a downgrade from the free starter", function()
+			local starter = UsedLot.starter
+			local vehicle = Catalog.getVehicle(starter.vehicleId)
+			local trim = Catalog.getTrim(starter.vehicleId, starter.trim)
+			assert(vehicle and trim, "the starter is in the catalog")
+			local free: Offer = { name = "starter", vehicle = vehicle, trim = trim, price = 0 }
+			local problems: { string } = {}
+			for _, offer in cashOffers() do
+				if #betterAt(offer, free) == 0 then
+					table.insert(problems, `{offer.name} (${offer.price}) is better than the starter at nothing`)
+				end
+			end
+			table.sort(problems)
+			t.expect(problems).toEqual({})
+		end)
+
+		t.it("makes every dearer car of a brand better at something than each cheaper one", function()
+			local offers = cashOffers()
+			local problems: { string } = {}
+			for _, dearer in offers do
+				for _, cheaper in offers do
+					if
+						dearer.vehicle.brandId == cheaper.vehicle.brandId
+						and dearer.price > cheaper.price
+						and #betterAt(dearer, cheaper) == 0
+					then
+						table.insert(
+							problems,
+							`{dearer.name} (${dearer.price}) is better than {cheaper.name} (${cheaper.price}) at nothing`
+						)
+					end
+				end
+			end
+			table.sort(problems)
+			t.expect(problems).toEqual({})
+		end)
+
+		-- Range or seats alone don't make a cheap car worth buying over the free one (roast 2026-10-24 point 5): it has
+		-- to be quicker, faster or better paid (a work van).
+		t.it(`makes every car under ${CHEAP_PRICE} quicker, faster or better paid than the free starter`, function()
+			local starter = UsedLot.starter
+			local vehicle = Catalog.getVehicle(starter.vehicleId)
+			local trim = Catalog.getTrim(starter.vehicleId, starter.trim)
+			assert(vehicle and trim, "the starter is in the catalog")
+			local free: Offer = { name = "starter", vehicle = vehicle, trim = trim, price = 0 }
+			local problems: { string } = {}
+			for _, offer in cashOffers() do
+				if offer.price >= CHEAP_PRICE then
+					continue
+				end
+				local edges = betterAt(offer, free)
+				if
+					table.find(edges, "0-60") == nil
+					and table.find(edges, "top speed") == nil
+					and table.find(edges, "work") == nil
+				then
+					table.insert(
+						problems,
+						`{offer.name} (${offer.price}) is only better at {table.concat(edges, ", ")}`
+					)
+				end
+			end
+			table.sort(problems)
+			t.expect(problems).toEqual({})
+		end)
+
+		-- Prove the ladder checks fire before trusting them on the catalog.
+		t.it("catches a car that is better at nothing", function()
+			local spark = Catalog.getVehicle("ohm_spark")
+			local standard = Catalog.getTrim("ohm_spark", "standard")
+			assert(spark and standard, "the Spark is in the catalog")
+			local base: Offer = { name = "base", vehicle = spark, trim = standard, price = 1 }
+			local slower = table.clone(standard)
+			slower.topSpeedMph -= 1
+			local copy: Offer = { name = "copy", vehicle = spark, trim = table.clone(standard), price = 2 }
+			local worse: Offer = { name = "worse", vehicle = spark, trim = slower, price = 2 }
+			t.expect(betterAt(copy, base)).toEqual({})
+			t.expect(betterAt(worse, base)).toEqual({})
+			t.expect(betterAt(base, worse)).toEqual({ "top speed" })
+			-- A van earns more than a sedan it is slower than (the delivery bonus).
+			local van = Catalog.getVehicle("northline_satchel")
+			local vanTrim = Catalog.getTrim("northline_satchel", "standard")
+			assert(van and vanTrim, "the Satchel is in the catalog")
+			t.expect(workRate(van, vanTrim)).toBeGreaterThan(workRate(spark, standard))
 		end)
 	end)
 

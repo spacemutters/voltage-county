@@ -25,7 +25,9 @@
 --   StartTestDrive { vehicleId, trim } function: only within testDrive.maxStartDistance of that car's display
 --                                    car; a temporary car (attribute TestDrive = true) at the spawn pad nearest
 --                                    the dealership with the player seated, for Config/Dealership testDrive.seconds;
---                                    then it is removed and the player stood back at the dealership with a notice.
+--                                    then it is removed and the player stood back at the dealership with a notice,
+--                                    and the garage car they had out before comes back on the pad there (seated
+--                                    in it if they were still driving), so nobody is left on foot.
 --                                    One at a time, with a cooldown after each. Test-drive cars never earn
 --                                    (DriveEarnService skips them) and never take a garage slot. Answers
 --                                    { ok, message, seconds? }.
@@ -106,6 +108,7 @@ type TestDrive = {
 	model: Model,
 	thread: thread?,
 	connections: { RBXScriptConnection },
+	returnUid: string?, -- the garage car the player had out when it started, brought back when it ends
 }
 
 type Spinner = { model: Model, base: CFrame }
@@ -127,6 +130,8 @@ local testDrives: { [Player]: TestDrive } = {}
 local testDriveEnded: { [Player]: number } = {} -- os.clock() when each player's last test drive ended
 local spinners: { Spinner } = {} -- display cars that turn (only while rotation is on)
 local missingTemplates: { [string]: boolean } = {} -- warned once each
+-- Roast fixes (2026-10-24): onTestDriveStarted listeners (Services/GoalsService counts test drives).
+local testDriveListeners: { (player: Player, vehicleId: string) -> () } = {}
 
 -- Pure rules ------------------------------------------------------------------------------------------------
 
@@ -580,6 +585,11 @@ function DealershipService.endTestDrive(player: Player, sendBack: boolean)
 	for _, connection in drive.connections do
 		connection:Disconnect()
 	end
+	-- Still at the wheel (the time ran out) rather than out of the car already.
+	local character = player.Character
+	local humanoid = if character ~= nil then character:FindFirstChildOfClass("Humanoid") else nil
+	local seatPart = if humanoid ~= nil then humanoid.SeatPart else nil
+	local driving = seatPart ~= nil and seatPart:IsDescendantOf(drive.model)
 	local vehicleService = VehicleService
 	if vehicleService ~= nil and vehicleService.getCar(player) == drive.model then
 		vehicleService.despawn(player)
@@ -588,17 +598,32 @@ function DealershipService.endTestDrive(player: Player, sendBack: boolean)
 	end
 	if sendBack and player.Parent ~= nil then
 		local spot = dealershipSpot()
-		local character = player.Character
 		if spot ~= nil and character ~= nil and rootPart(player) ~= nil then
 			character:PivotTo(spot)
 		end
 		notify(player, messages.testDriveEnded, "info")
+		-- Their own car back on the pad by the dealership (the test drive put it away when it started).
+		local uid, garage = drive.returnUid, GarageService
+		if uid ~= nil and garage ~= nil then
+			task.spawn(function()
+				local answer = garage.spawnOwned(player, uid, driving)
+				if not answer.ok then
+					print(`{LOG} {player.Name}'s car didn't come back after the test drive: {answer.message}`)
+				end
+			end)
+		end
 	end
 end
 
 -- True while the player is on a test drive.
 function DealershipService.onTestDrive(player: Player): boolean
 	return testDrives[player] ~= nil
+end
+
+-- Roast fixes (2026-10-24): calls fn(player, vehicleId) in its own thread whenever a test drive starts.
+-- Services/GoalsService counts test drives here.
+function DealershipService.onTestDriveStarted(fn: (player: Player, vehicleId: string) -> ())
+	table.insert(testDriveListeners, fn)
 end
 
 -- Ends the test drive when the player gets out of the car (after they have sat in it at least once).
@@ -667,6 +692,9 @@ local function onStartTestDrive(player: Player, payload: any): Reply
 		return reply(false, messages.testDriveTooFar)
 	end
 
+	-- The garage car they have out now (the test drive puts it away), to bring back when the drive ends.
+	local current = vehicleService.getCar(player)
+	local currentUid = if current ~= nil then current:GetAttribute(Garage.ownedUidAttribute) else nil
 	-- The spawn pad by the dealership, not the one nearest the player.
 	local spot = dealershipSpot()
 	local pad = nearestSpawnPad(player, if spot ~= nil then spot.Position else root.Position)
@@ -676,7 +704,12 @@ local function onStartTestDrive(player: Player, payload: any): Reply
 		return reply(false, messages.testDriveFailed)
 	end
 	model:SetAttribute(Garage.testDriveAttribute, true)
-	local drive: TestDrive = { model = model, thread = nil, connections = {} }
+	local drive: TestDrive = {
+		model = model,
+		thread = nil,
+		connections = {},
+		returnUid = if type(currentUid) == "string" then currentUid else nil,
+	}
 	testDrives[player] = drive
 	-- The car can go some other way (fell out of the world, the player spawned another): forget the drive.
 	table.insert(
@@ -699,6 +732,9 @@ local function onStartTestDrive(player: Player, payload: any): Reply
 	vehicleService.seatDriverWhenFree(player) -- spawning replaced any car they sat in
 	local length = DealershipService.durationText(settings.seconds)
 	print(`{LOG} {player.Name} started a test drive in {vehicleId}/{trimId}`)
+	for _, listener in testDriveListeners do
+		task.spawn(listener, player, vehicleId)
+	end
 	return { ok = true, message = string.format(messages.testDriveStarted, length), seconds = settings.seconds }
 end
 

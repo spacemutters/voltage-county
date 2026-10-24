@@ -15,8 +15,10 @@
 -- For the dealership and the used lot:
 --   GarageService.hasRoom(player)                          true while the garage has a free slot
 --   GarageService.addVehicle(player, vehicleId, trim, paid) adds a car (default look) and returns its uid, or nil
---   GarageService.spawnOwned(player, uid)                  what SpawnOwned does, for server code that just
---                                                          handed the player a car
+--   GarageService.spawnOwned(player, uid, seat?)           what SpawnOwned does, for server code that just
+--                                                          handed the player a car (or gives back the one they
+--                                                          had out before a test drive); `seat` false leaves the
+--                                                          player standing beside it
 --
 -- Energy (Phase 5, docs/phase-5-contracts.md "Server"): a car brought out carries its saved charge or tank level
 -- (OwnedVehicle.energy) for EnergyService, and putting cars away (or replacing them) first has EnergyService write
@@ -475,9 +477,9 @@ local function bringOut(
 	return model
 end
 
--- Brings an owned car out at the SpawnPad nearest the player and seats them. Replaces any car they had out,
--- except a dealership test drive, which has to finish first.
-function GarageService.spawnOwned(player: Player, uid: string): Reply
+-- Brings an owned car out at the SpawnPad nearest the player and seats them (unless `seat` is false). Replaces any
+-- car they had out, except a dealership test drive, which has to finish first.
+function GarageService.spawnOwned(player: Player, uid: string, seat: boolean?): Reply
 	local dataService, vehicleService = DataService, VehicleService
 	local data = if dataService ~= nil then dataService.get(player) else nil
 	if data == nil or vehicleService == nil then
@@ -507,7 +509,8 @@ function GarageService.spawnOwned(player: Player, uid: string): Reply
 	vehicleService.despawn(player)
 	local pad = nearestPad(player, position)
 	-- No pads on the map: VehicleService puts the car just in front of the player instead.
-	local model = bringOut(player, vehicle, options, if pad then pad.CFrame else nil, Garage.seatDriver)
+	local model =
+		bringOut(player, vehicle, options, if pad then pad.CFrame else nil, Garage.seatDriver and seat ~= false)
 	if model == nil then
 		return reply(false, messages.spawnFailed)
 	end

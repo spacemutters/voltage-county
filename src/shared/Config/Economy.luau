@@ -135,6 +135,8 @@ local Economy = {
 			season = "Gameplay", -- a season tier reward, earned with season XP from driving and jobs
 			-- Phase 13 (Config/Houses.economyReason; a house upgrade that couldn't be saved is refunded as "refund").
 			house = "Shop", -- buying a house upgrade
+			-- Roast fixes (Config/Goals economyReason).
+			goal = "Gameplay", -- a first-session step's bonus or a daily goal's reward
 		} :: { [string]: string },
 	},
 

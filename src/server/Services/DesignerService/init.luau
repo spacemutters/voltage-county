@@ -229,6 +229,8 @@ local reportedBy: { [Player]: { [string]: boolean } } = {}
 local reportCounts: { [Player]: number } = {}
 local recentReports: { ReportEntry } = {}
 local triedHide: { [Player]: boolean } = {} -- warned once about a non-admin HideDesign (no log flood)
+-- Roast fixes (2026-10-24): onDesignBuilt listeners (Services/GoalsService's "design your free car" step).
+local builtListeners: { (player: Player) -> () } = {}
 
 local salt: string? = nil
 local saltLoading = false
@@ -1209,7 +1211,16 @@ local function build(player: Player, pending: Pending): Answer
 		end
 	end
 	print(`{LOG} {player.Name} built design {designUid}`)
+	for _, listener in builtListeners do
+		task.spawn(listener, player)
+	end
 	return answer(true, string.format(messages.built, spec.name), { uid = uid, designUid = designUid })
+end
+
+-- Roast fixes (2026-10-24): calls fn(player) in its own thread whenever a player's new design is built (saved to
+-- their garage). Services/GoalsService finishes the first-session path's design step here.
+function DesignerService.onDesignBuilt(fn: (player: Player) -> ())
+	table.insert(builtListeners, fn)
 end
 
 local function onDesignChoice(player: Player, payload: any): Answer

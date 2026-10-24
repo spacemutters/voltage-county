@@ -107,7 +107,11 @@ function Layout.touchZones(screen: Vector2): TouchZones
 	local touch = Controls.touch
 	local margin, gap = touch.margin, touch.gap
 	local width, height = screen.X, screen.Y
+	-- The pedal block plus the Horn / Lights row one gap above it (UI/TouchControls), so everything that keeps clear
+	-- of the pedals keeps clear of that row too.
 	local pedalHeight = math.max(touch.gasSize.Y, touch.brakeSize.Y + gap + touch.handbrakeSize.Y)
+		+ gap
+		+ touch.signalSize.Y
 	local pedalWidth = touch.gasSize.X + gap + math.max(touch.brakeSize.X, touch.handbrakeSize.X)
 	local buttonsWidth = 3 * touch.buttonSize.X + 2 * gap
 	return {

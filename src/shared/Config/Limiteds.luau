@@ -14,6 +14,8 @@
 -- Times are Unix seconds in UTC (os.time()); a window runs from startsAtUtc up to, not including, endsAtUtc.
 -- Prices are in-game $ (drops only). Ids use letters, digits and _ only.
 
+local Launch = require(script.Parent.Launch)
+
 export type Drop = {
 	id: string,
 	name: string, -- what the store and the countdown call it
@@ -42,6 +44,7 @@ export type Cosmetic = {
 }
 
 export type Limiteds = {
+	launchAtUtc: number, -- launch day (LAUNCH_AT_UTC below): the launch-week sales open at it
 	drops: { [string]: Drop },
 	cosmetics: { [string]: Cosmetic },
 	-- Serial counters. Studio uses its own store AND its own key prefix, so a Studio test never touches a live key.
@@ -60,6 +63,12 @@ export type Limiteds = {
 
 local Limiteds: Limiteds
 
+-- LAUNCH DAY (Config/Launch, the one number to set when Davis picks the launch date): the Launch Week limited wrap
+-- and plate frame and the Arc Flight drop open at it and run LAUNCH_WEEK. Config/Season and Config/Events read the
+-- same moment (tests/Monetization.spec checks the three agree).
+local LAUNCH_AT_UTC = Launch.atUtc
+local LAUNCH_WEEK = 7 * 24 * 60 * 60
+
 local function productIds(): { [string]: number }
 	local ids: { [string]: number } = {}
 	for _, cosmetic in Limiteds.cosmetics do
@@ -69,14 +78,17 @@ local function productIds(): { [string]: number }
 end
 
 Limiteds = {
+	launchAtUtc = LAUNCH_AT_UTC,
+
 	drops = {
 		arc_flight_1 = {
 			id = "arc_flight_1",
 			name = "Arc Flight, first drop",
 			vehicleId = "ohm_arc",
 			trim = "flight",
-			startsAtUtc = 1800036000, -- 2027-01-15 18:00 UTC (Config/Events arc_flight_weekend, Config/Season s1)
-			endsAtUtc = 1800640800, -- 2027-01-22 18:00 UTC
+			-- With Config/Events arc_flight_weekend and Config/Season s1 (2027-01-15 to 01-22, 18:00 UTC, as set).
+			startsAtUtc = LAUNCH_AT_UTC,
+			endsAtUtc = LAUNCH_AT_UTC + LAUNCH_WEEK,
 			supply = 500,
 			price = 7500000, -- above the Arc Boost ($5M), the top of the dealership ladder
 		},
@@ -85,13 +97,14 @@ Limiteds = {
 	cosmetics = {
 		launch_wrap = {
 			id = "launch_wrap",
-			name = "Launch Week wrap",
+			-- Its look (Config/Customization launch_week_wrap) is red mirror chrome with underglow.
+			name = "Launch Week Chrome",
 			kind = "wrap",
 			ref = "launch_week_wrap",
 			productKey = "limitedLaunchWrap",
 			productId = 0,
-			startsAtUtc = 1800036000, -- 2027-01-15 18:00 UTC
-			endsAtUtc = 1800640800, -- 2027-01-22 18:00 UTC
+			startsAtUtc = LAUNCH_AT_UTC,
+			endsAtUtc = LAUNCH_AT_UTC + LAUNCH_WEEK,
 		},
 		-- Waits for plate frames: its look isn't one the Wrap & Tint shop has yet (Config/Customization.lookExists),
 		-- so MonetizationService shows it as coming soon and never prompts it, even with a product id pasted in
@@ -103,8 +116,8 @@ Limiteds = {
 			ref = "launch_week_plate_frame",
 			productKey = "limitedLaunchFrame",
 			productId = 0,
-			startsAtUtc = 1800036000,
-			endsAtUtc = 1800640800,
+			startsAtUtc = LAUNCH_AT_UTC,
+			endsAtUtc = LAUNCH_AT_UTC + LAUNCH_WEEK,
 		},
 	},
 

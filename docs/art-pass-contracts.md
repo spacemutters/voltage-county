@@ -45,8 +45,10 @@ builder made them; only what you see changes.
   `CameraHood` from the mesh bounds so extras, plates and the hood camera sit on the real body. As built: raycasts at
   full collision detail from the greybox place and the nearest places around it; each point the fit placed is
   stamped `OnArt`, and `checkArt` fails a model with an unstamped one.
-- **Kept pieces:** Hitch, Underlift, FifthWheel(Base), the Arc's nozzles and a trailer's landing-gear tubes stay
-  (physics points sit on them) and stretch from their outer end until they meet the art surface (stamped `OnArt`).
+- **Kept pieces:** Hitch, Underlift, FifthWheel(Base) and a trailer's landing-gear tubes stay (physics points sit on
+  them) and stretch from their outer end until they meet the art surface (stamped `OnArt`). The Arc's thruster
+  nozzles go with the greybox body (2026-10-24): the plumes come from the Chassis attachments, and stretched nozzles
+  stuck out of the art tail as long black pipes.
 - **Trailers:** the art never hangs below the kingpin plane over the front (from the front to 3.5 studs behind the
   kingpin), where a coupled tractor's fifth wheel and rear swing under it; the measured clearance is stamped
   `KingpinClearance` and checked.
@@ -62,10 +64,15 @@ builder made them; only what you see changes.
   and builds that style's wheel faces on the wheel part, as today; "stock" brings the art wheel back.
 - Wraps and stripes are parts laid on greybox panels and won't sit on a mesh body. On art models, hide the wrap
   options that can't apply (paint-only), unless a clean projection onto the mesh bounds is possible. As built:
-  every exclusive (paid or earned) wrap has an `artColor` and goes on an art car as a full-body color wrap; shop
-  wraps with stripes are hidden there and `CustomizationService` refuses them unpaid; AI mods on an art car leave off
-  stripes and the secondary color before anything is charged (`Validate.fitPaint`), and the backend is told
-  (`paintOnly`).
+  every exclusive look paints the whole body of any car in its `artColor` and wears its own finish (chrome, brushed
+  metal or pearl coat), plus a pearl colour shift, coloured glass or underglow (`Config/Customization` `effectsOf`);
+  stripes still go only on banded bodies. Shop wraps with stripes are hidden there and `CustomizationService`
+  refuses them unpaid; AI mods on an art car leave off stripes and the secondary color before anything is charged
+  (`Validate.fitPaint`), and the backend is told (`paintOnly`).
+- Chrome and brushed metal set `Reflectance` and `Material` on the Paint-tagged body mesh, and the body colour sets
+  its `Color`. That works because `Dev/ArtPass` clears the body's `TextureID` and adds no `SurfaceAppearance`. If a
+  later art pass keeps the surface detail in a `SurfaceAppearance` (roast 2026-10-24 point 1), all three are
+  ignored: `Vehicle/Appearance` must then tint through `SurfaceAppearance.Color` instead, in the same change.
 - Specs cover all of it, including a full look on a copy of one stored art car per brand.
 
 ## Checks (lead runs them in Studio)

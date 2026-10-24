@@ -213,7 +213,10 @@ return function(t: Harness.Api)
 			t.expect(zones.steering.left).toBe(touch.margin)
 			t.expect(zones.steering.right).toBe(touch.margin + 2 * touch.steerSize.X + touch.gap)
 			t.expect(zones.pedals.right).toBe(screen.X - touch.margin)
+			-- The pedal block and the Horn / Lights row above it.
 			local pedalColumn = math.max(touch.gasSize.Y, touch.brakeSize.Y + touch.gap + touch.handbrakeSize.Y)
+				+ touch.gap
+				+ touch.signalSize.Y
 			t.expect(zones.pedals.top).toBe(screen.Y - touch.margin - pedalColumn)
 			t.expect(zones.pedals.left)
 				.toBe(screen.X - (touch.margin + touch.gasSize.X + touch.gap + touch.brakeSize.X))
