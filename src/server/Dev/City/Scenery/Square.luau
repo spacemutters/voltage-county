@@ -1,8 +1,9 @@
 --!strict
 -- The downtown square (docs/city/CITY_PLAN.md §5.4 and §6; Config/CityScenery townSquare): Town Square becomes a
 -- palm plaza. An allée of royal palms round its edges, a round fountain at its heart (a stone basin, a pool, a
--- pedestal and a bowl, its jet glowing at night), benches on a ring facing the fountain, and planters at its corners.
--- Shade trees fill between (Config/Environment trees.parks.town_square). Through the placement grid like every piece.
+-- pedestal and a bowl, its jet glowing at night), benches on a ring facing the fountain, a terrazzo plaza under them
+-- with paths out along the diagonals, and planters with palmetto clumps toward the corners. Shade trees fill between
+-- (Config/Environment trees.parks.town_square). Through the placement grid like every piece.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -37,6 +38,9 @@ local BLOCKERS: { [string]: boolean } = {
 }
 local PALM_BLOCKERS: { [string]: boolean } = table.clone(BLOCKERS)
 PALM_BLOCKERS.tree = true
+-- The plaza's paving lies flat under the fountain, benches and planters, so it keeps off only the rest.
+local PAVING_BLOCKERS: { [string]: boolean } = table.clone(BLOCKERS)
+PAVING_BLOCKERS.streetscape = nil
 
 local Square = {}
 
@@ -113,31 +117,92 @@ function Square.plan(host: Host, ledger: Ledger): number
 		end)
 	end
 
-	-- Planters at the corners, inside the allée.
+	-- Planters at the corners, inside the allée, each with a clump of palmetto and bird-of-paradise in it.
 	local planter = FURNITURE.planter
 	local inset = SQUARE.allee.inset
-	for k, corner in
+	local corners4 =
 		{ square.min, Vector2.new(square.max.X, square.min.Y), square.max, Vector2.new(square.min.X, square.max.Y) }
-	do
+	for k, corner in corners4 do
 		local toward = (centre - corner).Unit
 		local p = corner + toward * (inset * 1.414 + 9)
 		local pos = Vector3.new(p.X, 0, p.Y)
 		local hx, hz = planter.size.X / 2, planter.size.Z / 2
-		place(
+		local ok = place(
 			`Planter{k}`,
 			CFrame.new(pos),
 			Vector3.new(-hx, 0, -hz),
 			Vector3.new(hx, planter.size.Y + 1.6, hz),
 			function(m)
-				Kit.planter(
+				Kit.trim(
 					m,
 					"",
 					Vector3.new(-hx, -0.5, -hz),
 					Vector3.new(hx, planter.size.Y, hz),
 					Kit.look(planter.color, Enum.Material.Concrete)
 				)
+				Kit.detail(
+					m,
+					"Soil",
+					Vector3.new(-hx + 0.35, planter.size.Y - 0.3, -hz + 0.35),
+					Vector3.new(hx - 0.35, planter.size.Y + 0.02, hz - 0.35),
+					Kit.look(Color3.fromRGB(92, 74, 58), Enum.Material.Ground)
+				)
 			end
 		)
+		if ok and Piece.take(ledger, 1) then
+			local plant = Palms.plant(
+				"",
+				`Planter{k}Plant`,
+				planter.plant,
+				pos + Vector3.new(0, planter.size.Y - 0.1, 0),
+				rng:NextNumber() * 2 * math.pi,
+				planter.plantHeight,
+				planter.size.X
+			)
+			added += Piece.file(host, { plant }, pos.X, pos.Z)
+		end
+	end
+
+	-- The plaza: a terrazzo disc round the fountain, benches and all, and paths out along the diagonals toward the
+	-- corners. Flat paving a car or a player passes over (decor), kept off every gameplay spot; the trees keep off it.
+	local plaza = SQUARE.plaza
+	local walk = Kit.look(plaza.color, plaza.material)
+	local function paving(id: string, frame: CFrame, min: Vector3, max: Vector3, draw: (m: any) -> ())
+		local rect = Piece.rect(frame, min, max)
+		if host.blocked(rect, PAVING_BLOCKERS, 0) then
+			return
+		end
+		local m = Piece.model(id, frame, host.seed)
+		draw(m)
+		if not Piece.take(ledger, #m.specs) then
+			return
+		end
+		for _, spec in m.specs do
+			spec.materialVariant = plaza.variant
+		end
+		added += Piece.finish(host, m)
+		host.reserve(rect, "streetscape")
+	end
+	local pr = plaza.diameter / 2
+	paving("Plaza", CFrame.new(at), Vector3.new(-pr, 0, -pr), Vector3.new(pr, plaza.lift, pr), function(m)
+		Kit.column(m, "", 0, 0, -0.3, plaza.lift, plaza.diameter, walk, "detail")
+	end)
+	for k, corner in corners4 do
+		local dir = (corner - centre).Unit
+		local from = pr - 2
+		local to = (corner - centre).Magnitude - plaza.pathEnd
+		if to - from < 8 then
+			continue
+		end
+		local mid = centre + dir * ((from + to) / 2)
+		local pos = Vector3.new(mid.X, 0, mid.Y)
+		local frame = CFrame.lookAt(pos, pos + Vector3.new(dir.X, 0, dir.Y))
+		local half, w = (to - from) / 2, plaza.path / 2
+		-- A hair under the plaza's top where they meet, so the two never flicker.
+		local min, max = Vector3.new(-w, -0.3, -half), Vector3.new(w, plaza.lift - 0.01, half)
+		paving(`PlazaPath{k}`, frame, min, max, function(m)
+			Kit.detail(m, "", min, max, walk)
+		end)
 	end
 
 	-- The allée: royal palms round the edges, `inset` in, one every `spacing`.

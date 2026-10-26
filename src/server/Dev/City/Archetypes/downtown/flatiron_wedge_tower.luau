@@ -1,24 +1,28 @@
 --!strict
 -- T07 flatiron_wedge_tower (docs/city/ARCHETYPES.md §5, T07): a glass tower on a three-cornered plan with rounded
--- corners, its nose pointing at the street and its two long faces running back from it. White balcony slabs wrap
--- the nose and both long faces every second floor, swelling and shrinking floor by floor like wind on water, with a
--- white floor line on the glass between them; the flat back face carries vertical fins. It stands on a podium of the
--- same plan clad in perforated metal, with a glass shopfront wrapping the nose under a curved canopy, and its crown
--- sweeps up toward the nose.
+-- corners, its nose pointing at the street (swung toward the street corner placement puts at its +x end) and its two
+-- long faces running back from it. White balcony slabs wrap the nose and both long faces every second floor,
+-- swelling and shrinking floor by floor like wind on water, with a white floor line on the glass between them; every
+-- fourth one carries a lit edge round the nose, so the prow shows lines of light at night. The flat back face
+-- carries vertical fins. It stands on a podium of the same plan clad in perforated metal, with a glass shopfront
+-- wrapping the nose under a curved canopy. Its crown is a crest: a row of champagne blades standing on both long
+-- faces, tallest at the nose and falling away toward the back, round a champagne drum at the nose; the blades glow
+-- at night.
 --
--- What makes it itself: a rounded prow at the street, striped with swelling white balcony lines, rising to a swept
--- crown.
+-- What makes it itself: a rounded prow at the street, striped with swelling white balcony lines, rising to a crest
+-- that sweeps up to the nose.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/flatiron_wedge_tower.
--- Variants: palette (3 glass, metal and crown sets), crown (1 a champagne metal screen sweeping up both long faces to
--- a glowing nose, 2 two white rounded lobes at different heights over the nose and a back corner), rhythm (1 the nose
--- on the site's middle, 2 the nose swung toward one side), mirror.
+-- Variants: palette (3 glass, metal and crown sets; the crest glows cool white or amber), crown (1 the champagne
+-- crest (a stepped screen of panels along both faces) and drum, 2 two white rounded lobes at different heights over
+-- the nose and a back corner, as the real tower's top), rhythm (1 the nose
+-- a little toward the corner end, 2 swung right out to it), mirror (placement mirrors it to the street corner).
 --
--- Seen in Studio 2026-10-25, day and night (docs/images/city/flatiron_wedge_tower-day.jpg, -night.jpg).
--- Preview check: the plan reads as a wedge from the street at 45 degrees; the rounded corners
--- are smooth (a column each) with no seam where the long-face skins meet them; the balcony slabs' square ends at the
--- back corners look clean; the wave of the slabs reads as movement, not noise (tune SHAPE.proud); the prisms' sloped
--- faces never show (they are inside the skins); the crown screens emerge from the roof cleanly; nothing pokes past the
--- footprint at 70 and 130 wide, 46 and 53 deep.
+-- Preview check (the Studio step): the plan reads as a wedge from the street at 45 degrees; the rounded corners are
+-- smooth (a column each) with no seam where the long-face skins meet them; the balcony slabs' square ends at the
+-- back corners look clean; the wave of the slabs reads as movement, not noise (tune SHAPE.proud and SHAPE.wave); the
+-- prisms' sloped faces never show (they are inside the skins); the crest's panels stand along their faces, step
+-- down evenly from the nose and read against the sky from the street and from across downtown, and glow at night
+-- with the prow's lit edges under them; nothing pokes past the footprint at 70 and 130 wide, 46, 53 and 100 deep.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -28,6 +32,7 @@ local Types = require(script.Parent.Parent.Parent.Types)
 
 local P = City.palettes
 local KIT = City.kit
+local NIGHT = require(ReplicatedStorage.Shared.Config.Environment).nightLights
 local rgb = Color3.fromRGB
 
 local FRONT, BACK = Enum.NormalId.Front, Enum.NormalId.Back
@@ -42,26 +47,34 @@ local SHAPE = {
 	base = { 44, 104 }, -- ...and between these
 	sideRoom = 5, -- the base's ends keep this far from the site's sides (the slabs swing out past them)
 	radius = { 0.14, 6, 10 }, -- the rounded corners: share of the base, clamped
-	skew = { 0, 0.7 }, -- by rhythm: how far the nose swings toward one side, share of the room it has
+	skew = { 0.35, 0.8 }, -- by rhythm: how far the nose swings toward the corner end, share of the room it has
 	skewKeep = 4, -- the nose's centre keeps this far inside the back corners' centres
 	level = 10, -- a podium level
 	podiumShare = 0.1, -- the podium's height, share of the tower's (whole levels)...
 	levels = { 3, 5 }, -- ...between these
 	podiumGrow = 1.5, -- the podium stands this far out of the tower's outline
 	hair = 0.02, -- so no two of a body's pieces share a top or a bottom
-	slab = 1.2, -- balcony slab thickness
+	slab = 1.6, -- balcony slab thickness (Studio round 1: 1.2 read as hairlines from across downtown)
 	every = 24, -- a balcony slab every second floor
-	proud = { 2.6, 1.4 }, -- the slabs' reach past the glass: mean and swing
-	wave = 0.8, -- radians of swing from one slab to the next
+	proud = { 3, 1.6 }, -- the slabs' reach past the glass: mean and swing (at most 4.6, under sideRoom)
+	wave = 0.7, -- radians of swing from one slab to the next
 	tuck = 1.5, -- the slabs reach this far back into the glass
 	firstSlab = 18, -- the lowest slab stands at least this far over the podium
+	litEvery = 4, -- every this many slabs, a lit edge under the nose's disc
 	canopy = { reach = 3.5, thick = 1.2, share = 0.5 }, -- share: how far along the long faces it wraps
 	shopShare = 0.45, -- how far along the long faces the shopfront wraps
 	cap = 1.2, -- the podium cap's reach past the podium
-	crownRise = 26, -- crown 1: the crown's height over the roof at the nose
-	crownSink = 12, -- the crown's columns start this far under the roof
-	screen = 1.2, -- crown 1: the screens' thickness
-	screenSink = 6, -- the screens' low ends start this far under the roof
+	crownSink = 12, -- the crown's drum and lobes start this far under the roof
+	crest = {
+		rise = 28, -- the nose drum's top over the roof
+		lid = 1.2, -- the drum's lid
+		blades = { 0.13, 0.33, 0.53, 0.73 }, -- where the screen's panels stand along each long face (share from the nose)
+		panel = 0.17, -- each panel's width along the face, share of the face (gaps of 0.03 between them)
+		low = 6, -- the last panel's top over the roof, beyond the falling line
+		sink = 8, -- the panels start this far under the roof
+		thick = 1.4, -- across the face
+		out = 0.4, -- the panels stand this far out of the glass
+	},
 	lobes = { 16, 4 }, -- crown 2: the nose lobe's and the back lobe's tops over the roof...
 	lobeLid = { thick = 1.4, over = 1.2 }, -- ...each under a lid this thick, overhanging this far
 	finEvery = 9, -- studs between the back face's fins
@@ -69,31 +82,36 @@ local SHAPE = {
 	finProud = 3,
 }
 
--- Glass, slabs and fins, the podium's metal and its perforation lines, the crown's champagne and its night kind.
+-- Glass, slabs and fins, the podium's metal and its perforation lines, the crown's champagne and its night kind. The
+-- glass is deep so the white balcony lines stand out of it as in the photos (Studio round 1: aqua and silver glass
+-- mirrored the pale sky and the white lines vanished into it; a sandy podium read olive).
 local PALETTES = {
 	{
-		glass = P.glass.aqua,
+		glass = P.glass.teal,
 		slab = P.frame.white,
-		podium = rgb(188, 184, 174),
-		lines = rgb(232, 230, 224),
-		crown = rgb(196, 176, 136),
+		podium = rgb(178, 182, 186),
+		lines = rgb(226, 228, 230),
+		crown = rgb(200, 180, 138),
 		neon = "crown",
-	},
-	{
-		glass = P.glass.silver,
-		slab = P.frame.white,
-		podium = rgb(168, 170, 172),
-		lines = rgb(222, 224, 226),
-		crown = rgb(182, 160, 118),
-		neon = "neonAmber",
+		crestNight = rgb(112, 132, 160),
 	},
 	{
 		glass = P.glass.blue,
+		slab = P.frame.white,
+		podium = rgb(150, 156, 162),
+		lines = rgb(222, 226, 230),
+		crown = rgb(186, 164, 120),
+		neon = "neonAmber",
+		crestNight = rgb(170, 112, 44),
+	},
+	{
+		glass = P.glass.navy,
 		slab = P.frame.warm,
-		podium = rgb(196, 190, 178),
-		lines = rgb(236, 232, 224),
-		crown = rgb(204, 186, 148),
+		podium = rgb(204, 194, 176),
+		lines = rgb(240, 234, 222),
+		crown = rgb(208, 190, 150),
 		neon = "crown",
+		crestNight = rgb(150, 130, 96),
 	},
 }
 
@@ -253,7 +271,8 @@ local function build(m: Types.Model)
 	ring("PodiumCap", pTop + SHAPE.slab / 2, r + g - 1, r + g + SHAPE.cap, SHAPE.slab, 1)
 
 	-------------------------------------------------------------------------------------------------------
-	-- Tower: glass on the plan with a white floor line every floor, swelling balcony slabs every second floor
+	-- Tower: glass on the plan with a white floor line every floor, swelling balcony slabs every second floor, a lit
+	-- edge round the nose under every fourth
 	-------------------------------------------------------------------------------------------------------
 	local tower = body("Tower", pTop - 0.5, H, 0, Kit.glassLook(pal.glass))
 	for i, side in sides do
@@ -268,7 +287,23 @@ local function build(m: Types.Model)
 		count += 1
 		local p = SHAPE.proud[1] + SHAPE.proud[2] * math.sin(count * SHAPE.wave + phase)
 		-- Each slab covers the floor line drawn on the glass at its height.
-		ring(`Slab{count}`, y + SHAPE.slab / 2 - 0.1, r - SHAPE.tuck, r + p, SHAPE.slab, 1)
+		local sy = y + SHAPE.slab / 2 - 0.1
+		ring(`Slab{count}`, sy, r - SHAPE.tuck, r + p, SHAPE.slab, 1)
+		if count % SHAPE.litEvery == 2 then
+			-- A lit edge tucked under the nose's disc, a little inside it.
+			local edge = Kit.disc(
+				m,
+				`SlabLed{count}`,
+				A.X,
+				A.Z,
+				sy - SHAPE.slab / 2 - 0.15,
+				2 * (r + p) - 0.4,
+				0.4,
+				white,
+				"detail"
+			)
+			Kit.lit(edge, "ledEdge")
+		end
 		y -= SHAPE.every
 	end
 
@@ -281,39 +316,44 @@ local function build(m: Types.Model)
 	-------------------------------------------------------------------------------------------------------
 	local dn = 2 * r + 1.2
 	if variant.crown == 1 then
-		-- A champagne screen sweeping up both long faces from nothing at the back corners to a glowing nose.
-		local rise = SHAPE.crownRise
-		local nose = Kit.column(
-			m,
-			"CrownNose",
-			A.X,
-			A.Z,
-			H - SHAPE.crownSink,
-			H + rise,
-			dn,
-			Kit.look(pal.crown, Enum.Material.SmoothPlastic),
-			"trim"
-		)
-		Kit.lit(nose, pal.neon)
+		-- The crest: a champagne drum at the nose under a lid, a lit ring round it, and on each long face a row of
+		-- blades square to the face, tallest by the nose, falling toward the back; the blades glow at night.
+		local cr = SHAPE.crest
 		local metal = Kit.look(pal.crown, Enum.Material.Metal)
-		local base = H - SHAPE.screenSink
-		local tall = rise + SHAPE.screenSink
+		local drumTop = H + cr.rise
+		Kit.column(m, "CrownDrum", A.X, A.Z, H - SHAPE.crownSink, drumTop, dn, metal, "trim")
+		Kit.disc(m, "CrownLid", A.X, A.Z, drumTop + cr.lid / 2, dn + 2, cr.lid, metal)
+		Kit.lit(Kit.disc(m, "CrownRing", A.X, A.Z, drumTop - 3, dn + 0.4, 0.8, white, "detail"), pal.neon)
+		local bladeLook = Kit.look(pal.crown, Enum.Material.SmoothPlastic)
+		local fall = cr.rise - cr.low
 		for _, side in sides do
 			local n = side.normal
-			local low = side.corner + n * (r + 0.3)
-			local high = A + n * (r + 0.3)
-			local d = high - low
-			local c = (low + high) / 2 + Vector3.new(0, base + tall / 2, 0)
-			-- A WedgePart is tallest at its back (+Z): look toward the low end.
-			Kit.oriented(
-				m,
-				"Screen" .. side.key,
-				"wedge",
-				CFrame.lookAt(c, c - d),
-				Vector3.new(SHAPE.screen, tall, d.Magnitude),
-				metal,
-				"trim"
-			)
+			local run = side.corner - A
+			local d = run.Unit
+			-- Panels standing along the face, a little out of the glass: a stepped champagne screen falling from the
+			-- nose (Studio round 1: blades square to the face read as toothpicks from the street).
+			local wide = run.Magnitude * cr.panel
+			for i, t in cr.blades do
+				local top = H + cr.low + fall * (1 - t)
+				local y0 = H - cr.sink
+				local foot = A + run * t + n * (r + cr.out + cr.thick / 2)
+				local c = foot + Vector3.new(0, (y0 + top) / 2, 0)
+				local blade = Kit.oriented(
+					m,
+					`Blade{side.key}{i}`,
+					"block",
+					CFrame.fromMatrix(c, d, Vector3.yAxis),
+					Vector3.new(wide, top - y0, cr.thick),
+					bladeLook,
+					"trim"
+				)
+				Kit.lit(blade, pal.neon)
+				-- Its own, dimmer night colour: the kind's colour on panels this big blew out to flat white blocks
+				-- (Studio round 2); this reads as champagne metal lit from within.
+				local attributes: { [string]: any } = blade.attributes or {}
+				attributes[NIGHT.nightColorAttribute] = pal.crestNight
+				blade.attributes = attributes
+			end
 		end
 		Kit.trim(m, "ScreenBack", Vector3.new(B.X, H - 2, zK - 1.2), Vector3.new(C.X, H + 5, zK + 0.2), metal)
 	else

@@ -234,7 +234,7 @@ Heights in studs. Reuse is the most copies the map should hold. Parts are plain 
 | C03 | harbor_market_pavilions | bayfront | Bayside Marketplace | F5 | 30 (+wheel 160) | 1 | 150 / 100 |
 | C04 | bayfront_arena | bayfront | Kaseya Center | F5 | 76 | 1 | 75 / 55 |
 | C05 | domed_sanctuary | beach civic | Temple Emanu-El | F2 | 36 (+dome 78) | 1 | 25 / 25 |
-| C06 | folded_roof_marine_stadium | beach scenery | Miami Marine Stadium | waterside | 52 | 1 | 45 / 45 |
+| C06 | folded_roof_lake_stadium | beach scenery | Miami Marine Stadium | waterside | 52 | 1 | 45 / 45 |
 | C07 | lighthouse_water_tower | residential scenery | Alhambra Water Tower | 30 x 30 | 112 | 1 | 22 / 22 |
 | C08 | lifeguard_stand | beach scenery | Miami Beach lifeguard towers | 14 x 18 | 22 | 12 | 13 / 13 |
 | C09 | causeway_bridge | lake | Venetian Causeway | the bridge | deck 20.2 | 1 | 164 / 90 |
@@ -274,6 +274,14 @@ Between cubes a recessed joint: a dark box 58 x 2 x 58, #1E2328 SmoothPlastic, s
 
 **Variants.** One-off. The zig-zag sequence and which cubes turn come from the seed; mirror to suit the site.
 
+**As built (2026-10-26, after the renderings).** The cubes are flush silver glass held by slim metal angles, a base
+plate (the soffit under each overhang) and a top band that is the ring of light, not chunky white frames; none turn
+(the renderings show them square). Each slides about a sixth of its width (about 12 of 72). One dark core runs up the
+stack's axis and shows only in the 6-stud joints. Rhythms: zig-zag, spiral, a lean that snaps back.
+*Studio pass (2026-10-26):* the core alone showed sky beside it in every joint, so the cubes looked balanced on a
+stalk. Each joint is now a dark slab filling the overlap of the two cubes it joins (2.5 in from both), a full-width
+shadow line by day; at night the joints glow (`crown`) instead of the top bands: nine seams of light. 130 to 152 parts.
+
 ### T02 `exoskeleton_tower`
 Downtown, landmark, reuse 1, F3.
 
@@ -302,6 +310,15 @@ dark.
 
 **Parts.** Core 1, ribs 4 x 2 x 12 = 96, legs and flares 24, slab edges 20, roof and helipad 4, plaza 3: 148 plain;
 40 U (one union per face plus the slabs).
+
+**As built (2026-10-26, after street photos).** Per face a white trunk rises in the middle and splits at a fifth of
+the height into two ribs that bow out round a tall eye of dark glass (three fifths of the face at its widest), cross
+near the top and sweep out to the corners, which rise into four pointed horns over a concave crown. At the street each
+corner stands on a leg; between leg and trunk an arch (haunches cut round its top) shows a grey louvred screen over the
+lobby, under a white band. Above it, round balconies wrap each corner every two floors, reaching the ribs, so the
+stacks shrink and grow with the eye. About 215 parts.
+*Studio pass (2026-10-26):* reads as its inspiration from the street to across the city; the arches' screens had one
+texture tile their full height, which blurred into a smear, and now tile in 3-stud louvre rows. 164 to 211 parts.
 
 **Variants.** One-off.
 
@@ -333,6 +350,18 @@ Config (section 11). Garage LED strip.
 **Parts.** Garage 10, tiers 3 x (curved face 8 + flat facets 3) = 33, caps 3 x 8 = 24, ribbons 30, crown 3, misc 10:
 110 plain, 70 U.
 
+**As built (2026-10-26, after photos).** The photos settle the open point above: the tiers are arcs in **plan**, not
+quarter rounds in section. The tower is a D (flat back and sides, a convex arc to the show face); each tier's arc
+stands about 12 behind the one below and each tier is a little narrower, so the show face climbs as three stacked
+curved drums while the flat sides run up. Notched dark corners where arc meets side. The skin is a pinstripe (a pale
+band and a glass ribbon every floor, or half floor); the top floors of each tier are its light band (crownShow), which
+by day is a shade paler, so at night the tower is three glowing curved rings. About 111 parts.
+*Studio pass (2026-10-26):* blue glass with white pinstripes, a 75 x 72 plan with a deep arc and 12-stud setbacks
+read as any round glass condo. Now: a pale aluminium skin with a dark glass ribbon per stripe (sources describe the
+shell as "black and white bars"), the light bands dark glass by day (each tier ends in a dark crown band, lit at
+night), a 90 x 64 plan with a gentle arc (bulge 0.35 of the half-width), 16-stud setbacks and each tier 10 % narrower.
+98 to 110 parts.
+
 **Variants.** One-off.
 
 ### T04 `sail_supertall`
@@ -361,6 +390,18 @@ edge `led_edge`.
 22 U. Without CSG the curved slabs alone are over 200 facets, so this one needs CSG.
 
 **Variants.** One-off; mirror to point the sail at the lake.
+
+**As built (2026-10-26, after photos; no CSG).** Plan a teardrop: a round glass bow (a cylinder) and two convex faces
+tapering to a white spine at the tail, the front fuller. The faces are solid glass facets reaching the middle line, so
+cuts and roofs read solid. White bands every two (or three) floors wrap the bow (a disc) and run along the faces
+(straight strips, one per two facets), over glass ruled white every floor; every fourth row is a ring of light. At
+three quarters of the height the bow stops at a dark lip deck, and the head rises behind it with its leading edge
+raked forward over the lip (white soffit wedges under a dark raked edge), as in the photos. About 195 parts.
+*Studio pass (2026-10-26):* the soffit wedges followed each facet's chord, not the sail's axis, so they and the head's
+glass (which reached in toward the bow, where the cut is higher) left dark slivers and blue triangles under the head.
+Now the soffit is four wedges along the sail's axis, one smooth plane, each with a white core block over it, and the
+head's facets are 3-stud glass skins standing on the cut. Palette 1's glass is paler and the bands bolder (2 thick),
+so the sail reads pale silver, not blue. 142 to 202 parts.
 
 ### T05 `sawtooth_office_tower`
 Downtown, reuse 1, F4.
@@ -841,6 +882,9 @@ eyebrows.
 
 **Parts.** Body 1, piers 6, bands 11, crown 6, entry 1, portholes 3, eyebrows 3, sign 1, terrace 1: 33 plain, 18 U.
 
+**As built (Studio pass, wave 3).** The centre bays are coloured spandrel bands of punched casement windows between
+stone margins and piers (one glass run read as an office curtain wall). 68 to 78 parts of 80.
+
 **Variants.** 11 to 13 floors; stone ivory or deco_peach.
 
 ### B05 `streamline_round_corner`
@@ -868,6 +912,9 @@ Limestone.
 **Parts.** Body 3, eyebrows 9, glass 9, parapet 3, portholes 2, base 2, sign 1, door 1, terrace 2, corners 8: 40 plain,
 18 U.
 
+**As built (Studio pass, wave 3).** Crown 2 is a flat-topped bay with a name blade standing on each round drum, after
+the inspiration's 1948 postcard; the half-round pediment is gone.
+
 **Variants.** Pastel; one or both corners rounded.
 
 ### B06 `corner_spire_hotel`
@@ -893,6 +940,10 @@ curved canopy disc over the corner door.
 
 **Parts.** Wings 2, bands 6, corner 1, fins 3, spire 3, portholes 10, canopy 1, sign 1, door 1, terrace 2: 30 plain,
 16 U.
+
+**As built (Studio pass, wave 3).** Crown 1's lettered panel faces the corner across the diagonal, with two return
+fins in the trim colour. In the county it is a one-off at the hotel row's x = 56 corner (the row has few corners 48
+studs wide), plus any copies the per-plot draw finds room for.
 
 **Variants.** Which wing is longer (mirror); band colour.
 
@@ -1055,9 +1106,12 @@ coral and white or teal and white.
 ## 7. Residential
 
 Houses stand on F1 lots in Riverside (and fill-in elsewhere), each with a palm or two from the scenery step. The
-claimable houses on the 33 HousePlots are built by Services/HouseService from Config/Houses (outside
-Workspace.Map.Generated): if those get a Miami look too, R01, R03 or R06 can skin them while keeping the plot frame,
-the 16 x 20 garage bay and the 9-stud door.
+claimable houses on the 26 HousePlots are built by Services/HouseService from Config/Houses (outside
+Workspace.Map.Generated). Since wave 3 they come in four hand-built styles, dealt out in turn by plot order so
+next-door houses always differ, each keeping the plot frame, the 16-wide garage bay, the garage door's swing and the
+home charger: `tile_tower_villa` (after R01), `tropical_modern` (after R06), `butterfly_modern` (after the 1950s
+seaside modern houses of the beach islands, with their butterfly roofs) and `coral_rock_cottage` (after R02). Their
+inspirations stay here; no real name is in game code.
 
 ### R01 `mediterranean_villa`
 Residential (Coral Gables), reuse 22, F1.
@@ -1499,7 +1553,7 @@ lantern.
 
 **Parts.** Base 2, portal 3, towers 4, drum 1, dome 1, lantern 2, steps 2, lamp 1, plaza 4, windows 5: 25 plain, 25 U.
 
-### C06 `folded_roof_marine_stadium`
+### C06 `folded_roof_lake_stadium`
 Beach scenery, on the lake shore facing the water, reuse 1.
 
 **Inspiration.** Miami Marine Stadium, Virginia Key. Hilario Candela, in his twenties, with engineer Jack Meyer, 1963. A

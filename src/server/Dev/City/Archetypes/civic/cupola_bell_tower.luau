@@ -1,19 +1,21 @@
 --!strict
 -- C01 cupola_bell_tower (docs/city/ARCHETYPES.md §9, C01): downtown's Spanish Renaissance bell tower, a pale stucco
 -- shaft among the glass. A four-storey base with a two-storey arched portal under a broken pediment, a lower press
--- wing under a clay-tile roof, then the square shaft: stone corner piers, columns of paired windows, stone belt
--- courses, a frieze and a deep cornice. On top an open belvedere, three arches a side round a lit core, corner
--- obelisks, then an octagonal cupola with arched windows, a copper dome, a gilded lantern and a weather vane.
+-- wing under a clay-tile roof, then the square shaft, mostly wall as a bell tower is: stone corner piers, narrow
+-- columns of windows, stone belt courses, a frieze and a deep cornice. On top an open belvedere, three arches a side
+-- round a lit core, corner obelisks, then an octagonal cupola with arched windows, a copper dome, a gilded lantern and
+-- a weather vane.
 --
 -- What makes it itself: a pale bell tower ending in an open arcade, an octagonal cupola and a green copper dome.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/cupola_bell_tower.
 -- Variants: palette (1 cream and copper, 2 ochre and bronze, 3 white and deep teal), crown (1 one octagonal stage with
 -- arched windows under a full dome, 2 two stepped octagonal stages with corner urns under a smaller dome), rhythm (1
--- three bays a face and three belts, 2 two bays a face, five belts and iron balconies on the front), mirror (the press
--- wing's side).
+-- three bays a face, a paired window column between two single ones, and three belts; 2 two paired columns a face,
+-- five belts and iron balconies on the front), mirror (the press wing's side).
 --
 -- Previewing (Studio helper): Preview.build("cupola_bell_tower", { width = 104, depth = 60 }) for the full look
--- (wing, 36-stud tower); also width 64, depth 40 (the smallest: no wing, a 26-stud tower). Check: the belvedere's
+-- (wing, 36-stud tower); also width 64, depth 40 (the smallest: no wing, a 26-stud tower). Check: the shaft reads
+-- as pale stucco with narrow window columns (not an office grid), the corner piers proud; the belvedere's
 -- arches read as arches (dark half-discs over the openings) from the street, the cupola reads as an octagon, not a
 -- star; the dome sits in the cornice disc with no gap; at night the belvedere and the portal glow warm, the lantern
 -- amber, and the wash lights the belvedere front.
@@ -57,7 +59,9 @@ local SHAPE = {
 	tower = { share = 0.42, min = 26, max = 36, setBack = 1.5 },
 	towerFloor = 12,
 	pier = { wide = 3.2, proud = 0.7 }, -- corner piers
-	strip = { share = 0.5, max = 9, head = 1.0, litShare = 0.3 }, -- window columns on the shaft
+	-- Window columns on the shaft, as shares of their bay: a bell tower is mostly wall, so the windows are narrow.
+	-- Rhythm 1: a paired column in the middle bay, single ones either side; rhythm 2: two paired columns.
+	strip = { centre = 0.46, side = 0.22, pair = 0.36, max = 9, head = 1.0, litShare = 0.22 },
 	belt = { thick = 1.4, proud = 1.1 },
 	frieze = 4, -- the ornament band under the cornice
 	cornice = { thick = 2.2, proud = 2.0 },
@@ -66,7 +70,9 @@ local SHAPE = {
 		inset = 1.6, -- from the shaft's faces
 		corner = 4.6, -- corner piers, at most this or 18 % of the side
 		post = 1.8,
-		core = 2.6, -- the lit core sits this far behind the arches
+		-- The lit core sits this far behind the arches: deep enough for a shadow, shallow enough that the posts' sides
+		-- don't pinch the openings into keyholes under the arch discs when seen from an angle.
+		core = 1.5,
 		lintel = 5.5,
 		openings = 3,
 		entablature = { thick = 1.6, proud = 1.2 },
@@ -481,26 +487,28 @@ local function build(m: Types.Model)
 		)
 	end
 	-- A column of windows in each bay between the piers, whole floors down from under the frieze, the stucco showing
-	-- between them: paired windows in three bays (rhythm 1) or triple windows in two (rhythm 2). A few glow at night.
+	-- wide between them: a paired column in the middle bay and single ones either side (rhythm 1), or two paired
+	-- columns (rhythm 2). A few glow at night.
 	local ws = SHAPE.strip
 	local bays = if rhythm == 1 then 3 else 2
-	local panes = if rhythm == 1 then 2 else 3
 	local inner = pw2 - pr -- the piers reach this far onto each face
 	local bayW = (T - 2 * inner) / bays
-	local sw = math.min(bayW * ws.share, ws.max)
 	local sTop = pTop - ws.head
 	local nFloors = math.max(1, math.floor((sTop - baseTop - SHAPE.parapet - 1) / SHAPE.towerFloor))
 	local sBottom = sTop - nFloors * SHAPE.towerFloor
 	local litRng = Kit.rng(m, 3)
-	local stripXs: { number } = {}
+	local stripXs: { { x: number, w: number } } = {}
 	for f, face in FACES do
 		local front = face == "front" or face == "back"
 		local s0 = (if front then tx0 else tz0) + inner
 		local plane = if face == "front" then tz0 elseif face == "back" then tz1 elseif face == "left" then tx0 else tx1
 		for b = 1, bays do
 			local a = s0 + bayW * (b - 0.5)
+			local share = if rhythm == 2 then ws.pair elseif b == 2 then ws.centre else ws.side
+			local panes = if rhythm == 1 and b ~= 2 then 1 else 2
+			local sw = math.min(bayW * share, ws.max)
 			if face == "front" then
-				table.insert(stripXs, a)
+				table.insert(stripXs, { x = a, w = sw })
 			end
 			local lo, hi = facePanel(face, plane, a - sw / 2, a + sw / 2, sBottom, sTop, 0.08, 0.3)
 			Kit.glass(m, `Windows{f}{b}`, lo, hi, DARK, {
@@ -535,7 +543,8 @@ local function build(m: Types.Model)
 		local bl = SHAPE.balcony
 		for j = math.max(1, belts - 1), belts do
 			local y = beltYs[j]
-			for b, x in stripXs do
+			for b, strip in stripXs do
+				local x, sw = strip.x, strip.w
 				Kit.detail(
 					m,
 					`Balcony{j}{b}`,

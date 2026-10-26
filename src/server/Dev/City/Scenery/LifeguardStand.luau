@@ -11,7 +11,7 @@
 --
 -- Drawn with the city kit in the stand's own frame (Dev/City/Scenery Piece): x across, y up from the sand, z back from
 -- its front, which faces the sea. The legs, deck, hut and ramp are solid (a player can climb up); the rest is decor.
--- Sizes and colour schemes: Config/CityScenery lifeguard. 18 to 23 parts.
+-- Sizes and colour schemes: Config/CityScenery lifeguard. 18 to 25 parts.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -188,13 +188,32 @@ function LifeguardStand.build(m: Model, shape: string, scheme: Scheme, number: n
 		local back = front + hut.Z
 		local roof = deck + hut.Y
 		Kit.box(m, "Hut", Vector3.new(-hx, deck, front), Vector3.new(hx, roof, back), body)
+		-- The window toward the sea: glass in a white frame, split in three by two mullions (a crisp edge round the
+		-- dark glass, not a flat dark panel).
+		Kit.trim(
+			m,
+			"WindowFrame",
+			Vector3.new(-hx + 0.45, wy0 - 0.35, front - 0.1),
+			Vector3.new(hx - 0.45, wy1 + 0.35, front + 0.3),
+			white
+		)
 		Kit.box(
 			m,
 			"Window",
-			Vector3.new(-hx + 0.8, wy0, front - 0.06),
+			Vector3.new(-hx + 0.8, wy0, front - 0.14),
 			Vector3.new(hx - 0.8, wy1, front + 0.3),
 			Kit.glassLook(glass, 0.2)
 		)
+		for i, sx in { -1, 1 } do
+			local x = sx * (hx - 0.8) / 3
+			Kit.detail(
+				m,
+				`Mullion{i}`,
+				Vector3.new(x - 0.12, wy0, front - 0.2),
+				Vector3.new(x + 0.12, wy1, front - 0.1),
+				white
+			)
+		end
 		Kit.trim(
 			m,
 			"Belt",

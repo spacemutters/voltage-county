@@ -3,8 +3,8 @@
 -- block on a corner whose street corner is a round drum; the upper floors overhang a recessed café porch under a sloped
 -- awning; pastel eyebrows over every floor wrap the drum and run on down the side street; a fluted pilaster beside the
 -- drum rises past the roof; and its signature, a little lighthouse standing on the drum: a plinth drum with a pastel
--- ring, a slim white shaft, a gallery ledge, a see-through glass lantern round a lamp that glows at night, and on top a
--- pastel dome or a spire.
+-- ring, a stout white shaft carrying the corner drum on up, a gallery ledge, a fat see-through glass lantern behind six
+-- mullions round a lamp that glows at night, a broad saucer hat, and on top a pastel dome or a spire.
 --
 -- What makes it itself: a lighthouse with a glowing lantern on the hotel's rounded corner.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/lighthouse_corner_hotel.
@@ -58,15 +58,19 @@ local SHAPE = {
 	towerInset = 2.2, -- its plinth drum is this much narrower than the corner drum
 	plinth = 3.5, -- the plinth drum's height over the roof
 	ring = 0.6, -- the pastel ring round the plinth's top
-	shaft = { 8, 7.4 }, -- by crown: the lighthouse shaft's diameter at most...
+	shaft = { 12, 10 }, -- by crown: the lighthouse shaft's diameter at most (its lantern 1.4 narrower: a fat harbour lantern)...
+	shaftNarrow = 1.8, -- ...and at least this much narrower than the plinth drum (it reads as the corner drum carrying on)
 	shaftRise = { 8, 6 }, -- ...and its height
-	lantern = { 5, 5.5 }, -- lantern height
+	lantern = { 5.5, 6 }, -- lantern height
 	glassBlock = 1.4, -- crown 1: the glass block band starts this far up the shaft
 	stage = 3.6, -- crown 2: the upper drum between the two galleries
 	gallery = 0.8,
 	post = 0.5,
+	posts = 6, -- mullions round the lantern glass
+	lamp = 0.58, -- the lamp's share of the lantern's diameter: big enough to read as a lit lantern at night
 	hat = 0.9, -- crown 1's hat; crown 2's is the same thickness
-	dome = 5.2, -- crown 1: the pastel dome's diameter at most
+	hatOver = { 2, 1.5 }, -- by crown: the hat's overhang past the lantern all round (a broad saucer, like a harbour light)
+	dome = 7, -- crown 1: the pastel dome's diameter at most
 	spire = 3.4,
 }
 
@@ -335,7 +339,7 @@ local function build(m: Types.Model)
 	local plinthTop = H + SHAPE.plinth
 	Kit.column(m, "TowerBase", cx, cz, H - 0.3, plinthTop, dB, white)
 	Kit.disc(m, "PlinthRing", cx, cz, plinthTop + SHAPE.ring / 2, dB + 1.2, SHAPE.ring, accent)
-	local dS = math.min(dB - 3, SHAPE.shaft[crown])
+	local dS = math.min(dB - SHAPE.shaftNarrow, SHAPE.shaft[crown])
 	local shaftTop = plinthTop + SHAPE.ring + SHAPE.shaftRise[crown]
 	Kit.column(m, "Shaft", cx, cz, plinthTop + SHAPE.ring - 0.1, shaftTop, dS, white)
 	if crown == 1 then
@@ -385,28 +389,30 @@ local function build(m: Types.Model)
 			cz,
 			ly0 + 0.5,
 			ly1 - 0.6,
-			dL * 0.45,
+			dL * SHAPE.lamp,
 			Kit.look(lamp.day, Enum.Material.SmoothPlastic),
 			"detail"
 		),
 		lamp.kind
 	)
 	local pr = dL / 2 - 0.1
-	for i = 1, 4 do
-		local a = math.pi / 4 + (i - 1) * math.pi / 2
+	local np = SHAPE.posts
+	for i = 1, np do
+		local a = math.pi / np + (i - 1) * 2 * math.pi / np
 		Kit.column(m, `Post{i}`, cx + pr * math.cos(a), cz + pr * math.sin(a), ly0, ly1, SHAPE.post, white, "detail")
 	end
+	local hatD = dL + 2 * SHAPE.hatOver[crown]
 	if crown == 1 then
-		-- A wide hat, then a pastel dome on a short drum (its lower half inside the drum and the hat, so none of it shows
-		-- through the lantern glass) and a ball finial.
-		Kit.disc(m, "Hat", cx, cz, ly1 + SHAPE.hat / 2, dL + 2.6, SHAPE.hat, white)
+		-- A broad saucer hat, then a pastel dome on a short drum (its lower half inside the drum and the hat, so none of it
+		-- shows through the lantern glass) and a ball finial.
+		Kit.disc(m, "Hat", cx, cz, ly1 + SHAPE.hat / 2, hatD, SHAPE.hat, white)
 		local dD = math.min(SHAPE.dome, dL - 0.6)
 		local c = ly1 + dD / 2
 		Kit.column(m, "DomeDrum", cx, cz, ly1 + SHAPE.hat - 0.1, c, dD + 0.1, white)
 		Kit.ball(m, "Dome", Vector3.new(cx, c, cz), dD, accent, "trim")
 		Kit.ball(m, "Finial", Vector3.new(cx, c + dD / 2 + 0.5, cz), 1.2, white)
 	else
-		Kit.disc(m, "Hat", cx, cz, ly1 + SHAPE.hat / 2, dL + 2.2, SHAPE.hat, white)
+		Kit.disc(m, "Hat", cx, cz, ly1 + SHAPE.hat / 2, hatD, SHAPE.hat, white)
 		local top = ly1 + SHAPE.hat
 		Kit.disc(m, "HatTop", cx, cz, top + 0.4, dL - 0.8, 0.8, white)
 		top += 0.8

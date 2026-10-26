@@ -44,6 +44,7 @@ local function spread(color: Color3): number
 	return (math.max(color.R, color.G, color.B) - math.min(color.R, color.G, color.B)) * 255
 end
 
+-- Made-up keyframes leave the optional grade and atmosphere fields out (they fall back to the scene's).
 local function keyframe(clock: number, value: number, brightness: number): Environment.Keyframe
 	local color = Color3.new(value, value, value)
 	return {
@@ -98,8 +99,18 @@ return function(t: Harness.Api)
 					t.expect(frame.bloomIntensity).toBeGreaterThan(0)
 					t.expect(frame.bloomIntensity).toBeLessThan(1.5)
 					t.expect(frame.bloomThreshold).toBeGreaterThan(1.5)
-					-- The sun tint adds to the sun: kept small, so white walls never wash out.
-					t.expect(luminance(frame.colorShiftTop)).toBeLessThan(0.3)
+					-- The sun tint adds to the sun: kept under half, so white walls never wash out (golden hour's is the
+					-- strongest, with the sun dimmed under it so white takes the colour).
+					t.expect(luminance(frame.colorShiftTop)).toBeLessThan(0.5)
+					-- The grade's tint stays near white (a cast, not a filter), and the night's haze stays sane.
+					local tint = frame.tint
+					if tint then
+						t.expect(math.min(tint.R, tint.G, tint.B)).toBeGreaterThan(0.75)
+					end
+					local haze = frame.haze
+					if haze then
+						t.expect(haze >= 0 and haze <= 3).toBe(true)
+					end
 				end
 			end)
 
@@ -125,8 +136,11 @@ return function(t: Harness.Api)
 				t.expect(#scene.toneMapper.name).toBeGreaterThan(0)
 			end)
 
-			t.it("puts the sun over a subtropical city, with crisp shadows and sky light", function()
-				t.expect(scene.geographicLatitude).toBeNear(25.8, 0.5)
+			t.it("puts a high sun a little to the south, with crisp shadows and sky light", function()
+				-- The engine draws the midsummer sun: under 40 it passes nearly overhead and south faces never see it.
+				t.expect(scene.geographicLatitude).toBeGreaterThan(40)
+				t.expect(scene.geographicLatitude).toBeLessThan(56)
+				t.expect(#scene.sky.name).toBeGreaterThan(0)
 				t.expect(scene.globalShadows).toBe(true)
 				t.expect(scene.shadowSoftness).toBeLessThan(0.2)
 				t.expect(scene.environmentSpecularScale).toBe(1)

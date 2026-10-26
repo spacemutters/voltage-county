@@ -229,6 +229,7 @@ export type Container = MapTypes.Container
 -- What the city builder did (Dev/City; tests/MapBuilder.spec and Dev/MapCheck report it).
 export type CityStats = {
 	legacy: { [string]: number }, -- plots left to the old look because no archetype fits, by district ("" for none)
+	open: { [string]: number }, -- plots no archetype fits left open instead (Config/City openFallback), by district
 	parts: { [string]: number }, -- building parts by district: city sites and old-look fallbacks together
 	lights: number, -- building parts that are night lights
 	skyline: number, -- parts in the Persistent Skyline model
@@ -364,7 +365,8 @@ local TUNING = {
 	blockTile = 500, -- a block's buildings are split into Models no wider than this
 	lotThickness = 0.1,
 	minLotRow = 2, -- buildings in a row before they get a paved lot
-	lotColor = Color3.fromRGB(150, 148, 142),
+	-- Paved lots and core claims: a warm pale concrete a shade under the downtown ground (roast 2026-10-26 point 1).
+	lotColor = Color3.fromRGB(194, 190, 182),
 	buildingMaterial = Enum.Material.SmoothPlastic,
 	maxLevelError = 0.05, -- lots and buildings only stand where the ground is flat at y = 0
 
@@ -4020,7 +4022,8 @@ end
 -- What stands on the built plots (Dev/City/CityBuilder; docs/city/CITY_PLAN.md §4, §5 and §7): the city's archetypes
 -- where it places them, each site its own Atomic model (LevelOfDetail SLIM: still parts only) beside a small lights
 -- model for its night lights, signs and lights (not SLIM: they change at dusk), and a tower's main masses in the
--- Persistent Skyline model; the old facade (addBuilding) on every plot no archetype fits. A core claim behind a site's
+-- Persistent Skyline model; a plot no archetype fits stays open in a city district (Config/City openFallback), else
+-- takes the old facade (addBuilding). A core claim behind a site's
 -- plots passes the plots' own clear checks (flat open ground in the map, nothing a lot keeps off within the clearance,
 -- the frontage's own plots excepted), is paved like a lot, and keeps later claims and trees off. A site the city
 -- builder can't build is left to the old facade with a note.
@@ -4100,6 +4103,13 @@ local function addCity(ctx: Ctx, plots: { CityBuilder.Plot })
 	end)
 	local zones = ctx.layout.zones
 	for _, plot in legacy do
+		-- In a city district a plot no archetype fits stays open (Config/City openFallback): the run's paved lot, or
+		-- ground for a lone plot, still kept clear of trees.
+		local openDistrict = City.districts[plot.zone]
+		if City.openFallback and openDistrict ~= nil then
+			stats.open[openDistrict] = (stats.open[openDistrict] or 0) + 1
+			continue
+		end
 		container(ctx, plot.folder, "Model", atomic)
 		local before = #ctx.specs
 		addBuilding(
@@ -4599,7 +4609,7 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 		half = World.mapHalfExtent,
 		driveways = {},
 		sites = {},
-		city = { legacy = {}, parts = {}, lights = 0, skyline = 0, claims = 0, unplaced = {}, missing = {} },
+		city = { legacy = {}, open = {}, parts = {}, lights = 0, skyline = 0, claims = 0, unplaced = {}, missing = {} },
 		lit = {},
 		host = nil,
 		scenery = {},
@@ -4902,10 +4912,15 @@ function MapBuilder.build(): number
 		-- Parts in chunks: each part goes straight into its (already parented) container, so every flush is
 		-- one small part, and Studio gets a frame between chunks.
 		local byName: { [string]: { [string]: BasePart } } = {}
+		local standIns = 0
 		for i, spec in plan.specs do
 			-- A templated spec (a palm's crown) becomes a clone of its template, or the parts-only stand-in.
 			if spec.template then
-				Scenery.instantiate(spec, createPart).Parent = containers[spec.folder] or generated
+				local made = Scenery.instantiate(spec, createPart)
+				if made:GetAttribute(Scenery.Palms.standInAttribute) then
+					standIns += 1
+				end
+				made.Parent = containers[spec.folder] or generated
 				if i % TUNING.partsPerChunk == 0 then
 					task.wait()
 				end
@@ -4942,6 +4957,14 @@ function MapBuilder.build(): number
 		print(`[MapBuilder] {#plan.specs} parts: {table.concat(summary, ", ")}`)
 		for _, text in plan.notes do
 			print(`[MapBuilder] note: {text}`)
+		end
+		if standIns > 0 then
+			-- The palm meshes (ServerStorage.CityAssets, Studio-owned) are missing: the map is far over its part budgets
+			-- and Dev/MapCheck fails until they are back and the map is rebuilt.
+			warn(
+				`[MapBuilder] note: {standIns} palms are parts-only stand-ins (no ServerStorage.CityAssets.Palms templates); `
+					.. "the map is over its part budgets until the templates are back"
+			)
 		end
 		return #generated:GetDescendants()
 	end)

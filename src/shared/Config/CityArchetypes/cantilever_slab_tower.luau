@@ -1,8 +1,8 @@
 --!strict
 -- cantilever_slab_tower: placement and limits (Config/City archetypes; docs/city/ARCHETYPES.md §5, T13).
--- T13: a slim condo tower of deep white floor slabs whose edges ripple in and out up the tower, held at the corners
--- by stacked columns that swell at every slab. Heights from the T blocks' caps up; the tallest only where a cap
--- allows (Config/City heightCaps).
+-- T13: the white honeycomb tower: deep white slabs every floor and a white column every bay, the slab edges rippling
+-- up the tower, a thick white cap, a glazed lobby on hourglass columns and a round drop-off canopy. Heights from the
+-- T blocks' caps up; the tallest only where a cap allows (Config/City heightCaps).
 
 return {
 	district = "downtown",
@@ -15,10 +15,12 @@ return {
 	minDepth = 48,
 	maxPlots = 4,
 	heights = { min = 300, max = 460 },
-	crownMax = 12, -- the roof rooms, the pergola and the pool deck's rail
-	budget = 120, -- a slab every floor, a swelling on each of the four columns at every third: measured 70..116
+	crownMax = 12, -- crown 3's open frame (10), crown 2's umbrellas (8) and cabana, crown 1's plant room
+	-- A slab a floor (23..37), a ring every fifth, 12..14 columns, the ground (16..24), the cap and crown (4..11):
+	-- 64..95 over tests/City.spec's sample sites.
+	budget = 100,
 	palettes = 4,
 	crowns = 3,
-	rhythms = 3, -- the slab edges' wave: slow and deep, quicker, or a stagger
+	rhythms = 3, -- the slab wave: slow and deep, quick, or a stagger
 	ownModel = true,
 }

@@ -47,13 +47,16 @@ export type PalmSpecies = {
 	crownFrom: number, -- share of the height where the crown's box starts...
 	crownTo: number, -- ...and ends
 	collider: Vector2, -- the trunk a car hits: diameter, height (cars pass through the crown)
+	sink: number?, -- how far the foot stands into the ground (palms.sink when nil)
 	fallback: PalmFallback,
 }
 
 -- Palms in the sidewalks and verges of one kind of road in one zone (a road matches when either end node is in the
 -- zone). Each side gets a palm every `spacing` studs, `offset` studs out from the kerb (the road's edge), or `verge`
 -- studs out where the road has no sidewalk; `stagger` shifts one side by half a spacing; `sides` "lake" plants only
--- the side facing Cedar Lake. A bridge's palms stand on the ground beside its deck, only off the water.
+-- the side facing Cedar Lake. A bridge's palms stand on the ground beside its deck, only off the water. `leanOut`
+-- turns each palm's lean away from the road (give or take `leanSpread` degrees), so a leaning crown hangs over the verge
+-- and the water instead of the carriageway.
 export type StreetPalmRule = {
 	zone: string,
 	kind: string,
@@ -64,6 +67,8 @@ export type StreetPalmRule = {
 	stagger: boolean,
 	sides: "both" | "lake",
 	scale: { number }?,
+	leanOut: boolean?,
+	leanSpread: number?,
 }
 
 -- One lifeguard stand's colours: its body, an accent (roof, stripe, ramp rail) and a trim.
@@ -106,7 +111,9 @@ local CityScenery = {
 	palms = {
 		-- ServerStorage.CityAssets.Palms.<species>: a MeshPart or a Model (or a Folder of them, one per variant), made
 		-- in Studio. Its pivot is the centre of the trunk's foot on the ground, +Y up, and a leaning palm leans toward its
-		-- front (-Z). Every copy is a Clone() of it, so one mesh draws as one instanced call.
+		-- front (-Z). Every copy is a Clone() of it, so one mesh draws as one instanced call. The three in the place
+		-- (docs/city/SCENERY.md §1 has their asset ids) are generated meshes wearing a SurfaceAppearance whose colour
+		-- map's alpha cuts the broad generated leaves into feathery leaflets; the sizes below are measured off them.
 		templateRoot = { "CityAssets", "Palms" },
 		variants = 2, -- variants a palm draws from (a template with fewer repeats them)
 		sink = 0.4, -- the foot stands this far into the ground
@@ -118,10 +125,10 @@ local CityScenery = {
 				scale = { 0.88, 1.12 },
 				lean = { 0, 2 },
 				baseLean = 0,
-				crown = 26,
-				crownFrom = 0.66,
-				crownTo = 1.04,
-				collider = Vector2.new(1.8, 12),
+				crown = 30,
+				crownFrom = 0.56,
+				crownTo = 1.0,
+				collider = Vector2.new(2.6, 12),
 				fallback = {
 					trunk = {
 						diameter = 2.1,
@@ -141,16 +148,19 @@ local CityScenery = {
 					},
 				},
 			} :: PalmSpecies,
-			-- Curved, leaning trunks: the beach, the lake ring, pool edges, leaning toward the water.
+			-- Curved, leaning trunks: the beach, the lake ring, pool edges, leaning toward the water. The template's
+			-- trunk leans about 30 degrees at its foot and curves up, its drooping crown hanging out over the lean;
+			-- `lean` stands some of them up a little straighter and tips others further.
 			coconut = {
 				height = 34,
 				scale = { 0.85, 1.15 },
-				lean = { 0, 8 },
-				baseLean = 12,
-				crown = 24,
-				crownFrom = 0.68,
-				crownTo = 1.08,
-				collider = Vector2.new(1.6, 10),
+				lean = { -8, 4 },
+				baseLean = 33,
+				crown = 25,
+				crownFrom = 0.36,
+				crownTo = 1.15,
+				collider = Vector2.new(2.4, 10),
+				sink = 1.2, -- deep enough to bury the slanted cut of its leaning foot
 				fallback = {
 					trunk = {
 						diameter = 1.6,
@@ -175,10 +185,10 @@ local CityScenery = {
 				scale = { 0.85, 1.2 },
 				lean = { 0, 4 },
 				baseLean = 0,
-				crown = 15,
-				crownFrom = 0.62,
-				crownTo = 1.06,
-				collider = Vector2.new(1.7, 10),
+				crown = 19,
+				crownFrom = 0.4,
+				crownTo = 1.02,
+				collider = Vector2.new(2.6, 10),
 				fallback = {
 					trunk = {
 						diameter = 1.9,
@@ -252,8 +262,8 @@ local CityScenery = {
 				stagger = true,
 				sides = "both",
 			},
-			-- The lake ring: coconut palms on the lake side of the shore roads, full-grown so their crowns clear the road by
-			-- 20 studs.
+			-- The lake ring: coconut palms on the lake side of the shore roads, leaning out over the water so their drooping
+			-- crowns keep off the road.
 			{
 				zone = "lakefront",
 				kind = "street",
@@ -264,16 +274,18 @@ local CityScenery = {
 				stagger = false,
 				sides = "lake",
 				scale = { 1, 1.15 },
+				leanOut = true,
+				leanSpread = 30,
 			},
 			-- The causeway approaches: royal palms in rows either side, on the ground beside the deck, far enough out that
-			-- their crowns don't hang over it.
+			-- their crowns (up to about 17 studs across a half, at the largest scale) don't hang over it.
 			{
 				zone = "lakefront",
 				kind = "bridge",
 				species = "royal",
 				spacing = 40,
-				offset = 14,
-				verge = 14,
+				offset = 18,
+				verge = 18,
 				stagger = false,
 				sides = "both",
 				scale = { 1, 1.12 },
@@ -306,8 +318,9 @@ local CityScenery = {
 			thick = 1.1,
 			gap = 9, -- an opening this wide at every boardwalk and shower
 		},
-		-- A row of coconut palms on the lawn along the promenade's land side (negative: north of the band's edge).
-		lawn = { at = -9, every = 46 },
+		-- A row of coconut palms on the lawn along the promenade's land side (negative: north of the band's edge), each
+		-- leaning seaward give or take `spread` degrees.
+		lawn = { at = -9, every = 46, spread = 70 },
 		-- Coconut palms in clumps on the sand behind the dunes, leaning toward the water.
 		palms = {
 			from = 22,
@@ -336,8 +349,10 @@ local CityScenery = {
 			from = 112,
 			to = 136, -- the strip they stand in
 			standClear = 30, -- studs from a stand's centre
-			canopy = 7,
-			loungers = { 2.2, 1.1, 6 }, -- across, back height, long
+			canopy = 8, -- the umbrella's span
+			height = 7.4, -- its canopy's height up the pole
+			tilt = 9, -- degrees each umbrella may tip toward or away from the sea
+			loungers = { 2.2, 1.6, 6 }, -- across, how high the backrest rises over the bed, long
 		},
 		showers = 4,
 		nets = 2, -- beach volleyball nets
@@ -360,11 +375,13 @@ local CityScenery = {
 		-- rounded sea front and a stepped parapet; a swooping roof of three tilted slabs; a sunburst of fins over a pitched
 		-- roof; a round capsule with a dome.
 		shapes = { "deco", "swoop", "sunburst", "capsule" },
-		deck = 7, -- the platform's top above the sand
+		-- The platform's top above the sand: 11, up from 7, so the hut stands high on its legs like a real Miami one's
+		-- (roast 2026-10-26 point 7: at 7 they read as birdhouses on short posts), with a longer ramp to match.
+		deck = 11,
 		platform = Vector3.new(14, 0.6, 12),
 		hut = Vector3.new(10, 8.5, 7), -- across, tall, deep
-		legs = 0.8,
-		ramp = { width = 2.6, length = 14 },
+		legs = 0.9,
+		ramp = { width = 2.6, length = 21 },
 		schemes = {
 			{ body = rgb(244, 154, 193), accent = rgb(246, 160, 77), trim = rgb(108, 192, 139) },
 			{ body = rgb(43, 179, 177), accent = rgb(44, 85, 184), trim = rgb(183, 217, 76) },
@@ -380,23 +397,39 @@ local CityScenery = {
 	},
 
 	water = {
-		bed = { color = rgb(214, 200, 164), material = Enum.Material.Sand }, -- the lake bed and banks: pale sand
-		-- From the shore out: each band reaches `width` studs from the lake's edge (the last fills the middle). The first
-		-- six studs lie under the sand bank, where it meets the water. Small steps of colour and clearness, so the bay
-		-- shades from pale turquoise over the sand to deep blue without a hard line.
+		-- The lake bed and banks: wet sand, a shade darker than the dry beach, so the bank at the water line reads wet
+		-- (roast 2026-10-26 point 6).
+		bed = { color = rgb(198, 182, 148), material = Enum.Material.Sand },
+		-- The shallows off the beach, from the sand out: each strip reaches `width` studs from the lake's edge (the first
+		-- six studs lie under the sand bank, where it meets the water), and each fades into the next through `ramp`. The
+		-- last band is the open bay over everything else, deep blue right up to the stone-edged shores. Tested in Studio
+		-- (docs/images/city/scenery-*): a see-through Glass sheet read as a swimming pool; nearly solid SmoothPlastic
+		-- with a little sky reflection reads as the sea.
 		bands = {
-			{ width = 24, color = rgb(96, 212, 206), transparency = 0.5 }, -- the shallows: turquoise over pale sand
-			{ width = 50, color = rgb(66, 194, 198), transparency = 0.42 },
-			{ width = 90, color = rgb(46, 170, 186), transparency = 0.32 },
-			{ width = 150, color = rgb(34, 140, 170), transparency = 0.24 },
-			{ width = math.huge, color = rgb(24, 106, 150), transparency = 0.16 }, -- the deep bay
+			-- Only the first is see-through (the sand shows under the shallows): a see-through strip after it would show
+			-- a seam where the solid end of the ramp before it meets it.
+			-- 2026-10-26 roast point 6: the old cyan-to-cobalt bands read as a swimming pool; a real Miami bay is green-teal
+			-- darkening with depth. Darker than the colour wanted on screen: the high sun and the sky's reflection lift
+			-- a water sheet about a third brighter and bluer (seen in Studio).
+			{ width = 24, color = rgb(70, 150, 142), transparency = 0.3 }, -- the shallows: green-teal over sand
+			{ width = 52, color = rgb(46, 124, 126), transparency = 0 },
+			{ width = 90, color = rgb(32, 102, 112), transparency = 0 },
+			{ width = 150, color = rgb(22, 80, 98), transparency = 0 },
+			{ width = math.huge, color = rgb(16, 60, 82), transparency = 0 }, -- the open bay
 		},
-		material = Enum.Material.Glass,
-		reflectance = 0.12,
-		-- An optional overlay image on the water's top (glinting ripples), tiled `textureTile` studs: nil until it is
-		-- uploaded (assets/city/water_ripple.png, drawn by tools/draw_scenery_overlays.py).
+		material = Enum.Material.SmoothPlastic,
+		-- Low: the engine reflects the sky per part, so at 0.18 the seam between two of the bay's sheets showed as a
+		-- straight line across the water (roast point 6, seen again in the 2026-10-26 playtest); 0.07 keeps a sheen.
+		reflectance = 0.07,
+		-- Sun glints on a light chop tiled over every sheet, `textureTile` studs a tile (nil for none), and the ramp that
+		-- blends one shallows strip into the next: assets/city/water_glints.png and water_ramp.png, drawn by
+		-- tools/draw_scenery_overlays.py and uploaded.
+		-- None since 2026-10-26: tiled over open water the glints read as a pool's caustics (roast point 6). The image
+		-- was rbxassetid://127637677152735.
 		texture = nil :: string?,
-		textureTile = 24,
+		textureTile = 16,
+		textureTransparency = 0.25,
+		ramp = "rbxassetid://99210103644499" :: string?,
 		-- Where the bank meets the water a crisp foam line, and a paler wash just off it (both opaque: one see-through
 		-- layer per sightline).
 		foam = { at = 6, line = 1.2, wash = 3.4, lineColor = rgb(248, 250, 248), washColor = rgb(204, 238, 232) },
@@ -418,7 +451,7 @@ local CityScenery = {
 		plinth = { thick = 0.9, top = 0.9, drop = 1.6 },
 		panel = { thick = 0.5, top = 2.7 },
 		coping = { thick = 1.1, top = 3.2 },
-		balustradeImage = nil :: string?,
+		balustradeImage = "rbxassetid://110677524796128" :: string?,
 		balustradeTile = 3, -- studs per X
 		-- A sea-blue line along the fascia and the glow strip under it (night kind `arch`, its own icy blue).
 		accent = { from = -0.7, to = -0.35 },
@@ -495,7 +528,16 @@ local CityScenery = {
 			bench = Vector3.new(8, 0.4, 1.4),
 		},
 		bench = { seat = Vector3.new(6, 0.4, 1.6), back = Vector3.new(6, 1.6, 0.3), height = 1.6 },
-		planter = { size = Vector3.new(4.5, 2, 4.5), color = rgb(226, 220, 206), leaf = rgb(70, 120, 60) },
+		-- A concrete planter box with a clump of palmetto and bird-of-paradise in it: a mesh in ServerStorage at `plant`
+		-- (its pivot the clump's foot), scaled to `plantHeight` and cloned like the palms; nothing grows in the box while
+		-- the mesh is missing.
+		planter = {
+			size = Vector3.new(4.5, 2, 4.5),
+			color = rgb(226, 220, 206),
+			leaf = rgb(70, 120, 60),
+			plant = { "CityAssets", "Plants", "clump" },
+			plantHeight = 3.8,
+		},
 	},
 
 	crosswalks = {
@@ -505,10 +547,10 @@ local CityScenery = {
 		gap = 1.5, -- from the road's cut end (the junction pad)
 		depth = 6, -- along the road
 		inset = 1.2, -- in from each road edge
-		-- One see-through part with a stripe image on its top. Until the zebra image is uploaded
-		-- (assets/city/crosswalk_zebra.png, drawn by tools/draw_scenery_overlays.py) the city's slab-line image draws thin
-		-- bars. `turn` swaps which way the image runs across the part.
-		image = nil :: string?,
+		-- One see-through part with a stripe image on its top: assets/city/crosswalk_zebra.png, drawn by
+		-- tools/draw_scenery_overlays.py and uploaded (with `image` nil the city's slab-line image draws thin bars).
+		-- `turn` swaps which way the image runs across the part.
+		image = "rbxassetid://83119463084846" :: string?,
 		tile = 3, -- studs per bar and gap
 		turn = false,
 		color = rgb(244, 244, 238),
@@ -527,6 +569,17 @@ local CityScenery = {
 		},
 		benches = 8,
 		benchRing = 30, -- benches stand on a ring this far from the fountain's centre
+		-- A terrazzo plaza round the fountain and paths out along the diagonals to the corners, flat on the lawn (Studio
+		-- showed the square as a bare lawn round a lone fountain). The paths stop `pathEnd` studs short of each corner.
+		plaza = {
+			diameter = 80,
+			path = 10,
+			pathEnd = 30,
+			lift = 0.06,
+			color = rgb(236, 226, 212),
+			material = Enum.Material.Marble,
+			variant = "Terrazzo",
+		},
 	},
 
 	-- Parts the scenery adds (tests/CityScenery.spec): Dev/City/Scenery stops placing the less important pieces first when

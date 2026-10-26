@@ -15,7 +15,9 @@ return {
 	maxPlots = 6,
 	heights = { min = 216, max = 264 },
 	crownMax = 12, -- the roof pavilions, the floating caps and the pergolas
-	budget = 120, -- 2 towers x (a plate and half a glass run a floor, LED rings, lobby, crown) + the garden: 94..112
+	-- 2 towers x (a plate a floor, a glass run every two, LED rings, lobby and its V columns, crown) + the garden:
+	-- about 92..121.
+	budget = 130,
 	palettes = 4,
 	crowns = 3,
 	rhythms = 3, -- the twist: 30, 38 or 45 degrees

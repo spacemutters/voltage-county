@@ -290,8 +290,10 @@ local zones: { [string]: Zone } = {
 		displayName = "Cedar Bend",
 		min = Vector2.new(-1000, -1000),
 		max = Vector2.new(1000, 1000),
-		groundColor = Color3.fromRGB(132, 128, 118),
-		groundMaterial = Enum.Material.Pavement,
+		-- Pale Miami concrete, not grey asphalt (roast 2026-10-26 point 1: a Miami condo district's blocks are pale paving, pool decks
+		-- and podiums to the kerb; the dark ground read as parking between the towers). Town Square keeps its grass.
+		groundColor = Color3.fromRGB(206, 202, 194),
+		groundMaterial = Enum.Material.Concrete,
 		buildingColors = {
 			Color3.fromRGB(152, 108, 88),
 			Color3.fromRGB(176, 160, 136),

@@ -8,8 +8,8 @@
 -- cube balanced on one corner stands in the plaza.
 --
 -- What makes it itself: a box whose whole front is a quilt of tilted metal triangles, some glowing.
--- Night: the light panels glow (the palette's neon), the glass triangles and the lobby are lit, an LED line runs
--- along the soffit's edge and a wash from the soffit lights the facets.
+-- Night: the light panels glow (the palette's neon), the lobby is lit, the glass triangles stay dark glass, an LED
+-- line runs along the soffit's edge and a wash from the soffit lights the facets.
 -- Placement, sizes, heights and its budget: Config/City archetypes.faceted_gallery (also a one-off on Plant Avenue,
 -- Config/City landmarks).
 -- Variants: palette (4 metals with their light colour: silver and violet, champagne and amber, graphite and cyan,
@@ -19,7 +19,8 @@
 -- Previewing: the facets need the sun across them: photograph from the south-west and south-east too, and check the
 -- folds read (two shades per cell) and the seams read dark, not as gaps to the sky. Check the frame stands proud of
 -- every facet (no triangle corner pokes past the soffit or the cornice), the light panels sit back and the glass
--- triangles read as glass. At night: no more than two neon colours (the panels' and the soffit's line).
+-- triangles read as glass, and the entrance reads as glass doors in a bronze portal (not a dark block). At night: no
+-- more than two neon colours (the panels' and the soffit's line).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -48,7 +49,7 @@ local SHAPE = {
 	lightSet = 0.85, -- light panels this far back, untilted
 	special = 7, -- one triangle in this many is glass, and one a light panel (at least two of each)
 	frame = { proud = 1.5, cornice = 1.4, soffit = 1.0, side = 0.6 },
-	lobby = { inset = 1.5, door = 8, doorTall = 10 },
+	lobby = { inset = 1.5, door = 8, doorTall = 10, jamb = 0.8 },
 	plinth = { share = 0.28, max = 18, tall = 1.4, deep = 1.5, letters = 2.8 },
 	cube = { size = 6.2, plinth = 0.6 }, -- the sculpture: a cube balanced on one corner on a low plinth
 	pavilion = { back = 10, tall = 8, slab = 0.8, proud = 2 }, -- crown 2
@@ -96,6 +97,10 @@ local PALETTES: { Palette } = {
 		sculpture = rgb(34, 34, 38),
 	},
 }
+
+-- A cell's two triangles, by which way its diagonal runs: up to the right, or down to the right.
+local RISING: { Kit.TriangleCorner } = { "x1y0", "x0y1" }
+local FALLING: { Kit.TriangleCorner } = { "x0y0", "x1y1" }
 
 local function build(m: Types.Model)
 	local site = m.site
@@ -176,14 +181,28 @@ local function build(m: Types.Model)
 			lit = true,
 		}
 	)
+	-- The doors: a bronze portal standing proud of the lobby glass (two jambs and a deeper head), the lit glass and
+	-- its mullions showing through it, so the entrance reads as glass doors by day and glows with the lobby at night.
 	local doorX = x0 + (x1 - x0) * 0.32
+	local bronze = Kit.look(rgb(70, 62, 52), Enum.Material.Metal)
+	local dh, jw = li.door / 2, li.jamb
 	Kit.trim(
 		m,
-		"DoorFrame",
-		Vector3.new(doorX - li.door / 2 - 0.6, 0.2, zL - 0.5),
-		Vector3.new(doorX + li.door / 2 + 0.6, li.doorTall + 0.6, zL + 0.1),
-		Kit.look(rgb(70, 62, 52), Enum.Material.Metal)
+		"DoorHead",
+		Vector3.new(doorX - dh - jw, li.doorTall, zL - 1.2),
+		Vector3.new(doorX + dh + jw, li.doorTall + 0.9, zL + 0.1),
+		bronze
 	)
+	for i, side in { -1, 1 } do
+		local inner, outer = doorX + side * dh, doorX + side * (dh + jw)
+		Kit.trim(
+			m,
+			`DoorJamb{i}`,
+			Vector3.new(math.min(inner, outer), 0.2, zL - 1),
+			Vector3.new(math.max(inner, outer), li.doorTall + 0.45, zL + 0.05),
+			bronze
+		)
+	end
 	Kit.box(m, "Plaza", Vector3.new(-hw + 0.3, -0.6, -hd + 0.3), Vector3.new(hw - 0.3, 0.2, zL + 0.6), granite)
 
 	-------------------------------------------------------------------------------------------------------
@@ -225,21 +244,21 @@ local function build(m: Types.Model)
 			local even = (row + col) % 2 == 0
 			-- Rhythm 1: the diagonal turns cell by cell (diamonds); 2: always one way (ribbons).
 			local rising = if variant.rhythm == 2 then true else even
-			local halves: { Kit.TriangleCorner }
-			if rising then
-				halves = { "x1y0", "x0y1" }
-			else
-				halves = { "x0y0", "x1y1" }
-			end
+			local halves: { Kit.TriangleCorner } = if rising then RISING else FALLING
 			local fold = if even then 1 else -1
-			for h, corner in halves do
+			for h = 1, #halves do
+				local corner: Kit.TriangleCorner = halves[h]
 				local name = `Facet{row}_{col}_{h}`
 				local spec = special[k]
 				if spec and spec.half == h then
 					local set = if spec.glass then SHAPE.glassSet else SHAPE.lightSet
 					local look = if spec.glass then glass else light
 					local part = Kit.triangle(m, name, a0, b0, a1, b1, zF + set, 0.4, corner, look, "detail")
-					Kit.lit(part, if spec.glass then "window" else pal.neon)
+					-- Only the light panels glow: lit warm, the glass triangles read as flat beige paint at night and
+					-- muddy the panels' one colour (the lobby carries the warm light).
+					if not spec.glass then
+						Kit.lit(part, pal.neon)
+					end
 				else
 					local out = if h == 1 then fold else -fold
 					local look = if out > 0 then metalA else metalB

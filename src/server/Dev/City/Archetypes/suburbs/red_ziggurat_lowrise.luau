@@ -1,21 +1,24 @@
 --!strict
--- R05 red_ziggurat_lowrise (docs/city/ARCHETYPES.md §7, R05): the bright red stepped pyramid of apartments. Five red
--- blocks in a row, each a few floors taller than the last up to a six-storey peak and down again, so in section the
--- building is a staircase up and down. Every riser (the face a block shows over its lower neighbour) is ribbon
--- windows in red, stacked bands of light at night; white tube rails run along the terrace edges; and the long faces
--- carry white ship-like balcony decks with tube rails, floor over floor, as long as the blocks behind them are tall.
--- It steps along the road on a wide site (the street sees the pyramid) and back from it on a narrow one (the street
--- sees the stepped end, the decks run down the sides). A white entrance canopy, a lift house on the peak.
+-- R05 red_ziggurat_lowrise (docs/city/ARCHETYPES.md §7, R05): the bright red stepped pyramid of apartments. Five solid
+-- red stucco blocks in a row, each a few floors taller than the last up to a six-storey peak and down again, so in
+-- section the building is a staircase up and down. Every riser (the face a block shows over its lower neighbour) is
+-- red wall cut by a row of dark windows per floor between red piers, rows of light at night; each step's edge
+-- carries a crisp white coping and a white pipe rail, so the stepped profile is drawn in white against the sky. The long faces carry
+-- white ship-like balcony decks with pipe rails, floor over floor, as long as the blocks behind them are tall, over a
+-- window a block per floor. It steps along the road on a wide site (the street sees the pyramid) and back from it on a
+-- narrow one (the street sees the stepped red end, the decks run down the sides). A white entrance canopy, a lift
+-- house on the peak.
 --
 -- What makes it itself: a bright red stepped pyramid of apartments, in section a staircase up and down.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/red_ziggurat_lowrise.
 -- Variants: palette (1 red, 2 deep blue: still one strong colour), crown (1 the even pyramid 2-4-6-4-2 floors, 2 a
 -- lopsided staircase 1-2-4-6-3), rhythm (1 a deck at every floor, 2 at every second), mirror.
 --
--- Previewing: from the street, square on and from a corner, on a narrow (36) and a wide (80) site. Check the riser
--- windows' floor lines meet each block's top (Kit.punched counts tiles from the top), the decks stop short of each
--- step, the terrace rails sit on the right edges, and the red reads as red in the sky light. At night: the risers and
--- the long faces glow in bands.
+-- Previewing: from the street, square on and from a corner, on a narrow (36) and a wide (80) site. Check each riser
+-- shows a row of windows per floor with red above, below and between them (Kit.punched, tiles about SHAPE.window
+-- across: the floor lines meet each block's top), the long faces read as decks over windows and not as an office grid
+-- (one-tile ribbons did, in the first preview), the white copings and rails trace every step, the decks stop short of
+-- each step, and the red reads as red in the sky light. At night: the windows glow in rows.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -34,11 +37,10 @@ local SHAPE = {
 	end1 = 1.5,
 	sideRoom = 5, -- the long faces from the site's edges: the decks reach 3 into it
 	deck = { proud = 3, thick = 0.9, inset = 0.8 },
-	rail = { height = 3.2, inset = 0.6 }, -- white rails: square bars under a top rail (a Texture on an invisible part)
-	-- Riser ribbon windows: one tile a pane. Under about 3 the overlay's tiles shrink below a pixel at street distance
-	-- and the texture's mip levels smear the red bands into a pink haze (seen in the first preview at 1.3).
-	bay = 3.2,
-	sideBay = 4.4,
+	rail = { height = 3.2, inset = 0.6, bar = 1.1 }, -- white pipe rails: square bars under a top rail
+	coping = { tall = 0.7, proud = 0.35, deep = 1.25 }, -- the white edge of every step
+	ribbonIn = 1.6, -- a riser's windows stop this far short of the long faces (solid red corners)
+	window = 11, -- a window's tile across, about (one punched tile: 88 % glass, the rest a red pier)
 	canopy = { y = 8, thick = 0.6, proud = 3.4, half = 4.5 },
 	lift = { half = 2.6, tall = 3.6 },
 }
@@ -63,13 +65,6 @@ local function build(m: Types.Model)
 
 	local red = Kit.look(pal.body, Enum.Material.SmoothPlastic)
 	local white = Kit.look(WHITE, Enum.Material.SmoothPlastic)
-	-- A white rail panel facing `face`.
-	local function rail(name: string, min: Vector3, max: Vector3, face: Enum.NormalId)
-		local spec = Kit.detail(m, name, min, max, Kit.look(RAIL, Enum.Material.Metal, 0, 1))
-		spec.textures = {
-			{ face = Kit.face(m, face), image = City.textures.punched, u = 1.1, v = 6, color = RAIL },
-		}
-	end
 
 	-------------------------------------------------------------------------------------------------------
 	-- The frame: `a` runs along the row of blocks, `c` across it. Along the road when the site is wide, so the
@@ -97,47 +92,59 @@ local function build(m: Types.Model)
 	local function top(k: number): number
 		return if k < 1 or k > n then 0 else profile[k] * f
 	end
+	local width = c1 - c0
+	local r = SHAPE.rail
+	local cp = SHAPE.coping
 
 	-------------------------------------------------------------------------------------------------------
-	-- The blocks, their risers and the terrace rails
+	-- The blocks, their risers (a row of windows a floor), and each step's white coping and rail
 	-------------------------------------------------------------------------------------------------------
 	for k = 1, n do
 		local ka0, ka1 = blockA(k)
 		local h = top(k)
 		Kit.box(m, `Block{k}`, at(ka0, -KIT.bury, c0), at(ka1, h, c1), red)
-		-- A riser on each end that stands over its neighbour (or the ground): ribbon windows, whole floors from the top.
 		local below0, below1 = top(k - 1), top(k + 1)
-		if h > below0 then
+		for _, e in { { side = 0, below = below0 }, { side = 1, below = below1 } } do
+			if h <= e.below then
+				continue
+			end
+			local isA = e.side == 0
+			local edge = if isA then ka0 else ka1
+			local out = if isA then -1 else 1 -- along a, out of this riser
+			local face = if isA then faceA0 else faceA1
+			local tag = if isA then "A" else "B"
+			-- A tile a floor tall, counted from its top, and about `SHAPE.window` across: a row of windows per floor
+			-- between red bands and red piers. (One tile across the whole riser drew a ribbon per floor, and the first
+			-- preview read as an office block.)
+			local span = width - 2 * SHAPE.ribbonIn
 			Kit.punched(
 				m,
-				`RiserA{k}`,
-				at(ka0 - 0.06, below0, c0 + 0.6),
-				at(ka0 + 0.4, h - 0.04, c1 - 0.6),
+				`Riser{tag}{k}`,
+				at(edge + out * 0.06, e.below, c0 + SHAPE.ribbonIn),
+				at(edge - out * 0.4, h - cp.tall, c1 - SHAPE.ribbonIn),
 				pal.body,
 				pal.glass,
-				{ faceA0 },
-				SHAPE.bay,
+				{ face },
+				span / math.max(1, math.floor(span / SHAPE.window + 0.5)),
 				f,
-				true
+				k % 2 == 1 -- every other block's end lit: the whole building lit read as a lantern, not homes
 			)
-			local r = SHAPE.rail
-			rail(`EdgeRailA{k}`, at(ka0 + 0.3, h, c0 + r.inset), at(ka0 + 0.45, h + r.height, c1 - r.inset), faceA0)
-		end
-		if h > below1 then
-			Kit.punched(
+			Kit.trim(
 				m,
-				`RiserB{k}`,
-				at(ka1 - 0.4, below1, c0 + 0.6),
-				at(ka1 + 0.06, h - 0.04, c1 - 0.6),
-				pal.body,
-				pal.glass,
-				{ faceA1 },
-				SHAPE.bay,
-				f,
-				true
+				`Coping{tag}{k}`,
+				at(edge + out * cp.proud, h - cp.tall, c0 - cp.proud),
+				at(edge - out * cp.deep, h + 0.06, c1 + cp.proud),
+				white
 			)
-			local r = SHAPE.rail
-			rail(`EdgeRailB{k}`, at(ka1 - 0.45, h, c0 + r.inset), at(ka1 - 0.3, h + r.height, c1 - r.inset), faceA1)
+			Kit.railing(
+				m,
+				`EdgeRail{tag}{k}`,
+				at(edge - out * 0.3, h + 0.06, c0 + r.inset),
+				at(edge - out * 0.45, h + 0.06 + r.height, c1 - r.inset),
+				{ face },
+				RAIL,
+				r.bar
+			)
 		end
 	end
 
@@ -154,7 +161,7 @@ local function build(m: Types.Model)
 	end
 
 	-------------------------------------------------------------------------------------------------------
-	-- The long faces: windows in bands (one per step of the skyline) and the ship-deck balconies
+	-- The long faces: a window a block a floor, in bands (one per step of the skyline), and the ship-deck balconies
 	-------------------------------------------------------------------------------------------------------
 	local levels: { number } = { 0 }
 	for _, floors in profile do
@@ -169,6 +176,8 @@ local function build(m: Types.Model)
 			local fa0 = blockA(first)
 			local _, fa1 = blockA(last)
 			local y0, y1 = levels[j - 1] * f, levels[j] * f - 0.04
+			-- One window a block a floor (a red pier between blocks), or two on long blocks.
+			local per = if L >= 2 * SHAPE.window then 2 else 1
 			for side, c in { c0, c1 } do
 				local out = if side == 1 then -1 else 1
 				Kit.punched(
@@ -179,9 +188,9 @@ local function build(m: Types.Model)
 					pal.body,
 					pal.glass,
 					{ if side == 1 then faceC0 else faceC1 },
-					SHAPE.sideBay,
+					(fa1 - fa0 - 1) / ((last - first + 1) * per),
 					f,
-					true
+					j % 2 == 0 -- every other band lit: stacked bands of light
 				)
 			end
 		end
@@ -202,13 +211,15 @@ local function build(m: Types.Model)
 					at(fa1 - deck.inset, y + deck.thick / 2, c + out * deck.proud),
 					white
 				)
-				local r = SHAPE.rail
 				local ry = y + deck.thick / 2
-				rail(
+				Kit.railing(
+					m,
 					`DeckRail{floor}{side}`,
 					at(fa0 + deck.inset + 0.1, ry, c + out * (deck.proud - 0.3)),
 					at(fa1 - deck.inset - 0.1, ry + r.height, c + out * (deck.proud - 0.15)),
-					if side == 1 then faceC0 else faceC1
+					{ if side == 1 then faceC0 else faceC1 },
+					RAIL,
+					r.bar
 				)
 			end
 		end

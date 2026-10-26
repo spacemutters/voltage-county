@@ -2,12 +2,13 @@
 -- C04 bayfront_arena (docs/city/ARCHETYPES.md §9, C04): the bayfront arena. A big white oval in layers: a lit glass
 -- concourse set back under a white deck band, a dark glass ribbon, the white upper bowl, a roof-edge band ringed with
 -- LED light, then a low stepped roof carrying a giant picture made to be seen from the towers. At its corners the
--- signature glass stair halls, see-through, their zig-zag stairs showing, glowing at night. Terraces step out toward
--- the water; a long canopy with the arena's name marks the entrance.
+-- signature glass stair halls: see-through boxes with slim white mullions and corner posts, their zig-zag stairs in
+-- the roof picture's colour showing through, glowing at night. Terraces step out toward the water; a long canopy with
+-- the arena's name marks the entrance, and a wash lights the bowl's front at night.
 --
 -- What makes it itself: a white oval with glowing glass stair halls at its corners and a picture on its roof.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/bayfront_arena. Front (-z): the road and the
--- entrance; back (+z): the water and the terraces.
+-- entrance; back (+z): the water and the terraces (so its landmark entry should face the road; see the config).
 -- Variants: palette (1 white, blue glass and a yellow bolt; 2 white, teal glass and a coral picture; 3 silver, smoke
 -- glass and a mint picture), crown (1 a lightning bolt across the roof, 2 the county's name lettered on a roof
 -- disc), rhythm (1 four stair halls at the corners, 2 two big halls at the front corners and deeper terraces),
@@ -15,8 +16,10 @@
 --
 -- Previewing (Studio helper): Preview.build("bayfront_arena", { width = 230, depth = 200 }) for the full look (a whole
 -- lakefront site); width 160, depth 53 is the plain-plot fallback (a thin pill). Check from the air and from a tower
--- that the picture reads on the roof; from the street that the halls' stairs show through their glass and the bands
--- read as shadow lines; at night the concourse, the halls, the LED ring and the picture glow.
+-- that the picture reads on the roof; from the street that the halls read as framed glass boxes (mullions on their
+-- three outer faces, white posts at their outer corners) with the coloured stairs showing through, and the bands
+-- read as shadow lines; at night the concourse, the halls, the LED ring and the picture glow, and the wash lights
+-- the bowl's front over the deck band.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -46,7 +49,8 @@ local SHAPE = {
 		{ count = 4, width = 30, depth = 18, height = 52, flights = 3 }, -- rhythm 1
 		{ count = 2, width = 38, depth = 20, height = 56, flights = 4 }, -- rhythm 2
 	},
-	stair = { thick = 1, wide = 6, rise = 12 },
+	stair = { thick = 1.2, wide = 6, rise = 12 },
+	hallMullion = 5, -- the stair halls' glass: one pane this wide, a floor (stair.rise) tall
 	terrace = { { 6, 2 }, { 9, 3 } }, -- by rhythm: how far out, how many levels (at the deck and the ribbon's top)
 	canopy = { y = 14.5, thick = 1.4, share = 0.36, out = 9 },
 	doors = 10, -- the glass doors' height under the canopy
@@ -242,8 +246,9 @@ local function build(m: Types.Model)
 	-------------------------------------------------------------------------------------------------------
 	-- The stair halls: see-through glass boxes half out of the oval, zig-zag stairs inside, a white cap
 	-------------------------------------------------------------------------------------------------------
-	local hallGlass = Kit.look(pal.glass:Lerp(Color3.new(1, 1, 1), 0.35), Enum.Material.Glass, 0.15, 0.45)
-	local stairLook = Kit.look(pal.wall, Enum.Material.Concrete)
+	local hallGlass = Kit.look(pal.glass:Lerp(Color3.new(1, 1, 1), 0.35), Enum.Material.Glass, 0.15, 0.35)
+	-- The stairs in the picture's colour, so their zig-zag reads through the glass by day.
+	local stairLook = Kit.look(pal.picture, Enum.Material.SmoothPlastic)
 	local st = SHAPE.stair
 	local spots: { { x: number, side: number } } = {}
 	local hx = math.max((ow - od) / 2, ow * 0.25)
@@ -317,7 +322,21 @@ local function build(m: Types.Model)
 		local x0, x1 = spot.x - hs.width / 2, spot.x + hs.width / 2
 		local z0, z1 = zEdge - hd2, zEdge + hd2
 		local top = math.min(hs.height, H - 2)
-		Kit.lit(Kit.box(m, `Hall{i}`, Vector3.new(x0, 0.25, z0), Vector3.new(x1, top, z1), hallGlass), "window")
+		local hallSpec =
+			Kit.lit(Kit.box(m, `Hall{i}`, Vector3.new(x0, 0.25, z0), Vector3.new(x1, top, z1), hallGlass), "window")
+		-- Slim white mullions on its three outer faces, a floor to a tile: a glass box, not a blur.
+		local outerFace = if spot.side < 0 then Enum.NormalId.Front else Enum.NormalId.Back
+		local mullions: { Types.TextureSpec } = {}
+		for _, face in { outerFace, Enum.NormalId.Left, Enum.NormalId.Right } do
+			table.insert(mullions, {
+				face = Kit.face(m, face),
+				image = City.textures.windowFine,
+				u = SHAPE.hallMullion,
+				v = st.rise,
+				color = pal.wall,
+			})
+		end
+		hallSpec.textures = mullions
 		Kit.trim(
 			m,
 			`HallCap{i}`,
@@ -325,6 +344,17 @@ local function build(m: Types.Model)
 			Vector3.new(x1 + 0.6, top + 1.4, z1 + 0.6),
 			wall
 		)
+		-- White corner posts on its two outer corners, from the plaza to the cap.
+		local zo = if spot.side < 0 then z0 else z1
+		for c, x in { x0, x1 } do
+			Kit.trim(
+				m,
+				`HallPost{i}{c}`,
+				Vector3.new(x - 0.55, 0.25, zo - 0.55),
+				Vector3.new(x + 0.55, top + 0.02, zo + 0.55),
+				wall
+			)
+		end
 		-- The stairs inside, in the hall's outer half, flight by flight in a zig-zag.
 		local zs = zEdge + spot.side * hd2 * 0.45
 		for f = 1, hs.flights do
@@ -406,7 +436,7 @@ local function build(m: Types.Model)
 		Vector3.new(cx - nw / 2, ca.y + ca.thick, zFront - out + 0.3),
 		Vector3.new(cx + nw / 2, ca.y + ca.thick + 3.4, zFront - out + 0.8),
 		Enum.NormalId.Front,
-		"VOLTAGE COUNTY ARENA",
+		City.signNames.civic.arena,
 		rgb(30, 34, 40),
 		pal.wall,
 		City.districtLooks.downtown.font,
@@ -433,6 +463,12 @@ local function build(m: Types.Model)
 			),
 			"sign"
 		)
+	end
+	-- At night a wash on the deck band lights the bowl's flat front in the picture's colour.
+	local washHalf = math.min(ow * 0.22, straight)
+	if washHalf > 6 then
+		local dy = SHAPE.deck.y
+		Kit.wash(m, "Wash", -washHalf, washHalf, zFront - SHAPE.deck.proud + 0.35, dy, pal.picture)
 	end
 end
 

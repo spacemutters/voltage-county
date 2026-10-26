@@ -2,10 +2,12 @@
 -- B10 curved_resort_slab (docs/city/ARCHETYPES.md §6, B10): the big mid-century resort on the bay, the beach's one-off.
 -- A long hotel slab bent round a court, its concave side to the road and the bay: six glass facets on an arc of up to
 -- a quarter circle, striped by continuous white balcony bands (every floor, or every second floor with white fins at
--- the facet joints), between two white end blocks, one of them a taller tower with a glowing glass slot. At the foot
--- of the curve a round glass lobby pavilion under a flat white roof with a blue LED edge; in the court a pool with a
--- row of cabanas, a wavy porte-cochère in front of the lobby and a freestanding wall punched with round holes. On the
--- roof its name, lit at night (crown 1 a board on posts, crown 2 a glass sky lounge with the name on its roof).
+-- the facet joints) under a white roof slab that runs on round the back as a cornice, between two white end blocks,
+-- one of them a taller tower with a glowing glass slot. At the foot of the curve a round glass lobby pavilion under a
+-- flat white roof with a blue LED edge; in the court the vast pool (it grows with the court, and glows cyan at night)
+-- with a row of cabanas (and umbrellas on a deep court), a wavy porte-cochère in front of the lobby, planters either
+-- side of its drive and a freestanding wall punched with round holes. On the roof its name, lit at night (crown 1 a board on posts, crown 2 a
+-- glass sky lounge with the name on its roof).
 --
 -- What makes it itself: a long white slab bent in a curve round its pool, striped by balcony bands.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/curved_resort_slab. The arc is fitted to the site:
@@ -15,12 +17,14 @@
 -- (1 a name board on posts, 2 a glass sky lounge), rhythm (1 bands every floor, 2 bands every second floor and fins
 -- at the joints), mirror (which end is the tower, and which side of the lobby the pool is on).
 --
--- Previewing (the Studio helper): build it at 120 x 53 and 200 x 53, look from the road about 150 studs out, from a
--- corner, and from above. Check that the facets meet with no gap on the convex back, that the bands of neighbouring
--- facets meet cleanly at the joints (no flicker; they sit 0.03 apart in height on purpose), that the lobby drum sits
--- half in the slab, that the court things (pool, cabanas, canopy, wall) keep clear of the slab and the drum, and that
--- the holes in the wall read as holes. At night: some facets glow, the lobby glows, its roof edge is blue, the name
--- glows, the wash lights the middle of the curve. Compare with photos of its inspiration (ARCHETYPES.md B10).
+-- Previewing (the Studio helper): build it at 120 x 53, 200 x 53 and 200 x 140 (its landmark site is about that deep),
+-- look from the road about 150 studs out, from a corner, and from above. Check that the facets meet with no gap on the
+-- convex back, that the bands and the roof slabs of neighbouring facets meet cleanly at the joints (no flicker; they
+-- sit 0.03 apart in height on purpose), that no glass shows on the roof, that the lobby drum sits half in the slab,
+-- that the court things (pool, cabanas, canopy, planters, wall) keep clear of the slab and the drum, and that the
+-- holes in the wall read as holes. At night: some facets glow, the lobby glows, its roof edge is blue, the pool glows
+-- cyan, the name glows, the wash lights the middle of the curve. Compare with photos of its inspiration (ARCHETYPES.md
+-- B10).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -49,7 +53,7 @@ local SHAPE = {
 	-- By rhythm: a deep solid balcony front every floor (the white stripes the curve is known by), or a slab every
 	-- second floor between fins.
 	band = { thick = { 3.2, 1.4 }, proud = 3, embed = 0.4 },
-	roofBand = { thick = 2.6, proud = 3.4 },
+	roofBand = { thick = 2.6, proud = 3.4, back = 0.4 }, -- the roof slab: past the court face, past the back
 	endProud = 0.6, -- the end blocks stand proud of the glass on both faces
 	endRise = { 12, 3 }, -- over the roof: the tall end (left unmirrored), the low end
 	slot = 3, -- the tall end's glass slot
@@ -57,8 +61,13 @@ local SHAPE = {
 	court = 1.2, -- things in the court keep this far inside the slab's inner face
 	lobby = { height = 18, share = 0.3, min = 9, roof = 2, over = 2 },
 	deck = 0.5,
-	pool = { depth = 14, gap = 3, width = { 0.8, 8, 16 } },
-	cabana = { size = 5, height = 4.5, gap = 2, roof = 0.6, count = 3 },
+	-- The pool: its width and depth as shares of the court's radius, clamped (the vast pool grows with the site).
+	pool = { gap = 3, width = { 0.55, 10, 44 }, depth = { 0.4, 14, 32 } },
+	cabana = { size = 5, height = 4.5, gap = 2, roof = 0.6, count = 4 },
+	-- Pool umbrellas in front of the pool: how many, their size, their gap to the water, and how far the row keeps
+	-- behind the front line (clear of the planters along it).
+	umbrella = { count = 3, size = 6, gap = 2.5, front = 4 },
+	garden = { length = 14, depth = 2, height = 1.4, gap = 3 }, -- planters either side of the porte-cochere's drive
 	cheese = { length = 22, height = 10, thick = 1.2, holes = 5, hole = 2.8, gap = 3 },
 	canopy = { length = 26, depth = 10, low = 11.5, high = 14.5, thick = 0.9, column = 1.1 },
 	sign = { height = 6, lift = 4, max = 44 },
@@ -277,23 +286,33 @@ local function build(m: Types.Model)
 		local theta = -phi + (i - 0.5) * delta
 		local yo = (i % 2) * 0.03
 		local len = 2 * (rIn + bd.embed) * math.tan(delta / 2) + 0.05
-		for k = 1, up do
-			local roof = k == up
-			if roof or k % every == 0 then
-				local thick = if roof then SHAPE.roofBand.thick else bd.thick[rhythm]
-				local proud = if roof then SHAPE.roofBand.proud else bd.proud
-				local y = if roof then H + 0.06 - thick / 2 + yo else G + k * f + yo
+		for k = 1, up - 1 do
+			if k % every == 0 then
 				Kit.oriented(
 					m,
 					`Band{i}x{k}`,
 					"block",
-					at(rIn + (bd.embed - proud) / 2, theta, y),
-					Vector3.new(len, thick, proud + bd.embed),
+					at(rIn + (bd.embed - bd.proud) / 2, theta, G + k * f + yo),
+					Vector3.new(len, bd.thick[rhythm], bd.proud + bd.embed),
 					white,
 					"trim"
 				)
 			end
 		end
+		-- The roof: a white slab over the whole facet, the deep band on the court side and a cornice on the back (the
+		-- glass's own top never shows). As long as the facet's outer edge, so neighbours overlap at the joints, a few
+		-- hundredths apart in height.
+		local rb = SHAPE.roofBand
+		local r0, r1 = rIn - rb.proud, rOut + rb.back
+		Kit.oriented(
+			m,
+			`Band{i}x{up}`,
+			"block",
+			at((r0 + r1) / 2, theta, H + 0.06 - rb.thick / 2 + yo),
+			Vector3.new(2 * r1 * math.tan(delta / 2) + 0.05, rb.thick, r1 - r0),
+			white,
+			"trim"
+		)
 	end
 	if rhythm == 2 then
 		local fin = SHAPE.fin
@@ -417,12 +436,14 @@ local function build(m: Types.Model)
 	end
 
 	local pl = SHAPE.pool
-	local pw = share(rl, pl.width)
+	local pw = share(clear, pl.width)
 	local px0, px1 = -(rl + pl.gap + pw), -(rl + pl.gap)
 	local pz1 = courtBack(px0 - 0.8) - 0.8
-	local pz0 = math.max(-hd + 2, pz1 - pl.depth)
+	local pz0 = math.max(-hd + 2, pz1 - share(clear, pl.depth))
 	if pz1 - pz0 >= 5 and inCourt(px0 - 0.8, pz0 - 0.8) then
-		Kit.pool(m, "Pool", Vector3.new(px0, 0, pz0), Vector3.new(px1, 0, pz1), deck)
+		-- The water glows cyan at night.
+		local pool = Kit.pool(m, "Pool", Vector3.new(px0, 0, pz0), Vector3.new(px1, 0, pz1), deck)
+		Kit.lit(pool[2], "sign")
 		local cb = SHAPE.cabana
 		for k = 1, cb.count do
 			local cx1 = px0 - 1.8 - (k - 1) * (cb.size + cb.gap)
@@ -439,6 +460,25 @@ local function build(m: Types.Model)
 				Vector3.new(cx1 + 0.4, deck + cb.height + cb.roof, cz1 + 0.4),
 				accent
 			)
+		end
+		-- A row of umbrellas on the deck in front of the pool, where the court leaves room clear of the front planters.
+		local ub = SHAPE.umbrella
+		local uz = pz0 - ub.gap - ub.size / 2
+		if uz - ub.size / 2 >= -hd + ub.front then
+			for k = 1, ub.count do
+				local ux = px0 + (px1 - px0) * (k - 0.5) / ub.count
+				if inCourt(ux - ub.size / 2, uz - ub.size / 2) and inCourt(ux + ub.size / 2, uz - ub.size / 2) then
+					Kit.umbrella(
+						m,
+						`Umbrella{k}`,
+						ux,
+						uz,
+						deck,
+						ub.size,
+						if k % 2 == 1 then pal.accent else P.frame.white
+					)
+				end
+			end
 		end
 	end
 
@@ -486,6 +526,22 @@ local function build(m: Types.Model)
 		for k, i in { 1, 3 } do
 			local x = xs[i] + (if i == 1 then 1 else 0)
 			Kit.column(m, `CanopyColumn{k}`, x, cz0 + 1.2, -KIT.bury, ys[i] - 0.2, cp.column, white)
+		end
+	end
+	-- Planters along the front either side of the drive, where the court has room.
+	local gd = SHAPE.garden
+	for i, side in { -1, 1 } do
+		local a = side * (L / 2 + gd.gap)
+		local b = a + side * gd.length
+		local z0, z1 = -hd + 0.8, -hd + 0.8 + gd.depth
+		if inCourt(b, z1) and inCourt(a, z1) and math.abs(b) <= hw - 1 then
+			Kit.planter(
+				m,
+				`Garden{i}`,
+				Vector3.new(math.min(a, b), deck, z0),
+				Vector3.new(math.max(a, b), deck + gd.height, z1),
+				white
+			)
 		end
 	end
 end

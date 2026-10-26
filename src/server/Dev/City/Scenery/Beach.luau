@@ -462,7 +462,8 @@ function Beach.plan(host: Host, ledger: Ledger): number
 		x += palms.every
 	end
 
-	-- A row of coconut palms on the lawn along the promenade's land side, leaning every which way.
+	-- A row of coconut palms on the lawn along the promenade's land side, leaning seaward every which way (never back
+	-- over the shore road).
 	local lawn = BEACH.lawn
 	x = x0 + lawn.every / 2
 	while x < x1 do
@@ -484,13 +485,14 @@ function Beach.plan(host: Host, ledger: Ledger): number
 			continue
 		end
 		palmCount += 1
+		local seawardYaw = if sea > 0 then math.pi else 0
 		local trunk, crown = Palms.specs(
 			Piece.tile(host, px, trunkAt.Y),
 			`BeachPalm{palmCount}`,
 			"scenery",
 			"coconut",
 			Vector3.new(px, host.groundAt(px, trunkAt.Y), trunkAt.Y),
-			rolls.yaw * 2 * math.pi,
+			seawardYaw + math.rad(lawn.spread) * (2 * rolls.yaw - 1),
 			rolls
 		)
 		host.add(trunk)
@@ -566,32 +568,11 @@ function Beach.plan(host: Host, ledger: Ledger): number
 			if not free(sx) then
 				continue
 			end
-			local r = sets.canopy / 2
-			local min, max = Vector3.new(-r, 0, -r), Vector3.new(r, 8, r)
+			local r = sets.canopy / 2 + 1
+			local min, max = Vector3.new(-r, 0, -r), Vector3.new(r, 8.5, r)
+			local tilt = (rng:NextNumber() - 0.5) * 2 * sets.tilt
 			local ok = place(`Sun{setCount + 1}`, frameAt(sx, sd), min, max, BLOCKERS, function(m)
-				Kit.column(m, "Pole", 0, 0, -0.6, 7.4, 0.25, Kit.look(PALETTE.white, Enum.Material.Metal), "detail")
-				Kit.disc(m, "", 0, 0, 7.2, sets.canopy, 0.35, Kit.look(colour, Enum.Material.SmoothPlastic))
-				Kit.ball(
-					m,
-					"Finial",
-					Vector3.new(0, 7.55, 0),
-					0.6,
-					Kit.look(PALETTE.white, Enum.Material.SmoothPlastic)
-				)
-				local lounger = sets.loungers
-				local look = Kit.look(towel, Enum.Material.SmoothPlastic)
-				for s, side in { -1, 1 } do
-					local cx = side * (lounger[1] / 2 + 0.5)
-					Kit.wedge(
-						m,
-						`Lounger{s}`,
-						Vector3.new(cx - lounger[1] / 2, 0.05, -lounger[3] / 2),
-						Vector3.new(cx + lounger[1] / 2, 0.05 + lounger[2], lounger[3] / 2),
-						"back",
-						look,
-						"trim"
-					)
-				end
+				Beach.drawSet(m, colour, towel, tilt)
 			end)
 			if ok then
 				setCount += 1
@@ -599,6 +580,71 @@ function Beach.plan(host: Host, ledger: Ledger): number
 		end
 	end
 	return added
+end
+
+-- An umbrella-and-lounger set in its own frame (front -Z, toward the sea): a pole tipped `tilt` degrees toward the sea,
+-- a canopy of two stacked discs (the wide one in `colour`, a white crown on it, so it reads as a dome, not a table) and
+-- a finial; two loungers either side, each a padded bed and a backrest raised at the land end, in `towel`. 8 parts.
+function Beach.drawSet(m: any, colour: Color3, towel: Color3, tilt: number)
+	local sets = BEACH.sets
+	local white = Kit.look(PALETTE.white, Enum.Material.SmoothPlastic)
+	local lean = CFrame.Angles(-math.rad(tilt), 0, 0)
+	local height = sets.height
+	local pole = 0.22
+	Kit.part(
+		m,
+		"Pole",
+		"cylinder",
+		lean * CFrame.new(0, (height - 0.6) / 2, 0) * CFrame.Angles(0, 0, math.pi / 2),
+		Vector3.new(height + 0.6, pole, pole),
+		Kit.look(PALETTE.white, Enum.Material.Metal),
+		"detail"
+	)
+	local canopy = sets.canopy
+	Kit.part(
+		m,
+		"",
+		"cylinder",
+		lean * CFrame.new(0, height, 0) * CFrame.Angles(0, 0, math.pi / 2),
+		Vector3.new(0.3, canopy, canopy),
+		Kit.look(colour, Enum.Material.SmoothPlastic),
+		"trim"
+	)
+	Kit.part(
+		m,
+		"Crown",
+		"cylinder",
+		lean * CFrame.new(0, height + 0.35, 0) * CFrame.Angles(0, 0, math.pi / 2),
+		Vector3.new(0.4, canopy * 0.55, canopy * 0.55),
+		Kit.look(PALETTE.white, Enum.Material.SmoothPlastic),
+		"trim"
+	)
+	Kit.part(m, "Finial", "ball", lean * CFrame.new(0, height + 0.75, 0), Vector3.one * 0.55, white, "detail")
+	local lounger = sets.loungers
+	local look = Kit.look(towel, Enum.Material.SmoothPlastic)
+	local w, long = lounger[1], lounger[3]
+	for s, side in { -1, 1 } do
+		local cx = side * (w / 2 + 0.7)
+		-- The bed: its foot toward the sea, its head under the backrest at the land end.
+		Kit.trim(
+			m,
+			`Lounger{s}`,
+			Vector3.new(cx - w / 2, 0.05, -long / 2),
+			Vector3.new(cx + w / 2, 0.7, long / 2),
+			look
+		)
+		local a = Vector3.new(cx, 0.75, long / 2 - 2.1)
+		local b = Vector3.new(cx, 0.75 + lounger[2], long / 2 - 0.3)
+		Kit.part(
+			m,
+			`Back{s}`,
+			"block",
+			CFrame.lookAt((a + b) / 2, b),
+			Vector3.new(w, 0.22, (b - a).Magnitude),
+			look,
+			"trim"
+		)
+	end
 end
 
 -- A bench in its own frame (front -Z, where you face when sitting): a base, a seat and a back. 3 parts.

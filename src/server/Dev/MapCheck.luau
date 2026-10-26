@@ -16,7 +16,8 @@
 --   7. the city (Dev/City): notes its sites, core claims, old-look fallbacks and building parts by district and the
 --      Skyline model; fails on a one-off that found no site, on more parts in view at once than Config/Environment
 --      budget.inViewParts (the phone gate, MapCheck.inView), on a night light, sign, light or ad unit inside a SLIM
---      model, and on a Skyline model that isn't Persistent or is over its budget.
+--      model, on a Skyline model that isn't Persistent or is over its budget, and on palms built as parts-only
+--      stand-ins (their mesh templates missing from ServerStorage.CityAssets).
 -- It also confirms the Ground and Roads models stream as Persistent (so a fast car never outruns its road).
 --
 -- Edit-mode tool only (CLAUDE.md hard rule 9). Run it from MCP execute_luau (Edit datamodel) or the command bar:
@@ -40,6 +41,7 @@ local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
 local Pathfind = require(ReplicatedStorage.Shared.Road.Pathfind)
 local Perf = require(ReplicatedStorage.Shared.Config.Perf)
 local RoadGraph = require(ReplicatedStorage.Shared.Config.RoadGraph)
+local Scenery = require(script.Parent.City.Scenery)
 
 export type Report = {
 	ok: boolean,
@@ -826,6 +828,17 @@ local function checkCity(generated: Instance, report: Report)
 		`city: {#plan.sites} sites, {city.claims} core claims; building parts by district: {byDistrict(city.parts)}`
 	)
 	table.insert(report.notes, `city: plots left to the old look (no archetype fits them): {byDistrict(city.legacy)}`)
+	table.insert(report.notes, `city: plots left open (Config/City openFallback): {byDistrict(city.open)}`)
+	-- No old glass box downtown or on the beach (roast 2026-10-26 point 4): those districts are the city's showcase.
+	for _, district in { "downtown", "beach" } do
+		local boxes = city.legacy[district] or 0
+		if boxes > 0 then
+			table.insert(
+				report.missing,
+				`city: {boxes} old-look box buildings in {district} (Config/City openFallback)`
+			)
+		end
+	end
 	table.insert(report.notes, `city: Skyline {city.skyline} parts; building night lights {city.lights}`)
 	if #city.missing > 0 then
 		table.insert(report.notes, `city: not written yet: {table.concat(city.missing, ", ")}`)
@@ -877,6 +890,21 @@ local function checkCity(generated: Instance, report: Report)
 		end
 	else
 		table.insert(report.notes, "this Studio has no SLIM level of detail; the SLIM models weren't checked")
+	end
+
+	-- Palms the build couldn't clone from their templates (Dev/City/Scenery/Palms): each is about ten parts where the
+	-- plan and the phone gate above count two.
+	local standIns = 0
+	for _, model in generated:GetDescendants() do
+		if model:IsA("Model") and model:GetAttribute(Scenery.Palms.standInAttribute) then
+			standIns += 1
+		end
+	end
+	if standIns > 0 then
+		table.insert(
+			report.missing,
+			`{standIns} palms are parts-only stand-ins: put the templates back in ServerStorage.CityAssets.Palms and rebuild`
+		)
 	end
 
 	local skyline = generated:FindFirstChild(City.skyline.folder)

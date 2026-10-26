@@ -2,6 +2,85 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-26 — Miami city: hand-modelled buildings, beach, bay, lighting, roast fixes and a showcase
+
+Davis, 2026-10-25: redo the buildings and the scenery, Miami not Greenville, every building hand-modelled from its own
+real inspiration, sharp, with better lighting; keep the gameplay. Branch `miami-city`. Nothing is committed or
+published yet.
+
+**What was built (the whole rebuild)**
+- 52 building types researched from real Miami buildings (`docs/city/ARCHETYPES.md`: inspiration, massing, colours,
+  night lights, part budget). 50 are written as Edit-mode builders, one file each in
+  `src/server/Dev/City/Archetypes/<district>/`, with one config module each in `src/shared/Config/CityArchetypes/`.
+  Real building, architect and neighbourhood names stay in `docs/` only: `scripts/banned-city-names.txt` makes the
+  gate refuse them in `src/` and `tests/`.
+- The building kit (`Dev/City/Kit`) and the placement planner (`Dev/City/CityBuilder`): 238 sites over downtown (the
+  towers and supertall one-offs), the beach (a continuous Art Deco hotel row on the shore road), the suburbs (villas,
+  cottages, garden apartments, the four claimable house styles), the arts district (mural warehouses, sculpted
+  garages, a gallery, the crane yard) and the quarry. Towers merge neighbouring plots and claim part of their block's
+  empty core; no plot, pad, lot or gameplay spot moved.
+- Scenery (`Dev/City/Scenery`): mesh palms (royal, coconut, sabal), the beach (sand band, dunes, lifeguard stands,
+  umbrellas, boardwalks, showers, nets), the bay as parts, the causeway with its lit arch, street dressing and Town
+  Square.
+- The lighting look (`Config/Environment`, `Services/DayNightService`): Realistic lighting style, shadows, sky light,
+  bloom, a 24-minute day with golden hours and a neon night.
+
+**Roast fixes this step** (a fresh reviewer roasted the integrated city: 10 points; worst first)
+1. *Towers on a lawn:* downtown's ground is pale concrete (206,202,194) instead of grey asphalt, and every paved lot
+   and core claim a shade under it, so the 299 open downtown lots read as plazas. Town Square keeps its grass.
+   Not done: pool-deck and parking-deck cores, podiums pulled to the kerb, two or three towers per block (the part
+   budgets are nearly full), and the lawn strip between downtown and the hotel row (open county ground).
+2. *One cobalt glass:* the glass tokens are now ARCHETYPES.md's pale set (aqua, silver, sea-green, sky blue,
+   charcoal, warm smoke) at reflectance 0.27. Towers 160 studs and taller keep floor lines only above 40 studs, so
+   the mullion grid no longer turns into a checkerboard from across the city.
+3. *Black, mustard night:* the sky is navy going electric blue at the horizon. Cause: the place had no Sky object, and
+   without one the engine's night sky stays black whatever the atmosphere says; DayNightService now makes one
+   (the engine's default faces) and thickens the atmosphere at night. Lit windows take one of three tints (warm,
+   cream, cool) and about a third of the upper window runs stay dark. Night fill light raised for the suburbs.
+4. *Old boxes:* none were left after integration; MapCheck now fails if any old box building appears downtown or on
+   the beach.
+5. *Cold daylight:* the sun was nearly overhead (the engine draws a midsummer sun, so Miami's real 25.8 put it at
+   87 degrees) and every south face, the whole Deco row included, stood in blue shade. Latitude is now 50 (noon sun
+   63 degrees up, a little south). Warm fill light, a warm sun tint, and a per-hour colour grade (cream by day, peach
+   at golden hour, cool at night). Pale and pastel walls are built in Plaster, not smooth plastic.
+6. *Pool water:* the glint texture is gone, the bands are darker green-teal into a deep blue-green bay, the bank is
+   wet sand, and the sheen is lowered to 0.07 (at 0.18 the seam between two water sheets showed as a straight line).
+   Not done: a wavy shoreline and surf.
+7. *Dead street level:* lifeguard stands now stand on 11-stud legs with a longer ramp. Not done: café sets on every
+   hotel front, parked cars, storefronts on every podium, hedges and driveways in the suburbs.
+8. *Landmarks:* the sail tower's head no longer overhangs half the tower as a white slab: it leans out a little over
+   a shorter head, its underside glass. Not done: the tiered curve tower, the triple tower's colonnade, the
+   telescope tower and the fin tower.
+9. *Box trees:* no two-cube broadleaf trees in the city, the parks or the suburbs (palms, sea grape, flat live oak).
+   Not done: the royal palm's crownshaft and frond meshes (they are generated meshes in the place).
+10. *Low-rise detail:* not done this round.
+
+**Numbers** (the built map, 2026-10-26)
+- Map: 25,865 parts of 30,000 (31,749 instances). Building parts 13,638 of 15,000: downtown 7,569, suburbs 3,051,
+  beach 2,099, arts 813, quarry 106. 1,501 trees. Skyline model 102 of 200. Building night lights 1,918 (2,200).
+- Phone gate: at most 18,773 parts in view at once, of 20,000 (downtown's west edge).
+- 238 sites, 33 core claims, no old box buildings; open plots: downtown 299, arts 114, suburbs 40, beach 19, quarry 3.
+
+**Checked in Studio**
+- MapCheck PASS (346 of 346 road nodes reachable, 0 road overlaps, every location in place).
+- Full spec harness on fresh copies: passed=2677, failed=0. Gate (`scripts/check.ps1`): CHECK PASSED.
+- A playtest for the showcase (HUD hidden, scripted camera, the clock moved with `DevClockTime`): 12 stills in
+  `docs/images/city/showcase/` (01 skyline across the bay at golden hour ... 12 the night skyline), including a
+  pink supercar in front of the Deco row. Lighting style and quality were as the place has them.
+- Not checked: a real phone, and a long drive with the new lighting.
+
+**Waiting on Davis**
+- Terrain water for the bay (it changes what happens when a car drives into the water). The bay stays parts until then.
+- `Lighting.Technology` = Future in Studio (a script can't set it), then publish so live servers get the lighting
+  style and quality the place now has (`docs/LAUNCH.md` step 10).
+- The invented sign names (THE AMPERE, SEAVOLT, TIDEWATT...): keep or veto any.
+- The open lots (`City.openFallback`): keep them as plazas, or spend the last ~1,200 in-view parts on more buildings.
+- A Studio asset in the place loads as the wrong type on boot (`rbxassetid://203785492`, not in the repo).
+
+**Still weak** (from the roast, not done): street life on the hotel row and downtown podiums, the lawn strip between
+downtown and the beach, the generic towers still read as glass with white lines at night, the palm crownshaft mesh,
+the arts district's murals and the tiled midrise's tilework, and the tiered curve, triple, telescope and fin towers.
+
 ## 2026-10-24 — Roast fixes: sound, day and night, price ladder, first session, exclusive looks
 
 A fresh reviewer roasted the game before launch (`docs/roast-2026-10-24.md`, 10 points). Five helpers fixed what code

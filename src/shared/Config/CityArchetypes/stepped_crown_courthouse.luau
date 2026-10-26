@@ -15,10 +15,10 @@ return {
 	maxWidth = 180,
 	minDepth = 40,
 	maxPlots = 4,
-	-- The top of the shaft's cornice. The colonnade storey, the stepped pyramid and its lantern rise up to crownMax
-	-- over it (about 290 in all, ARCHETYPES §9).
+	-- The top of the shaft's cornice. The two-storey colonnade, the stepped pyramid, its lantern and (crown 2) a short
+	-- spire rise up to crownMax over it (about 300 in all, ARCHETYPES §9).
 	heights = { min = 216, max = 232 },
-	crownMax = 66,
+	crownMax = 72,
 	budget = 120,
 	palettes = 3,
 	crowns = 2,

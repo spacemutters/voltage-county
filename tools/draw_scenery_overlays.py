@@ -56,12 +56,59 @@ def ripple(n=256):
     return img
 
 
+def glints(n=256, count=150, seed=11):
+    """Sun glinting on a light chop: short, thin, soft-ended streaks lying mostly across the tile (U), scattered and
+    tileable (each streak wraps round the edges). Reads as sparkle on open water, not a pool's caustic net."""
+    import random
+
+    rnd = random.Random(seed)
+    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    px = img.load()
+    for _ in range(count):
+        cx, cy = rnd.random() * n, rnd.random() * n
+        length = rnd.uniform(5, 16)
+        thick = rnd.uniform(0.7, 1.5)
+        angle = rnd.uniform(-0.35, 0.35)
+        strength = rnd.uniform(0.45, 1.0)
+        ux, uy = math.cos(angle), math.sin(angle)
+        r = int(length / 2 + 3)
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                along = dx * ux + dy * uy
+                across = -dx * uy + dy * ux
+                if abs(along) > length / 2:
+                    continue
+                fade = 1 - (2 * along / length) ** 2  # soft ends
+                a = max(0.0, 1 - abs(across) / thick) * fade * strength
+                if a <= 0:
+                    continue
+                x, y = int(cx + dx) % n, int(cy + dy) % n
+                old = px[x, y][3] / 255
+                px[x, y] = (255, 255, 255, int(255 * min(1.0, old + a * (1 - old))))
+    return img
+
+
+def ramp(w=256, h=8):
+    """A fade from clear (U = 0) to solid white (U = 1), eased at both ends: laid across a water band and tinted with
+    the next band's colour, it blends one band into the next with no hard line."""
+    img = Image.new("RGBA", (w, h), (255, 255, 255, 0))
+    px = img.load()
+    for x in range(w):
+        t = x / (w - 1)
+        a = t * t * (3 - 2 * t)
+        for y in range(h):
+            px[x, y] = (255, 255, 255, int(round(255 * a)))
+    return img
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     for name, image in (
         ("crosswalk_zebra.png", zebra()),
         ("balustrade_x.png", balustrade()),
         ("water_ripple.png", ripple()),
+        ("water_glints.png", glints()),
+        ("water_ramp.png", ramp()),
     ):
         path = os.path.join(OUT, name)
         image.save(path)

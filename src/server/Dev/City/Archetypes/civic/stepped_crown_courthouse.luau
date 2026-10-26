@@ -16,8 +16,10 @@
 -- Previewing (Studio helper): Preview.build("stepped_crown_courthouse", { width = 124, depth = 100 }) for the full
 -- look (the planner's core claim gives it that depth); width 84, depth 53 is the plain-plot fallback (a 30-stud
 -- tower). Check: the pyramid's steps read as steps against the sky from the street, the colonnade's columns stand
--- clear of the portico glass, the piers read proud of the windows; at night the step rings glow warm, the colonnade
--- core and lantern are lit, and the wash lights the big columns.
+-- clear of the portico glass; the tower reads as tall dark window bays between deep pale piers (dark spandrels, the
+-- piers' shadows down them), with the ledge and cornice overhanging the piers; the crown's columns stand fat on their
+-- stylobate step round the dark core; at night the step rings glow warm, the colonnade core and lantern are lit, and
+-- the wash lights the big columns.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -49,16 +51,26 @@ local SHAPE = {
 	shaft = { share = 0.4, max = 48, min = 12, stage2 = { share = 0.13, min = 24, max = 34 }, step = 4 },
 	-- Corner piers reach `corner` onto each face and stand `cornerProud` out past it (so they never cover a window);
 	-- the piers between bays are `wide` and stand `proud`.
-	pier = { corner = 0.4, cornerProud = 2.0, wide = 2.6, proud = 1.0 },
+	-- Deep piers: their shadows down the window bays are the tower's vertical look.
+	pier = { corner = 0.4, cornerProud = 2.6, wide = 2.6, proud = 1.8 },
 	-- The window columns on the tower: `perBay` windows across, set `proud` out of the stone core (the piers stand
 	-- further out), `margin` of stone either side between them and the piers, from `sill` over a stage's foot to
 	-- `head` under its top.
 	strip = { perBay = 2, proud = 0.12, margin = 1.3, sill = 1.5, head = 2 },
-	ledge = { thick = 1.4, proud = 1.4 },
-	towerCornice = { thick = 1.4, proud = 1.4 },
-	peristyle = { height = 16, perSide = 5, inset = 1.6, core = 2.2, entablature = 3 },
+	ledge = { thick = 1.6, proud = 3 }, -- over the piers (they stand 1.8 out, the corner ones 2.6)
+	towerCornice = { thick = 1.8, proud = 3 },
+	-- The temple of columns under the pyramid, on a stylobate step: columns `column` of the tower's width across.
+	peristyle = {
+		height = 20, -- a colossal order, about two storeys: the temple must read from the street under the pyramid
+		perSide = 5,
+		inset = 1.6,
+		core = 2.6,
+		entablature = 3,
+		column = { share = 0.1, min = 2.2, max = 3.4 },
+		stylobate = { height = 1.2, proud = 0.6 },
+	},
 	pyramid = {
-		{ steps = 6, rise = 6.4, inset = 3.2 }, -- crown 1
+		{ steps = 6, rise = 6.4, inset = 3.2 }, -- crown 1 (with the temple: about 68 over the roof in all)
 		{ steps = 8, rise = 4.6, inset = 2.6 }, -- crown 2
 	},
 	ring = { thick = 1.1, proud = 0.15, under = 0.5 }, -- the light band round each pyramid step
@@ -74,7 +86,7 @@ local PALETTES = {
 		stone = rgb(204, 198, 186),
 		trim = rgb(222, 216, 204),
 		granite = rgb(204, 200, 192),
-		spandrel = rgb(190, 184, 172),
+		spandrel = rgb(132, 128, 122), -- the window bays' spandrels, in shadow between the piers
 		pyramid = Kit.look(rgb(214, 208, 196), Enum.Material.Limestone),
 		bronze = rgb(92, 72, 50),
 		wash = rgb(255, 222, 180),
@@ -83,8 +95,8 @@ local PALETTES = {
 		stone = rgb(220, 204, 178),
 		trim = rgb(234, 222, 200),
 		granite = rgb(190, 176, 156),
-		spandrel = rgb(206, 190, 164),
-		pyramid = Kit.look(rgb(222, 190, 128), Enum.Material.Limestone),
+		spandrel = rgb(142, 130, 112),
+		pyramid = Kit.look(rgb(196, 162, 108), Enum.Material.Limestone), -- aged gilt, not lemon
 		bronze = rgb(110, 80, 46),
 		wash = rgb(255, 210, 150),
 	},
@@ -92,7 +104,7 @@ local PALETTES = {
 		stone = rgb(232, 228, 218),
 		trim = rgb(244, 240, 232),
 		granite = rgb(112, 112, 114),
-		spandrel = rgb(214, 210, 200),
+		spandrel = rgb(140, 138, 134),
 		pyramid = Kit.look(rgb(98, 146, 126), Enum.Material.SmoothPlastic),
 		bronze = rgb(70, 64, 56),
 		wash = rgb(255, 232, 200),
@@ -268,7 +280,7 @@ local function build(m: Types.Model)
 		Vector3.new(-signW / 2, col.top + 1.6, zF + 0.6 - en.proud - 0.12),
 		Vector3.new(signW / 2, en.top - 1.4, zF + 0.6 - en.proud - 0.04),
 		Enum.NormalId.Front,
-		"VOLTAGE COUNTY COURTHOUSE",
+		City.signNames.civic.courthouse,
 		pal.trim,
 		rgb(62, 58, 52),
 		SHAPE.font
@@ -398,8 +410,19 @@ local function build(m: Types.Model)
 	-------------------------------------------------------------------------------------------------------
 	local ps = SHAPE.peristyle
 	local q = S2 / 2 - ps.inset
-	local cd = math.clamp(S2 * 0.06, 1.4, 3)
+	local cd = math.clamp(S2 * ps.column.share, ps.column.min, ps.column.max)
 	local pTop = H + ps.height
+	-- The stylobate: a step of stone over the tower's cornice that the columns stand on.
+	local sb = ps.stylobate
+	local sbHalf = q + cd / 2 + sb.proud
+	local colFoot = H + sb.height
+	Kit.trim(
+		m,
+		"Stylobate",
+		Vector3.new(-sbHalf, H - 0.03, tcz - sbHalf),
+		Vector3.new(sbHalf, colFoot, tcz + sbHalf),
+		trimLook
+	)
 	Kit.glass(
 		m,
 		"CrownCore",
@@ -416,7 +439,7 @@ local function build(m: Types.Model)
 				k += 1
 				local x = -q + 2 * q * i / (n - 1)
 				local z = tcz - q + 2 * q * j / (n - 1)
-				Kit.column(m, `Peristyle{k}`, x, z, H - 0.05, pTop + 0.05, cd, trimLook, "trim")
+				Kit.column(m, `Peristyle{k}`, x, z, colFoot - 0.05, pTop + 0.05, cd, trimLook, "trim")
 			end
 		end
 	end

@@ -18,6 +18,7 @@ local Workspace = game:GetService("Workspace")
 
 local City = require(ReplicatedStorage.Shared.Config.City)
 local CityBuilder = require(script.Parent.CityBuilder)
+local DayNightService = require(script.Parent.Parent.Parent.Services.DayNightService)
 local MapBuilder = require(script.Parent.Parent.MapBuilder)
 local Types = require(script.Parent.Types)
 
@@ -134,8 +135,10 @@ function Preview.camera(from: Vector3, target: Vector3)
 	camera.CFrame = CFrame.lookAt(from, target)
 end
 
--- The light the game runs with (Config/Environment dayNight.scene; a midday sun unless `clock` says otherwise) on, or
--- back as it was. Edit mode starts with shadows and sky light off, which hides every edge the city is built to show.
+-- The light the game runs with (Config/Environment dayNight.scene; a 2 pm sun unless `clock` says otherwise) on, or
+-- back as it was: the scene's shadows, sky light and reflections, and the sky's ambient, outdoor ambient and
+-- brightness at that clock (Services/DayNightService.lookAt), so a day shot is as bright as the game's. Edit mode
+-- starts with shadows and sky light off, which hides every edge the city is built to show.
 function Preview.lighting(on: boolean, clock: number?)
 	guard()
 	local folder = root()
@@ -156,7 +159,12 @@ function Preview.lighting(on: boolean, clock: number?)
 		lighting.EnvironmentDiffuseScale = scene.environmentDiffuseScale
 		lighting.LightingStyle = Enum.LightingStyle.Realistic
 		lighting.PrioritizeLightingQuality = true
-		lighting.ClockTime = clock or 14
+		local at = clock or 14
+		local sky = DayNightService.lookAt(at)
+		lighting.ClockTime = at
+		lighting.Ambient = sky.ambient
+		lighting.OutdoorAmbient = sky.outdoorAmbient
+		lighting.Brightness = sky.brightness
 	elseif folder:GetAttribute("SavedLighting") then
 		for _, key in LIGHTING_KEYS do
 			local value = folder:GetAttribute(`Saved{key}`)
@@ -170,32 +178,40 @@ function Preview.lighting(on: boolean, clock: number?)
 	end
 end
 
--- Night (or back to day): the preview models' night lights in their night look (Config/Environment nightLights, as
--- Services/DayNightService switches them at dusk) under the night sky's ambient light. Call lighting(true) first.
-function Preview.night(on: boolean)
+-- Night (or back to day): the preview models' night lights in their night look under the night sky (21:00), or the
+-- day sky again (14:00). Each light looks exactly as Services/DayNightService makes it at runtime (DayNightService
+-- nightLook and signBrightness): its own NightColor first, a keepDayColor kind (stained glass) in its day colour,
+-- a light show's colour on night `nightNumber` (default 1), and the kind's sign text brightness. Call lighting(true)
+-- first.
+function Preview.night(on: boolean, nightNumber: number?)
 	guard()
 	local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 	local lights = Environment.nightLights
 	local folder = root()
 	local lighting: any = Lighting
-	if on then
-		local sky = Environment.dayNight.keyframes[1]
-		lighting.ClockTime = 21
-		lighting.Ambient = sky.ambient
-		lighting.OutdoorAmbient = sky.outdoorAmbient
-		lighting.Brightness = sky.brightness
-	end
+	local sky = DayNightService.lookAt(if on then 21 else 14)
+	lighting.ClockTime = if on then 21 else 14
+	lighting.Ambient = sky.ambient
+	lighting.OutdoorAmbient = sky.outdoorAmbient
+	lighting.Brightness = sky.brightness
 	for _, part in folder:GetDescendants() do
 		if part:IsA("BasePart") and part:HasTag(lights.tag) then
 			local kind = part:GetAttribute(lights.kindAttribute)
-			local look = if type(kind) == "string" then lights.kinds[kind] else nil
 			local dayColor = part:GetAttribute(lights.dayColorAttribute)
-			if look and typeof(dayColor) == "Color3" then
-				part.Material = if on then look.nightMaterial else look.dayMaterial
-				part.Color = if on then look.nightColor else dayColor
+			if type(kind) == "string" and typeof(dayColor) == "Color3" then
+				local own = part:GetAttribute(lights.nightColorAttribute)
+				local override: Color3? = if typeof(own) == "Color3" then own else nil
+				local material, color = DayNightService.nightLook(kind, on, dayColor, nightNumber or 1, override)
+				if material and color then
+					part.Material = material
+					part.Color = color
+				end
+				local text = DayNightService.signBrightness(kind, on)
 				for _, child in part:GetChildren() do
 					if child:IsA("Light") then
 						child.Enabled = on
+					elseif text ~= nil and child:IsA("SurfaceGui") then
+						child.Brightness = text
 					end
 				end
 			end

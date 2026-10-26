@@ -10,7 +10,7 @@
 -- place of the riverside_water_tower feature's old look).
 -- Variants: palette (1 cream with terracotta courses and a copper-green dome, 2 white with coral courses and a red
 -- tile cap, 3 sand with white courses and a bronze dome), crown (1 an open lantern of eight posts under a dome, 2 a
--- walled lantern with four arched openings under a stepped cap), rhythm (1 slit windows stacked front and back, 2 slit
+-- walled lantern with four arched openings under an eave and a low dome), rhythm (1 slit windows stacked front and back, 2 slit
 -- windows turning round the shaft stage by stage), mirror (the spiral's direction).
 --
 -- Previewing (Studio helper): Preview.build("lighthouse_water_tower", { width = 30, depth = 30 }). Check: the stages
@@ -225,12 +225,12 @@ local function build(m: Types.Model)
 			local p1 = Vector3.new(c.X - f.X * 0.3, spring, c.Y - f.Y * 0.3)
 			Kit.lit(Kit.tube(m, `OpeningArch{k}`, p0, p1, ow, Kit.glassLook(DARK, 0.1), "detail"), "neonAmber")
 		end
-		local y = lTop
-		for k, share in { 1.25, 0.9, 0.55 } do
-			Kit.disc(m, `Cap{k}`, 0, 0, y + 0.6, across * share, 1.2, pal.cap, "trim")
-			y += 1.2
-		end
-		capTop = y
+		-- The cap: a wide eave, a step, then a low dome sunk into the step (a lid of flat discs read as a hat).
+		Kit.disc(m, "Cap1", 0, 0, lTop + 0.6, across * 1.25, 1.2, pal.cap, "trim")
+		Kit.disc(m, "Cap2", 0, 0, lTop + 1.7, across * 0.96, 1.0, wall, "trim")
+		local dome = across * 0.86
+		Kit.ball(m, "Cap3", Vector3.new(0, lTop + 2.1, 0), dome, pal.cap, "trim")
+		capTop = lTop + 2.1 + dome / 2
 	else
 		-- An open lantern: eight slim posts round a glowing core, a cornice and a dome.
 		Kit.lit(Kit.column(m, "Lamp", 0, 0, H, lTop, 2 * r - 0.8, lampLook, "detail"), "neonAmber")

@@ -13,8 +13,8 @@ return {
 	minDepth = 44,
 	maxPlots = 4,
 	heights = { min = 128, max = 160 },
-	crownMax = 52, -- the belfry (19), its dome and spike over a 24-wide belfry reach about 50
-	budget = 64,
+	crownMax = 56, -- the plinth, a 24-wide belfry (23 tall), its dome, spike and finial reach about 50
+	budget = 92, -- 83 on a plot; a deep site (a core claim) adds its pool court and the wings' court-side windows
 	palettes = 3,
 	crowns = 2,
 	rhythms = 2,

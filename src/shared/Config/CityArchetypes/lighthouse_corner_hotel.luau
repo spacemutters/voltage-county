@@ -14,7 +14,7 @@ return {
 	maxPlots = 2,
 	heights = { min = 46, max = 56 },
 	crownMax = 28,
-	budget = 74,
+	budget = 78, -- 61 to 74 seen: six lantern mullions and the broad hat; a little headroom
 	palettes = 4,
 	crowns = 2,
 	rhythms = 2,

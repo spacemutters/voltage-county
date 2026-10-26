@@ -153,18 +153,28 @@ function Streets.palms(host: Host, ledger: Ledger, state: State, which: (Rule) -
 				local base = if street.sidewalk > 0 and not bridge
 					then street.surface(here) + host.sidewalkRaise
 					else ground
+				-- Its lean: any way, or (leanOut) away from the road. A palm leans toward its front, -Z turned by yaw.
+				local yaw = rolls.yaw * 2 * math.pi
+				if r.leanOut then
+					local out = street.l * side
+					local spread = math.rad(r.leanSpread or 0)
+					yaw = math.atan2(-out.X, -out.Y) + spread * (2 * rolls.yaw - 1)
+				end
 				local trunkSpec, crown = Palms.specs(
 					"",
 					`StreetPalm{state.palms + 1}`,
 					"scenery",
 					r.species,
 					Vector3.new(p.X, base, p.Y),
-					rolls.yaw * 2 * math.pi,
+					yaw,
 					rolls,
 					r.scale
 				)
-				-- A crown that hangs over the road stays frondClearance above it.
-				local overhang = Palms.reach(species, s) > lateral - street.half
+				-- A crown that hangs over the road (its spread, a disc round its box's centre, reaching past the kerb)
+				-- stays frondClearance above it.
+				local centre = Vector2.new(crown.cframe.X, crown.cframe.Z)
+				local across = math.abs((centre - street.a):Dot(street.l))
+				local overhang = across - crown.size.X / 2 < street.half
 				local bottom = crown.cframe.Y - crown.size.Y / 2
 				if overhang and bottom < street.surface(here) + STREET.frondClearance then
 					continue

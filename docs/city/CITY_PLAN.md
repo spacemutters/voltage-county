@@ -258,7 +258,7 @@ mid-century motels and the diner, and the south shore a small cluster of slender
 
 **Plot sides** (areas in `Config/City.areas`)
 
-- **Land side** (north of the road, z 1422..1478, area `ocean_drive`, cap 200): hotels. Its occupancy is raised to
+- **Land side** (north of the road, z 1422..1478, area `shore_hotel_row`, cap 200): hotels. Its occupancy is raised to
   0.95 (decision L2). Plots stay where they are; only more of them get a building.
 - **Beach side** (south of the road, z 1517..1578, area `ocean_beach`): nothing built (density 0), so the hotels look
   over the sand to the water. (The pavilions this plan first wanted have no archetype in ARCHETYPES.md; the
@@ -277,7 +277,7 @@ mid-century motels and the diner, and the south shore a small cluster of slender
 |---|---|
 | The hotel row (land side) | B01 deco_stripe_hotel, B02 neon_fin_hotel, B03 sign_tower_prow_hotel, B05 streamline_round_corner (prefers corners), B06 corner_spire_hotel and B07 lighthouse_corner_hotel (corners only), B08 finned_tower_hotel, B09 domed_cupola_hotel, B11 mimo_truss_motel, B12 arcade_village_street |
 | One-offs | B04 deco_porthole_highrise (the tallest deco hotel), B07 at the north-west corner, C05 domed_sanctuary, B10 curved_resort_slab (section 5.2) |
-| Scenery, not on plots (`City.notOnPlots`) | C08 lifeguard_stand, C06 folded_roof_marine_stadium, C09 causeway_bridge |
+| Scenery, not on plots (`City.notOnPlots`) | C08 lifeguard_stand, C06 folded_roof_lake_stadium, C09 causeway_bridge |
 
 **Palettes**
 
@@ -463,7 +463,9 @@ claim.
    the way up.
 3. **The rest**, run by run. On each free plot, its own random stream draws among the archetypes its area mixes in
    that fit the plots from it on, taking the widest fit `rules.wideShare` (60 %) of the time (fewer, bigger
-   buildings). A plot nothing fits keeps the old look, alone.
+   buildings). A plot nothing fits stays open (`City.openFallback`, set at integration on 2026-10-26: the run's
+   paved lot, or ground for a lone plot); with the flag off it keeps the old look, alone. Filling every plot with
+   archetypes measured about 21,200 building parts and 25,100 in view at once, far past both budgets.
 
 ### 4.4 Core claims
 
@@ -493,8 +495,10 @@ enough, and it lets a tower take an empty corner.
 - **Corners.** `City.cornerArchetypes`: flatiron_wedge_tower, corner_spire_hotel and lighthouse_corner_hotel stand only
   on a block corner; streamline_round_corner is three times as likely there. Each is mirrored so its corner is at its
   drawn +x end (`site.corner.right`).
-- **No twin heights.** After the passes, in placement order (one-offs first), a tower within 600 studs of an earlier
-  one and within 24 studs of its height moves to the nearest height inside its own range that twins none.
+- **No twin heights.** One-offs and the tower pass draw each tower's height clear of every tower already placed
+  within 600 studs (24 studs apart at least); a tower option whose whole range twins one is passed over. A last pass
+  moves any other tower to the nearest free height in its own range (or below band T when its archetype goes that
+  low).
 
 ### 4.6 Heights
 
@@ -650,8 +654,8 @@ trick.
 
 Rule: neon only. Buildings add no new PointLight or SpotLight instances; only streetlights carry Lights.
 
-Budget: at most about 1,400 night-light parts in all. DayNightService flips 200 per frame, so dusk takes about 7
-frames.
+Budget: at most 2,200 night-light parts in all (about 1,950 built on 2026-10-26, 238 sites). DayNightService flips 200
+per frame, so dusk takes about 11 frames.
 
 ### 7.2 SLIM-safe structure
 
@@ -856,7 +860,7 @@ the place published with Team Create on (decision D1: on as of 2026-10-25).
 | Skyline masses (Persistent) | — | 200 |
 | **Total** | **15,485** | **≈ 27,400** (hard cap 30,000) |
 
-Night-light parts (about 1,400) sit inside their district budgets.
+Night-light parts (at most 2,200; about 1,950 built) sit inside their district budgets.
 
 As built (2026-10-25), `Config/Environment.budget` and `Config/City.budgets`:
 
@@ -866,9 +870,9 @@ As built (2026-10-25), `Config/Environment.budget` and `Config/City.budgets`:
 | **inViewParts** | **20,000** | Environment.budget |
 | buildingParts | 15,000 (city sites and old-look fallbacks) | Environment.budget |
 | treeParts, featureParts, groundParts | unchanged (the scenery step tunes them) | Environment.budget |
-| districts | downtown 8,800, beach 2,100, suburbs 1,500, arts 1,600, quarry 120: each district's share of buildingParts (printed, not a gate) | City.budgets |
+| districts | downtown 8,000, beach 2,300, suburbs 3,300, arts 1,100, quarry 120: each district's share of buildingParts (printed, not a gate; rebalanced at integration to the built 7,573 / 2,099 / 3,051 / 813 / 106) | City.budgets |
 | skyline | 200 | City.budgets |
-| nightLights | 1,400 (building night-light parts) | City.budgets |
+| nightLights | 2,200 (building night-light parts; raised from 1,400 at integration, 2026-10-26) | City.budgets |
 
 The streetscape and restyled-landmark budgets are the scenery and landmark steps' to add.
 
@@ -971,7 +975,7 @@ All decided 2026-10-25:
 | | Decision |
 |---|---|
 | L1 | Towers merge neighbouring plots of one run and the tallest claim part of their block's empty core. No plot moves; every claim passes the same clear-checks. Built (section 4.4). |
-| L2 | Occupancy on the north shore road's land side (Ocean Drive) goes to 0.95, for a continuous hotel row: area `ocean_drive`'s `density`. Built; the beach side was also set to 0 (area `ocean_beach`), so the hotels see the water. |
+| L2 | Occupancy on the north shore road's land side (Ocean Drive) goes to 0.95, for a continuous hotel row: area `shore_hotel_row`'s `density`. Built; the beach side was also set to 0 (area `ocean_beach`), so the hotels see the water. |
 | L3 | MapLayout.parks: Lakefront Park split into `lakefront_beach` (sand, x -1050..1050, z 1650..1800) and `lakefront_park` (the rest of the ring). Built. |
 | L4 | mapParts 30,000 and the inViewParts phone gate at 20,000. Built. |
 | L5 | No canal and no sign gantries this round. |
@@ -979,3 +983,22 @@ All decided 2026-10-25:
 | L7 | Team Create is on and the place is published, so SLIM is used: night lights live in small separate models. Built (section 7.2). |
 | L8 | Terrain water is not used this round (it changes what happens when a car goes in the water; Davis decides): the bay stays parts. |
 | L9 | No decorative traffic signals. |
+
+Decided at integration, 2026-10-26:
+
+| | Decision |
+|---|---|
+| L10 | A plot no archetype fits stays open (`City.openFallback`), not the old glass box. Filling every plot measured about 21,200 building parts and 25,100 in view at once; the repeatables' copies were raised instead until the gates held (238 sites, 13,642 building parts, 18,792 in view). About 475 plots stay open: paved lots between buildings, lawn for a lone plot. |
+| L11 | The name gate treats `_` and `-` as word separators, so a banned name joined into an identifier is caught. The area `ocean_drive` became `shore_hotel_row` and the archetype `folded_roof_marine_stadium` became `folded_roof_lake_stadium`. |
+| L12 | The bay-row arena sits on the d7..e7 run (147 studs; its minWidth went to 140) and faces the road, as does the harbour market; the red ziggurat takes the short run east of it; the corner sign-tower hotel is a one-off at the hotel row's x = 56 corner. |
+| L13 | Towers draw a height clear of every tower placed within 600 studs as they are placed, not only in a pass afterwards. Building night lights: budget 2,200 (about 1,950 built). |
+
+Decided in the roast-fix step, 2026-10-26 (the roast of the integrated city; details in docs/PROGRESS.md):
+
+| | Decision |
+|---|---|
+| L14 | Downtown's ground is pale concrete (206,202,194) and every paved lot and core claim a shade under it, not grey asphalt; Town Square keeps its grass. The open lots of L10 now read as plazas and pool decks rather than parking. |
+| L15 | The sky: per-hour colour grade and atmosphere haze (`Config/Environment` keyframes `tint`, `density`, `haze`, `glare`), a Sky made at start when the place has none (without it the night is black), latitude 50 (TECH.md §1). |
+| L16 | Tower glass uses ARCHETYPES.md's pale tokens (aqua, silver, sea-green, sky, charcoal, smoke) at reflectance 0.27; towers 160 studs and up keep floor lines only above 40 studs (no mullion checkerboard); lit window runs take one of three tints and about a third of the upper runs stay dark. |
+| L17 | Pale or pastel SmoothPlastic walls are built in Plaster (Kit.part), so sunlit stucco reads warm instead of mirroring the sky. |
+| L18 | The bay: darker green-teal bands, no glint texture, reflectance 0.07 (at 0.18 the seam between two sheets showed), wet-sand bed. Lifeguard decks at 11 studs. No broadleaf box trees in the city mixes. MapCheck fails on any old box building downtown or on the beach. |

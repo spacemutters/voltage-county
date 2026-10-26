@@ -8,6 +8,7 @@ local MapTypes = require(script.Parent.Parent.Parent.MapTypes)
 export type PartSpec = MapTypes.PartSpec
 export type Role = MapTypes.Role
 export type TemplateSpec = MapTypes.TemplateSpec
+export type TextureSpec = MapTypes.TextureSpec
 
 -- A plan rectangle (x, z) as Dev/MapBuilder's grid takes it: its centre, the unit direction of its long axis `u`, and
 -- its half sizes along `u` (ha) and across it (hc).

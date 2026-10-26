@@ -11,8 +11,8 @@
 --   figures   two tall abstract figures holding a gold lintel over their heads, caryatids for a car park
 --
 -- What makes it itself: a car park in five outfits, one of them a wall of cars climbing it.
--- Night: the barriers' amber line, the ant farm's glass rooms in their own colours, a wash up the car wall, the lit
--- shops, the parking sign over the entrance and the mast's floodlight.
+-- Night: the barriers' amber line, the ant farm's glass rooms in their own colours, every climbing car's headlights
+-- and a wash up the car wall, the lit shops, the parking sign over the entrance and the mast's floodlight.
 -- Placement, sizes, heights and its budget: Config/City archetypes.collage_parking_garage (also a one-off on Plant
 -- Avenue, Config/City landmarks).
 -- Variants: palette (3 sets of the puzzle's colours and the figures' backdrop), crown (which outfit stays off a
@@ -20,9 +20,9 @@
 -- mirror.
 --
 -- Previewing: straight on and from both corners, at street level and from 150 studs. Check each outfit reads on its
--- own and they don't touch; the cars read as cars (body, cabin, two wheels) and climb rather than float; the tilted
--- boards and cars stay inside their own bay; the outfits' tops step against the sky. Sites narrower than 175 show
--- four outfits.
+-- own and they don't touch; the cars read as cars (body, cabin, two wheels) and climb rather than float, each
+-- headlight on the end it climbs toward; the tilted boards and cars stay inside their own bay; the outfits' tops step
+-- against the sky. Sites narrower than 175 show four outfits.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -52,11 +52,25 @@ local SHAPE = {
 	entry = { wide = 22, tall = 9.5 },
 	allFive = 175, -- a garage this wide wears all five outfits
 	panel = { gap = 1.2, back = 0.75, thick = 0.35 }, -- each outfit's backing, its back this far in front of the face
-	rises = { 0, 4, -2.5, 6, 1.5 }, -- the outfits' tops over the roof, in order (the crown turns the list)
+	-- The outfits' tops over the roof, in order (the crown turns the list): far enough apart to step against the sky
+	-- from across the street; the highest stays under crownMax.
+	rises = { 0, 8, -3, 12, 4 },
 	board = { wide = 3.2, thick = 0.8, every = 4.6 },
 	-- The cars in the jam: one every `rise` up the screen, at most `most`, alternate ones `out` further out (cars
 	-- overlap, so their faces never share a plane; the front line leaves no room for more).
-	car = { long = 17, tall = 4.2, deep = 3.2, cabin = 8.6, roof = 3, wheel = 3.6, rise = 7.2, most = 7, out = 0.35 },
+	-- `lamp`: how far its headlight strip stands past its nose.
+	car = {
+		long = 17,
+		tall = 4.2,
+		deep = 3.2,
+		cabin = 8.6,
+		roof = 3,
+		wheel = 3.6,
+		rise = 7.2,
+		most = 7,
+		out = 0.35,
+		lamp = 0.7,
+	},
 	-- The caryatids: legs apart at the feet, a torso, a head over a neck gap, arms raised; `out`: their axis in
 	-- front of the backing.
 	figure = { leg = 2.4, stance = 2.8, hips = 1.4, torso = 8.4, head = 4.8, neck = 0.7, arm = 1.6, out = 1.2 },
@@ -319,7 +333,9 @@ local function build(m: Types.Model)
 				body,
 				"trim"
 			)
-			local kx, ky = at(-1, c.tall * 0.5 + c.roof / 2 - 0.1)
+			-- Every car noses up the wall: its cabin sits back from the end it climbs toward, its headlights on that end.
+			local ahead = if turn >= 0 then 1 else -1
+			local kx, ky = at(-ahead, c.tall * 0.5 + c.roof / 2 - 0.1)
 			Kit.oriented(
 				m,
 				`Cabin{i}`,
@@ -328,6 +344,20 @@ local function build(m: Types.Model)
 				Vector3.new(c.cabin, c.roof, c.deep - 0.6),
 				body,
 				"trim"
+			)
+			-- At night the jam is a column of headlights going up the wall: big enough to read from across the street.
+			local hx, hy = at(ahead * (c.long / 2 + c.lamp / 2 - 0.05), c.tall * 0.05)
+			Kit.lit(
+				Kit.oriented(
+					m,
+					`Headlight{i}`,
+					"block",
+					CFrame.new(hx, hy, zc - 0.2) * spin, -- its face a hair proud of the body's
+					Vector3.new(c.lamp, c.tall * 0.55, c.deep - 0.3),
+					flat(rgb(236, 232, 214)),
+					"detail"
+				),
+				"floodlight"
 			)
 			for j, u in { -c.long * 0.32, c.long * 0.32 } do
 				local wx, wy = at(u, -c.tall * 0.5)

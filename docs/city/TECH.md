@@ -54,7 +54,7 @@ These belong to whoever owns lighting (`Config/Environment` `dayNight.scene`, ap
 | `Lighting.PrioritizeLightingQuality` | `false` | `true` | When a phone drops quality, keep shadows and good shaders close by and give up view distance first. Scriptable. |
 | `ColorGrading.TonemapperPreset` (the `ColorGradingEffect` already under Lighting) | `Retro` | `Default` | Retro imitates pre-2019 Roblox: "less saturated, less contrast". **Tested:** the biggest single colour change. |
 | `Bloom` (already under Lighting) | Intensity 0, Size 24, Threshold 0.95 | start at Intensity 1, Size 24, Threshold 2 (Studio's defaults) and tune in a playtest | With Intensity 0, Neon never glows. Bloom didn't show in Edit-mode screenshots even at Intensity 1 / Threshold 0.8, so tune it in a playtest. A low threshold makes white stucco glow by day. |
-| `Lighting.GeographicLatitude` | 41.7 | 25.8 | Miami's latitude: a higher sun with shorter, crisper shadows. |
+| `Lighting.GeographicLatitude` | 41.7 | 50 (was 25.8) | The engine always draws the midsummer sun, so at Miami's real 25.8 it passed nearly overhead and south faces (the whole Ocean Drive row) stood in blue shade all day. At 50 the noon sun is 63 degrees up and a little south (2026-10-26 roast fixes). |
 | `GlobalShadows`, `EnvironmentSpecularScale`, `EnvironmentDiffuseScale` | false, 0, 0 in Edit mode | true, 1, 1 | Already in `dayNight.scene` (set at runtime). Shadows and sky reflections are what show bevels and glass. |
 
 **About Technology = Future.** The docs say `Lighting.Technology` "has been superseded by `LightingStyle` ... and

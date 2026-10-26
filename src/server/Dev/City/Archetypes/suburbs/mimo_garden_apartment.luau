@@ -2,23 +2,24 @@
 -- R07 mimo_garden_apartment (docs/city/ARCHETYPES.md §7, R07): the 1940s-50s pastel garden apartment of the bay
 -- islands, Miami Modern. A three-storey pastel block whose left third stands open on the ground floor as a see-through
 -- breezeway to the garden behind, its upper floors carried at the front on white V-struts. A row of three round
--- windows over the breezeway, jalousie window bands with a white eyebrow, cantilevered balconies (or a continuous
--- open catwalk) on iron-style rails, a white stair tower whose front is a breeze-block screen over a dark stairwell
--- (washed in colour at night), a flat white roof slab overhanging three studs with a rounded streamline corner over
--- the breezeway, the building's name in script on the fascia, terrazzo underfoot, a hedge and planters.
+-- windows over the breezeway, jalousie window bands with a white eyebrow, cantilevered balconies (or a continuous open
+-- catwalk) on white rails, a white stair tower whose front is a screen of white fins crossed by bands over a lit
+-- stairwell, a flat white roof slab overhanging three studs with a rounded streamline corner over the breezeway, the
+-- building's name in script on a board over the lobby, terrazzo underfoot, a hedge and planters.
 --
 -- What makes it itself: a pastel three-storey block with a see-through breezeway, a row of round windows and a
 -- breeze-block stair screen.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/mimo_garden_apartment.
--- Variants: palette (4 pastels, each with its own neon and wash: mint, salmon, lemon, sky), crown (1 the stair tower
--- under the roof slab, 2 the tower rising through it under a thin cantilevered hood), rhythm (1 two cantilevered
--- balconies, 2 an open catwalk across the front on both upper floors), mirror (breezeway and tower swap ends).
+-- Variants: palette (4 pastels, each with its own sign neon and stairwell glass: mint, salmon, lemon, sky), crown (1
+-- the stair tower under the roof slab, 2 the tower rising through it under a thin cantilevered hood), rhythm (1 two
+-- cantilevered balconies, 2 an open catwalk across the front on both upper floors), mirror (breezeway and tower swap
+-- ends).
 --
--- Previewing: from the street at eye height square on, and from the breezeway's corner. Check you can see through
--- the breezeway to the back, the V-struts meet the slab over them, the screen reads as breeze blocks (a punched
--- Texture on an invisible part over a dark box), the rounded roof corner sits over the breezeway end, the round
--- windows sit clear of the eyebrow. Sign text needs a playtest. At night: the jalousie bands, the lobby and the round
--- windows glow, the sign in its neon, and the wash lights the screen.
+-- Previewing: from the street at eye height square on, and from the breezeway's corner. Check you can see through the
+-- breezeway to the back, the V-struts meet the slab over them, the stair screen reads as a white grid with depth (fins
+-- 1 proud, bands a little less) over the stairwell glass, the rounded roof corner sits over the breezeway end, the
+-- round windows sit clear of the eyebrow. Sign text needs a playtest. At night: the jalousie bands, the lobby, the
+-- round windows and the stairwell behind its screen glow, and the sign in its neon.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -42,31 +43,37 @@ local SHAPE = {
 	breezeway = 1 / 3, -- of the width, open on the ground floor
 	strut = { diameter = 0.8, spread = 2.4, back = 1.4 },
 	tower = { width = 8, out = 2.6, deep = 8, rise = 5.5 }, -- out: the roof slab overhangs its front by 0.4
-	screenIn = 0.8, -- the screen's margin inside the tower's front
+	screenIn = 0.8, -- the stairwell's margin inside the tower's front
+	fins = 4, -- the screen's upright fins...
+	finProud = 1.0,
+	bandEvery = 5.5, -- ...and its cross bands, about this far apart
+	bandProud = 0.75,
 	port = { diameter = 4.4, at = { 0.22, 0.5, 0.78 } },
 	-- Jalousie bands: from the floor, under the next floor. Pastel wall above and below each band keeps the block a
 	-- pastel block (at 1.6 and 1.4 the bands covered three quarters of the front and it read as an office).
 	band = { sill = 3.2, head = 3.0 },
+	run = { length = 15, pier = 3, lit = 0.6 }, -- a run of an apartment's jalousies, the pier between runs
+	lobby = 13, -- the lobby's glass from the breezeway (the name board over it)
 	brow = { thick = 0.6, proud = 2.4 },
 	balcony = { proud = 2.6, half = 6 },
 	towerGap = 1, -- the bands stop this far short of the tower
 }
 
--- Body pastel, the stairwell's dark, the sign's neon and the wash.
+-- Body pastel, the stairwell glass, the sign's neon.
 local PALETTES = {
-	{ body = rgb(174, 226, 190), well = rgb(46, 92, 82), neon = "sign", wash = rgb(120, 230, 210) }, -- a softer mint
-	{ body = rgb(246, 168, 140), well = rgb(104, 58, 50), neon = "neonPink", wash = rgb(255, 140, 170) },
-	{ body = P.deco.lemon, well = rgb(104, 86, 40), neon = "neonAmber", wash = rgb(255, 200, 140) },
-	{ body = P.deco.sky, well = rgb(38, 72, 92), neon = "neonBlue", wash = rgb(140, 190, 255) },
+	{ body = rgb(174, 226, 190), well = rgb(46, 92, 82), neon = "sign" }, -- a softer mint
+	{ body = rgb(246, 168, 140), well = rgb(104, 58, 50), neon = "neonPink" },
+	{ body = P.deco.lemon, well = rgb(104, 86, 40), neon = "neonAmber" },
+	{ body = P.deco.sky, well = rgb(38, 72, 92), neon = "neonBlue" },
 }
 
--- Invented names (never a real building's): script letters on the fascia.
+-- Invented names (never a real building's): script letters on the board over the lobby.
 local NAMES = { "Lumen Court", "Volta Gardens", "Coil Court", "Sparkwater" }
 
 local WHITE = P.deco.white
 local IRON = rgb(244, 244, 240)
 local JALOUSIE = rgb(118, 146, 160) -- louvred glass reads lighter than a picture window
-local HEDGE = rgb(58, 106, 56)
+local HEDGE = rgb(86, 138, 64) -- darker greens read as black boxes in the game's light
 
 local function share(x: number, rule: { number }): number
 	return math.clamp(x * rule[1], rule[2], rule[3])
@@ -84,19 +91,6 @@ local function build(m: Types.Model)
 	local white = Kit.look(WHITE, Enum.Material.SmoothPlastic)
 	local glass = P.window.dark
 	local front = { Enum.NormalId.Front }
-
-	-- A rail: an invisible part with the punched overlay on `faces` (a top rail over square bars).
-	local function rail(name: string, min: Vector3, max: Vector3, faces: { Enum.NormalId })
-		local spec = Kit.detail(m, name, min, max, Kit.look(IRON, Enum.Material.Metal, 0, 1))
-		local textures: { Types.TextureSpec } = {}
-		for _, face in faces do
-			table.insert(
-				textures,
-				{ face = Kit.face(m, face), image = City.textures.punched, u = 1, v = 6, color = IRON }
-			)
-		end
-		spec.textures = textures
-	end
 
 	-- A raking column from a to b (a cylinder turned along the line between them).
 	local function strut(name: string, a: Vector3, b: Vector3)
@@ -141,8 +135,8 @@ local function build(m: Types.Model)
 	)
 	local sz = zF + SHAPE.strut.back
 	local spread = SHAPE.strut.spread
-	for i, share_ in { 0.3, 0.72 } do
-		local x = X0 + (bwx - X0) * share_
+	for i, at in { 0.3, 0.72 } do
+		local x = X0 + (bwx - X0) * at
 		local foot = Vector3.new(x, 0, sz)
 		strut(`Strut{i}L`, foot, Vector3.new(x - spread, G - 0.1, sz))
 		strut(`Strut{i}R`, foot, Vector3.new(x + spread, G - 0.1, sz))
@@ -164,35 +158,54 @@ local function build(m: Types.Model)
 	-------------------------------------------------------------------------------------------------------
 	local port = SHAPE.port
 	for i, s in port.at do
-		Kit.porthole(m, `Port{i}`, X0 + (bwx - X0) * s, G + f * 0.5, zF, port.diameter, glass, white, "window")
+		local glow = if i == 2 then "window" else nil
+		Kit.porthole(m, `Port{i}`, X0 + (bwx - X0) * s, G + f * 0.5, zF, port.diameter, glass, white, glow)
 	end
 	local band = SHAPE.band
 	local jalousie = { image = City.textures.slabLine, faces = front, u = 6, v = 0.7, lines = WHITE, lit = true }
-	Kit.glass(
-		m,
-		"Band2",
-		Vector3.new(bwx + 1.2, G + band.sill, zF - 0.12),
-		Vector3.new(bandEnd, G + f - band.head, zF + 0.3),
-		JALOUSIE,
-		jalousie
-	)
-	Kit.glass(
-		m,
-		"Band3",
-		Vector3.new(X0 + 1.2, G + f + band.sill, zF - 0.12),
-		Vector3.new(bandEnd, E - band.head, zF + 0.3),
-		JALOUSIE,
-		jalousie
-	)
+	-- A floor's jalousie windows from a0 to a1, in runs about SHAPE.run.length long with pastel piers between them, so
+	-- a long front reads as a row of apartments (one unbroken band across 60 studs read as an office in the first
+	-- preview). Some apartments are dark at night.
+	local lights = Kit.rng(m, 7)
+	local function windows(name: string, a0: number, a1: number, y0: number, y1: number)
+		local run = SHAPE.run
+		local count = math.max(1, math.floor((a1 - a0 + run.pier) / (run.length + run.pier) + 0.5))
+		local w = (a1 - a0 - (count - 1) * run.pier) / count
+		for k = 1, count do
+			local x0 = a0 + (k - 1) * (w + run.pier)
+			local options = table.clone(jalousie)
+			options.lit = count == 1 or lights:NextNumber() < run.lit
+			Kit.glass(
+				m,
+				`{name}{k}`,
+				Vector3.new(x0, y0, zF - 0.12),
+				Vector3.new(x0 + w, y1, zF + 0.3),
+				JALOUSIE,
+				options
+			)
+		end
+	end
+	windows("Band2", bwx + 1.2, bandEnd, G + band.sill, G + f - band.head)
+	windows("Band3", X0 + 1.2, bandEnd, G + f + band.sill, E - band.head)
 	local brow = SHAPE.brow
+	-- The eyebrow wraps round the breezeway end, the streamline way.
 	Kit.trim(
 		m,
 		"Brow",
-		Vector3.new(X0 - 0.3, G + f - band.head + 0.4, zF - brow.proud),
+		Vector3.new(X0 - brow.proud, G + f - band.head + 0.4, zF - brow.proud),
 		Vector3.new(tx0, G + f - band.head + 0.4 + brow.thick, zF + 0.4),
 		white
 	)
-	Kit.glass(m, "Lobby", Vector3.new(bwx + 1.2, 0.4, zF - 0.12), Vector3.new(bandEnd, G - 2.9, zF + 0.3), glass, {
+	Kit.trim(
+		m,
+		"BrowEnd",
+		Vector3.new(X0 - brow.proud, G + f - band.head + 0.4, zF + 0.4),
+		Vector3.new(X0 + 0.4, G + f - band.head + 0.4 + brow.thick, zF + 6),
+		white
+	)
+	-- The lobby by the breezeway under the name; the ground-floor apartments' jalousies past it.
+	local lobbyEnd = math.min(bwx + SHAPE.lobby, bandEnd)
+	Kit.glass(m, "Lobby", Vector3.new(bwx + 1.2, 0.4, zF - 0.12), Vector3.new(lobbyEnd, G - 2.9, zF + 0.3), glass, {
 		image = City.textures.windowBold,
 		faces = front,
 		u = 3,
@@ -200,11 +213,14 @@ local function build(m: Types.Model)
 		lines = WHITE,
 		lit = true,
 	})
+	if bandEnd - (lobbyEnd + SHAPE.run.pier) >= 4 then
+		windows("Band1", lobbyEnd + SHAPE.run.pier, bandEnd, band.sill, G - band.head)
+	end
 	Kit.sign(
 		m,
 		"Sign",
 		Vector3.new(bwx + 1.2, G - 2.6, zF - 0.4),
-		Vector3.new(math.min(bwx + 13, bandEnd), G - 0.75, zF - 0.1),
+		Vector3.new(lobbyEnd, G - 0.75, zF - 0.1),
 		Enum.NormalId.Front,
 		NAMES[rng:NextInteger(1, #NAMES)],
 		pal.body,
@@ -230,41 +246,53 @@ local function build(m: Types.Model)
 	local bx1 = if variant.rhythm == 2 then bandEnd - 0.3 else math.min(bandEnd - 0.3, mid + b.half)
 	for k, y in { G, G + f } do
 		Kit.trim(m, `Balcony{k}`, Vector3.new(bx0, y - 0.5, zF - b.proud), Vector3.new(bx1, y + 0.3, zF + 0.4), white)
-		rail(
+		Kit.railing(
+			m,
 			`Rail{k}`,
 			Vector3.new(bx0 + 0.12, y + 0.3, zF - b.proud + 0.1),
 			Vector3.new(bx1 - 0.12, y + 3.3, zF - 0.06),
-			{ Enum.NormalId.Front, Enum.NormalId.Left, Enum.NormalId.Right }
+			{ Enum.NormalId.Front, Enum.NormalId.Left, Enum.NormalId.Right },
+			IRON,
+			1
 		)
 	end
 
 	-------------------------------------------------------------------------------------------------------
-	-- The stair tower: a white frame, a dark stairwell and a breeze-block screen, washed at night
+	-- The stair tower: a white frame, the stairwell glass, and over it a screen of white fins crossed by bands
 	-------------------------------------------------------------------------------------------------------
 	local tall = variant.crown == 2
 	local towerTop = if tall then H + t.rise else E
 	local tz0 = zF - t.out
 	Kit.box(m, "Tower", Vector3.new(tx0, -KIT.bury, tz0), Vector3.new(tx1, towerTop - 0.04, zF + t.deep), white)
 	local si = SHAPE.screenIn
+	local sx0, sx1 = tx0 + si, tx1 - si
 	local sy0, sy1 = 1.2, towerTop - (if tall then 2.6 else 1.2)
-	Kit.box(
-		m,
-		"Well",
-		Vector3.new(tx0 + si, sy0, tz0 - 0.1),
-		Vector3.new(tx1 - si, sy1, tz0 + 1.2),
-		Kit.look(pal.well, Enum.Material.SmoothPlastic)
-	)
-	local screen = Kit.detail(
-		m,
-		"Screen",
-		Vector3.new(tx0 + si, sy0, tz0 - 0.45),
-		Vector3.new(tx1 - si, sy1, tz0 - 0.25),
-		Kit.look(WHITE, Enum.Material.SmoothPlastic, 0, 1)
-	)
-	screen.textures = {
-		{ face = Enum.NormalId.Front, image = City.textures.punched, u = 1.6, v = 1.6, color = WHITE },
-	}
-	Kit.wash(m, "Wash", tx0 + si + 0.4, tx1 - si - 0.4, tz0 - 1.1, 0, pal.wash)
+	Kit.glass(m, "Well", Vector3.new(sx0, sy0, tz0 - 0.1), Vector3.new(sx1, sy1, tz0 + 1.2), pal.well, {
+		lit = true,
+		reflectance = 0.1,
+	})
+	for i = 1, SHAPE.fins do
+		local x = sx0 + 0.35 + (sx1 - sx0 - 0.7) * (i - 1) / (SHAPE.fins - 1)
+		Kit.trim(
+			m,
+			`Fin{i}`,
+			Vector3.new(x - 0.22, sy0 + 0.03, tz0 - 0.1 - SHAPE.finProud),
+			Vector3.new(x + 0.22, sy1 - 0.03, tz0 - 0.05),
+			white
+		)
+	end
+	local bands = math.max(2, math.floor((sy1 - sy0) / SHAPE.bandEvery))
+	local step = (sy1 - sy0) / (bands + 1)
+	for k = 1, bands do
+		local y = sy0 + k * step
+		Kit.trim(
+			m,
+			`ScreenBand{k}`,
+			Vector3.new(sx0, y - 0.22, tz0 - 0.1 - SHAPE.bandProud),
+			Vector3.new(sx1, y + 0.22, tz0 - 0.07),
+			white
+		)
+	end
 	if tall then
 		-- A thin hood cantilevered over the tower's top.
 		Kit.trim(
@@ -282,7 +310,7 @@ local function build(m: Types.Model)
 	Kit.punched(
 		m,
 		"EndL",
-		Vector3.new(X0 - 0.06, G + 0.2, zF + 1),
+		Vector3.new(X0 - 0.06, G + 0.2, zF + 6.4),
 		Vector3.new(X0 + 0.4, E - 0.05, zB - 1),
 		pal.body,
 		glass,
@@ -318,7 +346,7 @@ local function build(m: Types.Model)
 		"Hedge",
 		Vector3.new(bwx + 1, 0, -hd + 1),
 		Vector3.new(tx0 - 1, 3, -hd + 2.6),
-		Kit.look(HEDGE, Enum.Material.LeafyGrass)
+		Kit.look(HEDGE, Enum.Material.Grass)
 	)
 	Kit.planter(m, "PlanterL", Vector3.new(wc - 5, 0, -hd + 1.5), Vector3.new(wc - 2.6, 1.4, -hd + 4), white)
 	Kit.planter(m, "PlanterR", Vector3.new(wc + 2.6, 0, -hd + 1.5), Vector3.new(wc + 5, 1.4, -hd + 4), white)

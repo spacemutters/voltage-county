@@ -16,7 +16,7 @@ return {
 	maxPlots = 7,
 	heights = { min = 120, max = 136 },
 	crownMax = 42,
-	budget = 120,
+	budget = 136, -- the cranes and the yard take about 85 (bogies, a box mid-lift); containers fill the rest
 	palettes = 2,
 	crowns = 3,
 	rhythms = 2,

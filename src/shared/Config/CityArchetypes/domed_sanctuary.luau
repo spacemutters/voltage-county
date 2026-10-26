@@ -14,9 +14,10 @@ return {
 	maxWidth = 100,
 	minDepth = 44,
 	maxPlots = 2,
-	-- The block's cornice. The drum, dome, lantern and finial rise up to crownMax over it (about 80 in all).
+	-- The block's cornice. The tall drum, the dome, lantern and finial rise up to crownMax over it (about 95 in all:
+	-- the dome stands about ten storeys high).
 	heights = { min = 34, max = 40 },
-	crownMax = 50,
+	crownMax = 58,
 	budget = 80,
 	palettes = 3,
 	crowns = 2,

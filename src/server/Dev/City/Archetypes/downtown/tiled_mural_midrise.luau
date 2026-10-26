@@ -3,8 +3,9 @@
 -- floats over a recessed glass lobby on white pilotis. Its two end walls are solid and covered full height in
 -- blue-and-white tiles: a giant mural (an original pattern, a stylised flowering tree or a stack of chevron waves under
 -- a sun) standing in relief on a tiled field. The long faces are glass with metal mullion fins, under a thin white roof
--- slab; the name sits on the white band under the block. Beside it, on the plaza, a box of stained glass (amber, ruby,
--- cobalt and green panels in leaded frames) is held high on a single stem; at night each panel glows in its own colour.
+-- slab; the name sits on the white band under the block. Beside it, on the plaza, a box of stained glass (a mosaic of
+-- amber, ruby, cobalt and green panes of different sizes in leaded frames) is held high on a single stem; at night each
+-- pane glows in its own colour.
 --
 -- What makes it itself: a glass block whose ends are giant blue-and-white tile murals, beside a stained-glass box on a
 -- stem.
@@ -16,7 +17,8 @@
 -- Previewing, check: the murals read from the road as blue-and-white tile walls with a clear figure (shapes stand in
 -- relief, nothing flickers where shapes overlap); the block reads as floating (the lobby dark and recessed under the
 -- white band); the fins give the glass a vertical rhythm with shadow; the CeramicTiles read as tiles, not noise; the
--- stained-glass box reads as coloured glass under its leaded overlay by day and glows in four colours at night without
+-- stained-glass box reads as a mosaic of coloured glass under its leaded overlay by day (never as flag stripes) and
+-- glows in four colours at night without
 -- blowing out (darken a colour if one turns white-hot); the box's stem looks strong enough.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -61,8 +63,13 @@ local SHAPE = {
 		core = 10,
 		post = 0.45,
 		skin = 0.12,
-		panes = 3, -- coloured panes a face
-		paneGap = 0.4, -- the dark mullion between them
+		-- The mosaic on each face: where its two rows split (share of the box's height, seeded) and the widths of a
+		-- row's three panes (shares of the face, a different cut on each row and face).
+		mosaic = {
+			split = { 0.38, 0.62 },
+			cuts = { { 0.46, 0.3, 0.24 }, { 0.22, 0.42, 0.36 }, { 0.3, 0.24, 0.46 } },
+		},
+		paneGap = 0.4, -- the dark mullion between panes
 	},
 	plantRoom = 6,
 }
@@ -375,8 +382,11 @@ local function build(m: Types.Model)
 				whiteLook
 			)
 		end
-		-- Three panes a face, each a different glass, in a leaded frame (the fine overlay, near-black).
+		-- Each face a mosaic of coloured glass in a leaded frame (the fine overlay, near-black): two rows split at a
+		-- seeded height, each row cut into panes of different widths, so the box reads as one abstract composition of
+		-- coloured glass, never as stripes. Neighbouring panes are never the same colour, round the corners too.
 		local shift = rng:NextInteger(0, 3)
+		local mo = an.mosaic
 		local faces = {
 			{ face = FRONT, a0 = ax0, a1 = ax1, plane = az0, out = -1, alongX = true },
 			{ face = RIGHT, a0 = az0, a1 = az1, plane = ax1, out = 1, alongX = false },
@@ -384,27 +394,31 @@ local function build(m: Types.Model)
 			{ face = LEFT, a0 = az0, a1 = az1, plane = ax0, out = -1, alongX = false },
 		}
 		for fi, side in faces do
-			local np = an.panes
-			local pw = (side.a1 - side.a0 - 1 - (np - 1) * an.paneGap) / np
-			for j = 1, np do
-				local color = STAINED[(fi * np + j + shift) % #STAINED + 1]
-				local s0 = side.a0 + 0.5 + (j - 1) * (pw + an.paneGap)
-				local s1 = s0 + pw
-				local o0, o1 = side.plane - side.out * 0.1, side.plane + side.out * an.skin
-				local lo = if side.alongX then Vector3.new(s0, ya + 0.3, o0) else Vector3.new(o0, ya + 0.3, s0)
-				local hi = if side.alongX then Vector3.new(s1, yt - 0.3, o1) else Vector3.new(o1, yt - 0.3, s1)
-				local panel = Kit.detail(m, `Pane{fi}{j}`, lo, hi, Kit.glassLook(color, STAINED_REFLECTANCE))
-				-- Leading: the fine grid's thin bars in near-black over the coloured glass.
-				panel.textures = {
-					{
-						face = Kit.face(m, side.face),
-						image = City.textures.windowFine,
-						u = 2.4,
-						v = 3,
-						color = LEAD,
-					},
-				}
-				Kit.lit(panel, "stained")
+			local o0, o1 = side.plane - side.out * 0.1, side.plane + side.out * an.skin
+			local rowSplit = ya + 0.3 + (yt - ya - 0.6) * (mo.split[1] + rng:NextNumber() * (mo.split[2] - mo.split[1]))
+			local rows = { { ya + 0.3, rowSplit - an.paneGap / 2 }, { rowSplit + an.paneGap / 2, yt - 0.3 } }
+			for r, row in rows do
+				local cuts = mo.cuts[(fi + r) % #mo.cuts + 1]
+				local span = side.a1 - side.a0 - 1 - (#cuts - 1) * an.paneGap
+				local s0 = side.a0 + 0.5
+				for j, share in cuts do
+					local s1 = s0 + span * share
+					local color = STAINED[(fi + 2 * r + j + shift) % #STAINED + 1]
+					local lo = if side.alongX then Vector3.new(s0, row[1], o0) else Vector3.new(o0, row[1], s0)
+					local hi = if side.alongX then Vector3.new(s1, row[2], o1) else Vector3.new(o1, row[2], s1)
+					local panel = Kit.detail(m, `Pane{fi}{r}{j}`, lo, hi, Kit.glassLook(color, STAINED_REFLECTANCE))
+					panel.textures = {
+						{
+							face = Kit.face(m, side.face),
+							image = City.textures.windowFine,
+							u = 2.4,
+							v = 3,
+							color = LEAD,
+						},
+					}
+					Kit.lit(panel, "stained")
+					s0 = s1 + an.paneGap
+				end
 			end
 		end
 	else

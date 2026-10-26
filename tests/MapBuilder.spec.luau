@@ -1069,8 +1069,9 @@ return function(t: Harness.Api)
 			)
 		end)
 
-		-- The old facade stands only on plots no archetype fits (Config/City districtLooks legacyWeight 0): however few,
-		-- each still has glass and a roof edge proud of it.
+		-- The old facade stands only on plots no archetype fits (Config/City districtLooks legacyWeight 0), and with
+		-- Config/City openFallback not even there in a city district (those plots stay open): however few, each still has
+		-- glass and a roof edge proud of it.
 		t.it("gives every old-look building glass and a roof edge, and counts them by district", function()
 			local buildings: { [string]: { [string]: PartSpec } } = {}
 			for _, spec in plan.specs do
@@ -1117,11 +1118,27 @@ return function(t: Harness.Api)
 				table.insert(districts, `{if district == "" then "no district" else district} {n}`)
 			end
 			table.sort(districts)
+			local open: { string } = {}
+			for district, n in plan.city.open do
+				table.insert(open, `{district} {n}`)
+			end
+			table.sort(open)
 			print(
 				`  MapBuilder: {count} old-look buildings ({banded} banded, {lit} lit) on plots no archetype fits: `
-					.. `{if #districts > 0 then table.concat(districts, ", ") else "none"}`
+					.. `{if #districts > 0 then table.concat(districts, ", ") else "none"}; plots left open `
+					.. `(Config/City openFallback): {if #open > 0 then table.concat(open, ", ") else "none"}`
 			)
 			report(t, "building", problems)
+			-- With openFallback, a city district holds no old-look building at all.
+			if City.openFallback then
+				local stray: { string } = {}
+				for district, n in plan.city.legacy do
+					if district ~= "" then
+						table.insert(stray, `{district}: {n} old-look buildings, though openFallback is on`)
+					end
+				end
+				report(t, "open fallback", stray)
+			end
 		end)
 
 		-- The city (Dev/City; docs/city/CITY_PLAN.md §10). A site's parts are the ones named after it, wherever they are

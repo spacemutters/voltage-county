@@ -2,8 +2,9 @@
 -- T17 car_lift_cylinder_tower (docs/city/ARCHETYPES.md §5, T17): a round tower of near-black glass, ringed by silver
 -- balcony discs, with a glass car-lift shaft running its full height up one side and past the roof. The shaft stands
 -- on a white spine half sunk into the drum (the rings end in it); in front of a pale backdrop panel, cars sit on lift
--- platforms at different heights, one waiting in the drive-in bay at the street. At night the backdrop glows cool
--- white, so the shaft is a vertical light line with the cars in silhouette, and every sixth ring glows. A recessed
+-- platforms at different heights, one waiting in the drive-in bay at the street. At night the backdrop glows ice
+-- blue, so the shaft is a vertical light line with the cars in silhouette, every sixth ring glows and a few seeded
+-- floors glow warm as bands between the rings. A recessed
 -- glass lobby drum under the first ring, a round plinth, the name on the first ring; on wide sites a drive-in court
 -- with a round mushroom canopy and a low glass pavilion.
 --
@@ -16,17 +17,20 @@
 --
 -- Previewing, check: the cars read as cars through the shaft glass from the street (body, cabin, wheels) and sit on
 -- their platforms; the rings stop cleanly in the spine and never show inside the shaft; the shaft glass is see-through
--- but not invisible; the lobby reads as recessed under ring 0; at night the backdrop is one clean light line (no
--- bloom wash) and the cars show dark against it; the drum is not too thin for its height on 46-deep sites.
+-- but not invisible; the lobby reads as recessed under ring 0; at night the backdrop is one clean blue light line (no
+-- white bloom bar) and the cars show dark against it, the lit floors read as thin warm bands, never a lit tube; the
+-- drum is not too thin for its height on 46-deep sites.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local City = require(ReplicatedStorage.Shared.Config.City)
+local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 local Kit = require(script.Parent.Parent.Parent.Kit)
 local Types = require(script.Parent.Parent.Parent.Types)
 
 local P = City.palettes
 local KIT = City.kit
+local NIGHT = Environment.nightLights
 local rgb = Color3.fromRGB
 
 -- The recipe, in studs.
@@ -39,6 +43,9 @@ local SHAPE = {
 	diameter = { 34, 64 },
 	lobbyInset = 5, -- the lobby drum is this much narrower each side
 	ring = { proud = 3.5, thick = 1.2, ledEvery = 6 },
+	-- Lit floors at night: how many (seeded floors, repeats skipped), their gap under and over the floor's rings, and
+	-- how far they stand proud of the drum.
+	litFloor = { count = { 3, 6 }, gap = 0.5, proud = 0.15 },
 	spine = { into = 3, past = 0.6, wider = 0.5 }, -- into the drum; past the rings' edge; past the shaft's sides
 	shaft = { length = { 0.2, 20, 24 }, depth = { 0.26, 10, 12 }, post = 1.4, overrun = 8, cap = 2, edge = 1.5 },
 	glassReflectance = 0.08, -- the drum's: low, so it reads near-black, not a mirror of the sky
@@ -89,6 +96,7 @@ local CARS = {
 
 local RAIL = Kit.look(rgb(214, 236, 242), Enum.Material.Glass, 0.1, KIT.railTransparency)
 local SHAFT_GLASS = Kit.look(rgb(200, 226, 236), Enum.Material.Glass, 0.15, KIT.railTransparency)
+local SHAFT_NIGHT = rgb(88, 124, 168) -- the backdrop's night colour: a mid ice blue, under the bloom
 local FRONT, LEFT = Enum.NormalId.Front, Enum.NormalId.Left
 
 local function build(m: Types.Model)
@@ -163,15 +171,32 @@ local function build(m: Types.Model)
 	)
 
 	-------------------------------------------------------------------------------------------------------
-	-- The drum: dark glass in two runs (one may glow), split under a ring
+	-- The drum: one run of dark glass; a few seeded floors glow warm at night as bands just proud of it (a
+	-- cylinder can't carry the window grid, so a whole lit run read as a flat orange tube)
 	-------------------------------------------------------------------------------------------------------
 	local every = rhythm.every
-	local ym = SHAPE.lobby + math.max(every, math.floor((Ht - SHAPE.lobby) / 2 / every) * every)
-	local litRoll, litWhich = rng:NextNumber(), rng:NextNumber()
-	local lower = Kit.column(m, "Drum", xc, zc, SHAPE.lobby - 0.5, ym, d, glassLook)
-	local upper = Kit.column(m, "DrumUpper", xc, zc, ym, Ht, d, glassLook)
-	if litRoll < 0.55 then
-		Kit.lit(if litWhich < 0.5 then lower else upper, "window")
+	Kit.column(m, "Drum", xc, zc, SHAPE.lobby - 0.5, Ht, d, glassLook)
+	local lf = SHAPE.litFloor
+	local floors = math.floor((Ht - SHAPE.lobby) / SHAPE.floor)
+	local taken: { [number]: boolean } = {}
+	for b = 1, rng:NextInteger(lf.count[1], lf.count[2]) do
+		local fl = rng:NextInteger(1, math.max(1, floors - 2))
+		if not taken[fl] then
+			taken[fl] = true
+			local y0 = SHAPE.lobby + fl * SHAPE.floor
+			local band = Kit.column(
+				m,
+				`LitFloor{b}`,
+				xc,
+				zc,
+				y0 + SHAPE.ring.thick + lf.gap,
+				y0 + SHAPE.floor - lf.gap,
+				d + 2 * lf.proud,
+				glassLook,
+				"detail"
+			)
+			Kit.lit(band, "window")
+		end
 	end
 
 	-- Ring balconies: discs every `every` studs from the lobby's top, glass rail pucks on them, every sixth one lit.
@@ -235,7 +260,7 @@ local function build(m: Types.Model)
 			ringLook
 		)
 	end
-	Kit.neonStrip(
+	local backdrop = Kit.neonStrip(
 		m,
 		"Backdrop",
 		Vector3.new(xs0 + 0.3, 0.6, sz1 - 0.45),
@@ -243,6 +268,11 @@ local function build(m: Types.Model)
 		"crown",
 		pal.backdrop
 	)
+	-- Its own, dimmer night colour: the crown's cool white on a panel this big blew out to a flat white bar that hid
+	-- the cars; this reads as a lit glass shaft with the cars dark against it.
+	local attributes: { [string]: any } = backdrop.attributes or {}
+	attributes[NIGHT.nightColorAttribute] = SHAFT_NIGHT
+	backdrop.attributes = attributes
 	Kit.box(
 		m,
 		"ShaftCap",

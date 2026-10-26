@@ -22,8 +22,10 @@ done < <(find src tests -name '*.luau' -not -path '*/Vendor/*' -print0)
 # No real carmaker or model names in game code (CLAUDE.md hard rule 4), and no real building, architect, street or
 # neighbourhood the city takes after. Lists: scripts/banned-names.txt, scripts/banned-city-names.txt.
 echo "== brand names"
-pattern="$(cat scripts/banned-names.txt scripts/banned-city-names.txt | grep -v '^#' | grep -v '^[[:space:]]*$' | tr -d '\r' | paste -sd '|' -)"
-if grep -rniE --exclude-dir=Vendor "\b(${pattern})\b" src tests; then
+# A name counts whole wherever it stands, also inside an identifier: "_" and "-" separate words like a space does
+# (so "marine_stadium" and "ocean-drive" are caught), and a space in a pattern matches any of the three.
+pattern="$(cat scripts/banned-names.txt scripts/banned-city-names.txt | grep -v '^#' | grep -v '^[[:space:]]*$' | tr -d '\r' | sed -e 's/ ?/[ _-]?/g' -e 's/ /[ _-]/g' | paste -sd '|' -)"
+if grep -rniE --exclude-dir=Vendor "(^|[^A-Za-z0-9])(${pattern})([^A-Za-z0-9]|$)" src tests; then
 	fail "brand names (a real carmaker, model, building or place name in game code)"
 fi
 

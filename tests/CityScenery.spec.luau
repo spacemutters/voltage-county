@@ -427,7 +427,11 @@ return function(t: Harness.Api)
 						glass = glass or spec.material == Enum.Material.Glass
 						deck = deck or (string.find(spec.name, "Deck$") ~= nil and spec.collide)
 						local lo, hi = Kit.localBounds(frame, spec)
-						if lo.X < -8 or hi.X > 8 or lo.Z < -8 or hi.Z > 20 or hi.Y > 26 or lo.Y < -1.01 then
+						-- The footprint follows the config: the ramp runs back from the platform's back edge, and the
+						-- roofs, fins and flag stand at most 19 over the deck.
+						local zMax = lifeguard.platform.Z / 2 + lifeguard.ramp.length + 1
+						local yMax = lifeguard.deck + 19
+						if lo.X < -8 or hi.X > 8 or lo.Z < -8 or hi.Z > zMax or hi.Y > yMax or lo.Y < -1.01 then
 							table.insert(problems, `{shape} {spec.name}: outside the stand's footprint`)
 						end
 					end

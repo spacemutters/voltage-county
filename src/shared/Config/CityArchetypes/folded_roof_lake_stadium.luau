@@ -1,5 +1,5 @@
 --!strict
--- folded_roof_marine_stadium: placement and limits (Config/City archetypes; docs/city/ARCHETYPES.md §9, C06).
+-- folded_roof_lake_stadium: placement and limits (Config/City archetypes; docs/city/ARCHETYPES.md §9, C06).
 -- C06: the lake stadium, a long white roof of folded concrete plates floating out over a grandstand by the water,
 -- a one-off landmark on the lake shore (its site needs the planner, see the module's header). Weight 0: the per-plot
 -- draw never picks it. Unlike every other archetype its FRONT (-z) faces the WATER: the stands look out over the lake

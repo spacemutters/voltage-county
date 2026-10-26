@@ -6,16 +6,16 @@
 return {
 	district = "arts",
 	weight = 1,
-	maxCopies = 2,
+	maxCopies = 4,
 	perBlock = 1,
-	minSpacing = 600,
+	minSpacing = 450,
 	minWidth = 64,
 	maxWidth = 140,
 	minDepth = 46,
 	maxPlots = 4,
 	heights = { min = 76, max = 92 },
 	crownMax = 12,
-	budget = 64, -- the widest, with three blades a floor and its parked cars, needs about 59
+	budget = 74, -- the widest, with three blades a floor, its parked cars, cable rails and hanging greenery, is 71
 	palettes = 3,
 	crowns = 2,
 	rhythms = 3,

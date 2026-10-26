@@ -22,8 +22,10 @@
 -- taller or lower. An archetype stands at most perBlock times in a block (and rules.perBlock), maxCopies in the map and
 -- minSpacing from its other copies; every copy draws a look (palette, crown, rhythm) no other copy has while one is
 -- left; corner archetypes stand on block corners (cornerArchetypes), mirrored so the corner is at their drawn +x end.
--- Then no two towers (band T and up) within rules.twinRange stand within twinGap of one height (later ones move, inside
--- their own range), and the tallest get places in the Skyline model. Deterministic: the same plots give the same city.
+-- No two towers (band T and up) within rules.twinRange stand within twinGap of one height: one-offs and the tower pass
+-- draw a height clear of the towers placed before them (an option whose whole range twins one is passed over), and a
+-- last pass moves any other inside its own range. The tallest get places in the Skyline model. Deterministic: the same
+-- plots give the same city.
 --
 -- Building (build): the archetype writes its parts through Dev/City/Kit; check() holds them to the site (inside the
 -- footprint, between y = -kit.bury and maxHeight, within budget, fit to build, named and filed as its); file() moves
@@ -626,6 +628,52 @@ local function drawable(s: State, id: string): boolean
 	return not s.oneOff[id]
 end
 
+-- The twin rule, applied as a tower is placed: the height nearest `want` in low..top that stands no closer than
+-- rules.twinGap to any tower (band T and up) in `placed` within rules.twinRange of `at`, or nil when every height
+-- in the range twins one. Heights below band T twin nothing.
+local function untwinned(placed: { Site }, at: Vector2, want: number, low: number, top: number): number?
+	if top < low - EPS then
+		return nil
+	end
+	local near: { number } = {}
+	for _, site in placed do
+		if site.height >= BANDS.T and (Vector2.new(site.frame.X, site.frame.Z) - at).Magnitude <= RULES.twinRange then
+			table.insert(near, site.height)
+		end
+	end
+	local function twins(h: number): boolean
+		if h < BANDS.T - EPS then
+			return false
+		end
+		for _, other in near do
+			if math.abs(h - other) < RULES.twinGap then
+				return true
+			end
+		end
+		return false
+	end
+	local start = math.clamp(want, low, top)
+	if not twins(start) then
+		return start
+	end
+	-- The free heights nearest `want` lie at the range's ends or just clear of a nearby tower's height.
+	local candidates: { number } = { low, top, BANDS.T - 1 }
+	local clear = RULES.twinGap + 0.05
+	for _, other in near do
+		table.insert(candidates, other + clear)
+		table.insert(candidates, other - clear)
+	end
+	local best: number? = nil
+	for _, h in candidates do
+		if h >= low - EPS and h <= top + EPS and not twins(h) then
+			if best == nil or math.abs(h - start) < math.abs((best :: number) - start) - EPS then
+				best = h
+			end
+		end
+	end
+	return best
+end
+
 ---------------------------------------------------------------------------------------------------------------
 -- Pass 1: the one-offs
 ---------------------------------------------------------------------------------------------------------------
@@ -705,6 +753,8 @@ local function placeLandmarks(s: State, runs: { Run }, unplaced: { string }, mis
 		end
 		local first = chosen.run.plots[chosen.i]
 		local rng = Random.new(mixSeed(s.seed, first.shade, first.index))
+		local frame = CityBuilder.footprint(chosen.run.plots, chosen.i, chosen.j, chosen.depth)
+		local want = math.clamp(entry.height or config.heights.max, config.heights.min, config.heights.max)
 		makeSite(s, {
 			run = chosen.run,
 			i = chosen.i,
@@ -712,7 +762,8 @@ local function placeLandmarks(s: State, runs: { Run }, unplaced: { string }, mis
 			id = entry.id,
 			config = config,
 			depth = chosen.depth,
-			height = math.clamp(entry.height or config.heights.max, config.heights.min, config.heights.max),
+			height = untwinned(s.sites, Vector2.new(frame.X, frame.Z), want, config.heights.min, config.heights.max)
+				or want,
 			low = config.heights.min,
 			top = config.heights.max,
 			back = entry.face == "back",
@@ -841,8 +892,20 @@ local function towerIn(s: State, runs: { Run }): boolean
 			local config = City.archetypes[option.id]
 			local want = math.min(config.claimDepth or City.towers.claimDepth, City.claims.maxDepth)
 			local depth = deepest(s, run, i, j, config.minDepth, want)
+			-- Its height twins no tower near it (rules.twinGap): an option whose whole range would is passed over.
+			local height: number? = nil
 			if depth then
+				local frame = CityBuilder.footprint(run.plots, i, j, depth)
 				local share = City.towers.rise + (1 - City.towers.rise) * first.tall
+				height = untwinned(
+					s.sites,
+					Vector2.new(frame.X, frame.Z),
+					option.low + share * (option.top - option.low),
+					option.low,
+					option.top
+				)
+			end
+			if depth and height then
 				makeSite(s, {
 					run = run,
 					i = i,
@@ -850,7 +913,7 @@ local function towerIn(s: State, runs: { Run }): boolean
 					id = option.id,
 					config = config,
 					depth = depth,
-					height = option.low + share * (option.top - option.low),
+					height = height,
 					low = option.low,
 					top = option.top,
 					back = false,
@@ -1033,11 +1096,14 @@ local function fill(s: State, runs: { Run }, legacy: { Plot })
 						variant.palette = variant.palette % config.palettes + 1
 					end
 					ok = not clash
+					-- Apart means acrossHeight of the taller one: up to other / (1 - share), down to other * (1 - share).
+					local function apart(h: number, other: Site): boolean
+						return math.abs(h - other.height) >= RULES.acrossHeight * math.max(h, other.height) - EPS
+					end
 					for _, other in others do
-						local apart = RULES.acrossHeight * math.max(height, other.height)
-						if math.abs(height - other.height) < apart then
-							local up, down =
-								other.height * (1 + RULES.acrossHeight), other.height / (1 + RULES.acrossHeight)
+						if not apart(height, other) then
+							local up = other.height / (1 - RULES.acrossHeight) + 0.05
+							local down = other.height * (1 - RULES.acrossHeight) - 0.05
 							if up <= pick.top + EPS then
 								height = up
 							elseif down >= pick.low - EPS then
@@ -1046,6 +1112,9 @@ local function fill(s: State, runs: { Run }, legacy: { Plot })
 								ok = false
 							end
 						end
+					end
+					for _, other in others do
+						ok = ok and apart(height, other)
 					end
 				end
 				if ok then
@@ -1081,8 +1150,9 @@ end
 -- After the passes: towers apart in height, the skyline
 ---------------------------------------------------------------------------------------------------------------
 
--- No two towers within twinRange within twinGap of one height: in placement order (one-offs first), a tower that
--- would twin an earlier one moves to the nearest height inside its own range that twins none.
+-- No two towers within twinRange within twinGap of one height. One-offs and the tower pass already place their
+-- towers clear of the earlier ones (untwinned); this settles the rest in placement order: a tower that twins an earlier
+-- one moves to the nearest free height inside its own range, else (when its archetype goes that low) below band T.
 local function untwin(s: State)
 	local towers: { Site } = {}
 	for _, site in s.sites do
@@ -1091,37 +1161,16 @@ local function untwin(s: State)
 		end
 		local info = s.info[site]
 		local here = Vector2.new(site.frame.X, site.frame.Z)
-		local function twins(h: number): boolean
-			for _, other in towers do
-				local far = (here - Vector2.new(other.frame.X, other.frame.Z)).Magnitude
-				if far <= RULES.twinRange and math.abs(h - other.height) < RULES.twinGap - EPS then
-					return true
-				end
-			end
-			return false
+		local found = untwinned(towers, here, site.height, info.low, info.top)
+			or untwinned(towers, here, site.height, math.min(info.low, info.config.heights.min), info.top)
+		if found and math.abs(found - site.height) > EPS then
+			site.height = found
+			site.maxHeight = found + info.config.crownMax
+			site.band = CityBuilder.bandOf(found)
 		end
-		if twins(site.height) then
-			local step = RULES.twinGap / 4
-			local found: number? = nil
-			for k = 1, 64 do
-				for _, sign in { 1, -1 } do
-					local h = site.height + sign * k * step
-					if h >= info.low - EPS and h <= info.top + EPS and not twins(h) then
-						found = h
-						break
-					end
-				end
-				if found then
-					break
-				end
-			end
-			if found then
-				site.height = found
-				site.maxHeight = found + info.config.crownMax
-				site.band = CityBuilder.bandOf(found)
-			end
+		if site.height >= BANDS.T then
+			table.insert(towers, site)
 		end
-		table.insert(towers, site)
 	end
 end
 

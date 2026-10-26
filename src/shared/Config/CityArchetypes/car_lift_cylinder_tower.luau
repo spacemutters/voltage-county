@@ -16,7 +16,7 @@ return {
 	maxPlots = 3,
 	heights = { min = 260, max = 420 }, -- about 455 compressed
 	crownMax = 12, -- the shaft's overrun and its machine room
-	budget = 84,
+	budget = 84, -- at most 82 (a 46-deep site, a ring every second floor, the lit top floor, six lit floors)
 	palettes = 3,
 	crowns = 3,
 	rhythms = 3,

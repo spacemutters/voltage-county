@@ -2,10 +2,11 @@
 -- T11 twisting_twin_towers (docs/city/ARCHETYPES.md §5, T11): two slim condo towers side by side in a garden, each a
 -- stack of deep white floor plates that turn a few degrees more every floor, so the pair wrings itself like two
 -- towels twisting opposite ways. Every plate stands 4 studs past its glass on every side (a balcony all round, and the
--- shade that keeps the glass dark), and the glass turns with it. The lowest plates and the top ones hold their turn;
--- an ice-blue LED ring under every third plate draws the twist in light at night. On the ground: a glazed lobby under
--- each tower's first plate, a lawn, a round drop-off canopy with a green roof between the towers carrying the name,
--- a reflecting pool behind it and planters on the paved front strip.
+-- shade that keeps the glass dark), and the sea-green glass turns with it. The lowest plates and the top ones hold
+-- their turn; an ice-blue LED ring under every third plate draws the twist in light at night. On the ground: a glazed
+-- lobby set deep under each tower's first plate, carried by white V columns on its long faces; a lawn; a round
+-- drop-off canopy with a green roof and a lit rim between the towers carrying the name, a reflecting pool behind it
+-- and planters on the paved front strip.
 --
 -- What makes it itself: two towers of white plates twisting opposite ways, side by side.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/twisting_twin_towers.
@@ -13,11 +14,10 @@
 -- white lid; 2 a glass penthouse under a floating white cap with a lit underside; 3 a green roof under a white
 -- pergola), rhythm (the twist from bottom to top: 30, 38 or 45 degrees), mirror (the pair twists the other way).
 --
--- Preview checklist: from the street and from 300 studs the plates must read as one smooth twist, not a ragged
--- sawtooth (if they do, lower SHAPE.twist or raise holdLow/holdHigh); the glass corners must stay hidden behind the
--- plates (a glass run spans two floors and follows the middle plate); the canopy tucks under the first plates
--- without touching the lobby glass; the top plates' corners stay clear of the neighbours; at night the LED rings and
--- one or two lit runs per tower, nothing else.
+-- Studio pass 2026-10-26 (docs/images/city/twisting_twin_towers-*.jpg): thin plates over bright glass read as a
+-- blue tower with white lines, so the plates became thick white bands (slab and upstand) over darker glass, as the
+-- real pair reads; three-floor glass runs left a sawtooth on the outline at 30 degrees, so a run spans two floors.
+-- The V columns read as legs clear of the canopy; at night the LED rings draw the twist.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -43,15 +43,18 @@ local SHAPE = {
 	spread = 8, -- ...and up to this much further on a wide site (the rest is lawn)
 	plateRatio = 0.7, -- a plate's depth as a share of its length
 	plateMax = 60,
-	plateThick = 1.2,
-	roofThick = 2.2,
+	plateThick = 2.2, -- the slab and its solid white upstand: the white bands carry the look, the glass stays dark
+	roofThick = 2.8,
 	inset = 4, -- the glass sits this far inside the plates on every side: the balcony all round
 	lobbyInset = 4.5, -- the lobby glass, under the first plate
 	twist = { 30, 38, 45 }, -- from the lowest plates to the highest, by rhythm
 	holdLow = 2, -- plates over the first that keep the starting turn
 	holdHigh = 3, -- plates under the roof that keep the final turn
 	ringEvery = 3, -- an LED ring under every third plate
+	runFloors = 2, -- a glass run spans this many floors, turned as the run's middle (3 showed a sawtooth at the edges)
 	litRuns = 2, -- glass runs per tower that glow at night (at most)
+	vee = { spread = 7, thick = 1.4, out = 1.6 }, -- the lobby's V columns: half their span under the plate, and how
+	-- far outside the lobby glass they stand
 	bay = 5.5, -- a window bay on the glass
 	plinth = 0.8, -- the lawn's height
 	forecourt = 3, -- the paved strip along the front line
@@ -68,11 +71,12 @@ local SHAPE = {
 	pergola = 8, -- crown 3
 }
 
--- Glass and frame sets: blue-green, teal under warm white, silver, navy.
+-- Glass and frame sets: sea green, teal under warm white, slate, navy. Darker than the city's tower glass so the white
+-- bands read first, as on the real pair.
 local PALETTES = {
-	{ glass = rgb(82, 124, 138), frame = P.frame.white },
+	{ glass = rgb(50, 88, 90), frame = P.frame.white },
 	{ glass = P.glass.teal, frame = P.frame.warm },
-	{ glass = P.glass.silver, frame = P.frame.white },
+	{ glass = rgb(62, 82, 96), frame = P.frame.white },
 	{ glass = P.glass.navy, frame = P.frame.white },
 }
 
@@ -107,7 +111,7 @@ local function build(m: Types.Model)
 	local lawn = Kit.look(P.leaf, Enum.Material.Grass)
 	local paving = Kit.look(P.deco.terrazzo, Enum.Material.SmoothPlastic)
 	local water = Kit.look(P.water, Enum.Material.Glass, 0.3, 0)
-	local lines = pal.glass:Lerp(pal.frame, 0.45)
+	local lines = pal.glass:Lerp(pal.frame, 0.3)
 	local function grid(image: string, u: number, v: number, color: Color3): { Types.TextureSpec }
 		return { { face = Kit.face(m, Enum.NormalId.Front), image = image, u = u, v = v, color = color } }
 	end
@@ -157,7 +161,8 @@ local function build(m: Types.Model)
 	local function top(k: number): number
 		return if k <= n then G + (k - 1) * f + SHAPE.plateThick else H
 	end
-	local runs = math.ceil(n / 2)
+	local per = SHAPE.runFloors
+	local runs = math.ceil(n / per)
 
 	for _, tower in { { tag = "A", x = -xc, sense = sense }, { tag = "B", x = xc, sense = -sense } } do
 		local t, x = tower.tag, tower.x
@@ -185,16 +190,18 @@ local function build(m: Types.Model)
 			end
 		end
 
-		-- The glass: one run every two floors, turned as the plate across its middle (the plates above and below differ
-		-- by one step, well inside the balcony's depth). One or two runs glow at night through a skin on their fronts.
+		-- The glass: one run every three floors, from the plate under it to the plate over it, turned half way between
+		-- the two (the plates at its ends differ from it by a step and a half at most, inside the balcony's depth). One
+		-- or two runs glow at night through a skin on their fronts.
 		local lit: { [number]: boolean } = {}
 		for _ = 1, SHAPE.litRuns do
 			lit[rng:NextInteger(1, runs)] = true
 		end
 		for j = 1, runs do
-			local y0 = top(2 * j - 1) - 0.3
-			local y1 = bottom(math.min(2 * j + 1, n + 1)) + 0.3
-			local yaw = yawOf(math.min(2 * j, n + 1))
+			local first, last = per * (j - 1) + 1, math.min(per * j + 1, n + 1)
+			local y0 = top(first) - 0.3
+			local y1 = bottom(last) + 0.3
+			local yaw = (yawOf(first) + yawOf(last)) / 2
 			local center = Vector3.new(x, (y0 + y1) / 2, zc)
 			local pane = turned(`{t}Glass{j}`, center, Vector3.new(gL, y1 - y0, gS), yaw, glass)
 			pane.textures = grid(City.textures.windowFine, SHAPE.bay, f, lines)
@@ -242,6 +249,26 @@ local function build(m: Types.Model)
 		)
 		lobbySkin.textures = grid(City.textures.windowBold, 6, G, pal.frame)
 		Kit.lit(lobbySkin, "window")
+
+		-- White V columns under each long face: two legs from one foot on the ground out to the first plate, standing
+		-- between the lobby glass and the plate's edge.
+		local vee = SHAPE.vee
+		local foot = Vector3.new(x, -0.4, zc)
+		local head = Vector3.new(x, G + 0.5, zc)
+		for i, side in { -1, 1 } do
+			local vz = side * (lS / 2 + vee.out)
+			for j, sx in { -1, 1 } do
+				Kit.strut(
+					m,
+					`{t}Vee{i}{j}`,
+					at(foot, yaw1, Vector3.new(0, 0, vz)),
+					at(head, yaw1, Vector3.new(sx * vee.spread, 0, vz)),
+					vee.thick,
+					frame,
+					"trim"
+				)
+			end
+		end
 
 		-- The crown, on the roof plate.
 		local yawR = yawOf(n + 1)
@@ -365,6 +392,9 @@ local function build(m: Types.Model)
 	Kit.disc(m, "Drive", 0, zp, SHAPE.plinth + 0.08, 2 * R + 1, 0.2, paving, "detail")
 	Kit.disc(m, "Canopy", 0, zp, cy + SHAPE.canopyThick / 2, 2 * R, SHAPE.canopyThick, frame, "trim")
 	Kit.disc(m, "CanopyGreen", 0, zp, canopyTop + 0.2, 2 * R - 1.6, 0.5, lawn, "detail")
+	-- A lit rim: a hair wider than the canopy and sunk in its middle, so only its edge glows.
+	local rim = Kit.disc(m, "CanopyLed", 0, zp, cy + SHAPE.canopyThick / 2, 2 * R + 0.3, 0.4, frame, "detail")
+	Kit.lit(rim, "ledEdge")
 	for i, sx in { -1, 1 } do
 		Kit.column(m, `Post{i}`, sx * R * 0.45, zp + R * 0.3, -KIT.bury, cy + 0.1, SHAPE.post, frame)
 	end

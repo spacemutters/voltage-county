@@ -138,21 +138,7 @@ function Scene.street(at: Vector3?): { Model }
 		)
 	end)
 	piece("Sun", 8, function(m)
-		Kit.column(m, "Pole", 0, 0, -0.6, 7.4, 0.25, Kit.look(palette.white, Enum.Material.Metal), "detail")
-		Kit.disc(m, "", 0, 0, 7.2, 7, 0.35, Kit.look(palette.pink, Enum.Material.SmoothPlastic))
-		local lounger = CityScenery.beach.sets.loungers
-		for s, side in { -1, 1 } do
-			local cx = side * (lounger[1] / 2 + 0.5)
-			Kit.wedge(
-				m,
-				`Lounger{s}`,
-				Vector3.new(cx - lounger[1] / 2, 0.05, -lounger[3] / 2),
-				Vector3.new(cx + lounger[1] / 2, 0.05 + lounger[2], lounger[3] / 2),
-				"back",
-				Kit.look(palette.white, Enum.Material.SmoothPlastic),
-				"trim"
-			)
-		end
+		Beach.drawSet(m, palette.pink, palette.white, 6)
 	end)
 	return out
 end

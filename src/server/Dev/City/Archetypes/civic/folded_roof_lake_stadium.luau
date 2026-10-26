@@ -1,18 +1,18 @@
 --!strict
--- C06 folded_roof_marine_stadium (docs/city/ARCHETYPES.md §9, C06): the lake stadium. A raked concrete grandstand,
+-- C06 folded_roof_lake_stadium (docs/city/ARCHETYPES.md §9, C06): the lake stadium. A raked concrete grandstand,
 -- its front lip on piers over a dark void at the water's edge, white bench lines on every tier and stair aisles up
 -- the rake. From a concourse behind the top tier a row of slanted columns leans out toward the water, tied by one long
 -- beam, and from that beam the signature: a long, thin roof of folded concrete plates cantilevered far out over the
 -- seats, its zig-zag front edge lit at night. The stadium's name on the back wall, a stair tower at one end.
 --
 -- What makes it itself: a long white roof of folded concrete wings floating out over a grandstand by the water.
--- Placement, sizes, heights and its budget: Config/CityArchetypes/folded_roof_marine_stadium. NOTE: its front (-z)
+-- Placement, sizes, heights and its budget: Config/CityArchetypes/folded_roof_lake_stadium. NOTE: its front (-z)
 -- faces the WATER (the stands look out over the lake), its back (+z) the road.
 -- Variants: palette (1 white concrete and white benches, 2 weathered concrete covered in graffiti panels, 3 warm
 -- concrete with aqua benches), crown (1 the roof rising toward its tip with shallow folds, 2 a level roof with deep
 -- folds), rhythm (1 eight plates on nine columns, 2 six wider plates on seven), mirror (the stair tower's end).
 --
--- Previewing (Studio helper): Preview.build("folded_roof_marine_stadium", { width = 210, depth = 53 }) and look from
+-- Previewing (Studio helper): Preview.build("folded_roof_lake_stadium", { width = 210, depth = 53 }) and look from
 -- the front (the water side: Preview faces fronts south). Check: the roof's front edge reads as a zig-zag of folds and
 -- its plates meet cleanly at the ridges and valleys; the columns lean toward the water and meet the beam; the piers
 -- carry the stands' lip; at night the folds' front edges glow in a zig-zag line.
@@ -262,7 +262,7 @@ local function build(m: Types.Model)
 		Vector3.new(-signW / 2, cTop - 7.5, zB + 0.05),
 		Vector3.new(signW / 2, cTop - 2, zB + 0.45),
 		Enum.NormalId.Back,
-		"LAKE STADIUM",
+		City.signNames.civic.stadium,
 		pal.concrete,
 		rgb(40, 96, 150),
 		City.districtLooks.downtown.font,
@@ -311,5 +311,5 @@ local function build(m: Types.Model)
 	end
 end
 
-local archetype: Types.Archetype = { id = "folded_roof_marine_stadium", build = build }
+local archetype: Types.Archetype = { id = "folded_roof_lake_stadium", build = build }
 return archetype

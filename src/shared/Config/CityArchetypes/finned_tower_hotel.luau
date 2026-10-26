@@ -13,8 +13,8 @@ return {
 	minDepth = 44,
 	maxPlots = 3,
 	heights = { min = 140, max = 176 },
-	crownMax = 40,
-	budget = 56,
+	crownMax = 48, -- the shaft (33), its cap and the fins' horns (7) reach about 41; the mast and its beacon take the rest
+	budget = 72,
 	palettes = 3,
 	crowns = 2,
 	rhythms = 2,

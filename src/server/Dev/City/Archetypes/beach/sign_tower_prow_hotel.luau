@@ -1,21 +1,28 @@
 --!strict
 -- B03 sign_tower_prow_hotel (docs/city/ARCHETYPES.md §6, B03): the beach strip's ship-bow hotel. Two white wings of
--- three storeys, their punched windows under eyebrows that wrap the front and both sides with crisp square corners,
--- the lobby set back under the upper floors behind a café terrace, a neon line under a deep cornice. Between the
--- wings stands the signature: a sign tower pushing out of the facade as a pointed ship's prow (a square turned 45
--- degrees), the name stacked down both of the prow's faces, a coloured keel stripe down its point and two stripes in
--- a second colour on the tower's shoulders, rising far over the roof to a stepped top and a needle with a lit ball.
--- The entrance is in the tower's foot under a coloured canopy, and the wings' parapet steps up toward the tower.
+-- three storeys, their windows under coloured eyebrows that wrap the front and both sides with crisp square corners,
+-- over a full-width porch: the upper floors overhang a lit lobby on square posts behind a café terrace. Between the
+-- wings stands the signature: a sign tower pushing out of the facade as a pointed ship's bow, both faces of the bow
+-- in the hotel's colour carrying the name stacked in white, a pale ridge down its point, and the tower's shoulders
+-- stepping down either side of it like a ziggurat, each striped with a racing line. Speed-line panels of two colours
+-- flank the tower on the wings, a flat sun deck cantilevers from each shoulder at roof level over white pipe rails
+-- along the wings' roofs, the name runs across the tower's foot over a coloured door canopy, and the bow climbs far
+-- over the roof to a needle or turned tiers.
 --
--- What makes it itself: a striped ship's-bow sign tower pushing out of the middle of a low hotel and far over its roof.
+-- What makes it itself: a ship's-bow sign tower, its two coloured faces lettered, pushing out of the middle of a low
+-- banded hotel and stepping up far over its roof.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/sign_tower_prow_hotel.
--- Variants: palette (4 keel and shoulder colour pairs, each with its two neons), crown (1 two setback steps and a tall
--- needle, 2 the prow climbing on in three shrinking turned tiers to a short mast), rhythm (1 the tower centred with
--- the parapet stepping up to it, 2 the tower off-centre with the steps at the far end of the long wing), mirror (the
--- off-centre tower and the stair house change sides).
+-- Variants: palette (4: the bow and eyebrow colour, the stripe colour, the letters, the two neons), crown (1 a tall
+-- needle with a lit ball on the bow's flat top, 2 the bow climbing on in three shrinking turned tiers to a short
+-- mast), rhythm (1 the tower centred, 2 the tower off-centre toward the left), mirror (the off-centre tower and the
+-- stair house change sides).
 --
--- Previewed in Studio (2026-10-25, docs/images/city/sign_tower_prow_hotel-*.jpg): the prow, its stacked name and the
--- stripes read; round 2 raised the tower (16 over the roof read as a stair house from down the strip).
+-- Round 3 (2026-10-26, from photos of the inspiration): the bow's faces coloured with white letters, the stepped
+-- shoulders, the two-colour speed-line panels, coloured eyebrows, the porch on posts, the sun decks and the name over
+-- the door. Preview check: the letters sit on the bow's two street faces (the sleeve's Front and Right faces), the
+-- shoulders read as two steps down from the bow, the speed-line panels read as stripes of two colours, the sun decks'
+-- posts land on the roof, and at night the ridge, the racing lines and the cornice line show only two neon colours.
+-- Round 4 (2026-10-26, seen in Studio): one-word names only on the bow (a two-word one left a gap in the stack).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -39,21 +46,29 @@ local SHAPE = {
 	terrace = 10,
 	bodyDepth = 38,
 	sideInset = 3.2, -- the eyebrows wrap the sides, so the walls keep this far in
-	porch = 1.2, -- the lobby's wall, behind the upper floors' face
-	pier = 2.2, -- the lobby's corner piers
+	porch = 4, -- the lobby's wall, behind the upper floors' face: a porch on posts
+	pier = 2.2, -- the porch's end walls
+	post = 1.4, -- the porch posts, square
+	posts = 2, -- per wing
 	skinMargin = 0.6, -- stucco left at the ends of the windowed front
 	bay = 6.5, -- a window bay (about)
 	eyebrow = { thick = 0.6, proud = 2.6 },
 	canopy = { thick = 0.9, proud = 2.6 },
 	cornice = { thick = 1, proud = 1.4 },
-	tower = { share = 0.2, min = 13, max = 17, proud = 2.8, deep = 12 },
-	prow = 0.34, -- the prow's half-width, a share of the tower's width (it stands as far out of the tower)
-	keel = 1.4,
-	stripe = 1.6,
+	-- The tower: wide enough that shoulders show either side of the bow. The bow's half-width is a share of the
+	-- tower's width (its point stands as far out of the tower); with the tower `proud` of the facade and the terrace
+	-- 10 deep, the bow's cap stays inside the front line at the widest tower.
+	tower = { share = 0.26, min = 16, max = 22, proud = 2.8, deep = 12 },
+	prow = 0.26,
+	ridge = 1.1, -- the pale ridge down the bow's point
+	stripe = 1.2, -- the racing line on each shoulder
 	-- The tower's top over the roof, by crown: about half the wings' height again, so it reads as the sign tower from
-	-- down the strip (16 read as a stair house in the preview).
+	-- down the strip. Its shoulders step down: the full tower to `shoulders[1]` of that rise, then halfway in toward
+	-- the bow's core to `shoulders[2]`; the core (the bow and a margin) goes on to the top.
 	rise = { 22, 24 },
-	steps = { { rise = 3.2, inset = 1.4 }, { rise = 3, inset = 1.4 } },
+	shoulders = { 0.38, 0.7 },
+	speed = { width = 3.4, every = 1.2 }, -- the speed-line panels beside the tower
+	deck = { out = 7, deep = 6.5, over = 6.4, thick = 0.6, post = 0.5 }, -- the sun decks off the shoulders
 	needle = 40, -- crown 1: the needle's top over the roof
 	mast = 40, -- crown 2: the mast's top over the roof
 	tiers = { { share = 0.78, rise = 3.4 }, { share = 0.56, rise = 3 }, { share = 0.34, rise = 2.6 } },
@@ -65,38 +80,43 @@ local SHAPE = {
 	umbrella = 7.5,
 }
 
--- The keel colour and its neon, the shoulder stripes' colour and neon, the letters, the wash.
+-- The bow and eyebrow colour (the hotel's), its neon on the ridge; the racing lines' and speed lines' second colour
+-- and its neon; the bow's letters and the ridge's day colour; the wash.
 local PALETTES = {
 	{
-		keel = rgb(46, 90, 172),
-		keelKind = "neonBlue",
+		bow = rgb(46, 90, 172),
+		ridge = rgb(246, 244, 238),
+		bowKind = "neonBlue",
 		stripe = P.deco.lemon,
 		stripeKind = "neonAmber",
-		letters = rgb(46, 90, 172),
+		letters = rgb(250, 248, 240),
 		wash = rgb(150, 180, 255),
 	},
 	{
-		keel = rgb(240, 118, 100),
-		keelKind = "neonPink",
+		bow = rgb(240, 118, 100),
+		ridge = P.deco.sky,
+		bowKind = "neonPink",
 		stripe = P.deco.sky,
-		stripeKind = "sign",
-		letters = rgb(214, 74, 74),
+		stripeKind = "neonCyan",
+		letters = rgb(250, 248, 240),
 		wash = rgb(255, 150, 160),
 	},
 	{
-		keel = P.deco.lilac,
-		keelKind = "neonViolet",
+		bow = rgb(118, 84, 190),
+		ridge = P.deco.mint,
+		bowKind = "neonViolet",
 		stripe = P.deco.mint,
-		stripeKind = "sign",
-		letters = rgb(118, 84, 190),
+		stripeKind = "neonCyan",
+		letters = rgb(250, 248, 240),
 		wash = rgb(200, 150, 255),
 	},
 	{
-		keel = rgb(40, 168, 176),
-		keelKind = "sign",
+		bow = rgb(28, 140, 150),
+		ridge = P.deco.pink,
+		bowKind = "neonCyan",
 		stripe = P.deco.pink,
 		stripeKind = "neonPink",
-		letters = rgb(28, 128, 140),
+		letters = rgb(250, 248, 240),
 		wash = rgb(255, 140, 200),
 	},
 }
@@ -112,44 +132,24 @@ local function storeys(height: number): (number, number)
 	return up, math.min(room / up, SHAPE.floorMax)
 end
 
--- A hotel name short enough to stack down the prow, its letters one per line (the leading "THE " dropped).
-local function pickName(rng: Random): string
+-- A hotel name for the bow: one word short enough to stack (the leading "THE " dropped), its letters one per line;
+-- and the name in full for the board over the door.
+local function pickName(rng: Random): (string, string)
 	local short: { string } = {}
 	for _, name in City.signNames.hotels do
-		if #(string.gsub(name, "^THE ", "")) <= 9 then
+		local word = string.gsub(name, "^THE ", "")
+		if #word <= 9 and not string.find(word, " ", 1, true) then
 			table.insert(short, name)
 		end
 	end
 	local list = if #short > 0 then short else City.signNames.hotels
-	local word = string.gsub(list[rng:NextInteger(1, #list)], "^THE ", "")
+	local name = list[rng:NextInteger(1, #list)]
+	local word = string.gsub(name, "^THE ", "")
 	local letters: { string } = {}
 	for i = 1, #word do
 		table.insert(letters, string.sub(word, i, i))
 	end
-	return table.concat(letters, "\n")
-end
-
--- Text on some faces of a part (SurfaceGuis; Kit.sign's look, on parts that aren't boards).
-local function label(
-	m: Types.Model,
-	spec: Types.PartSpec,
-	faces: { Enum.NormalId },
-	text: string,
-	color: Color3,
-	size: Vector2
-)
-	local labels: { MapTypes.LabelSpec } = spec.labels or {}
-	for _, face in faces do
-		table.insert(labels, {
-			face = Kit.face(m, face),
-			text = text,
-			color = color,
-			font = FONT,
-			size = size,
-			pixelsPerStud = KIT.signPixelsPerStud,
-		})
-	end
-	spec.labels = labels
+	return table.concat(letters, "\n"), name
 end
 
 local function build(m: Types.Model)
@@ -166,13 +166,13 @@ local function build(m: Types.Model)
 	local T = G + up * f -- the top floor line
 
 	local white = Kit.look(P.deco.white, Enum.Material.SmoothPlastic)
-	local keelLook = Kit.look(pal.keel, Enum.Material.SmoothPlastic)
+	local bowLook = Kit.look(pal.bow, Enum.Material.SmoothPlastic)
 	local stripeLook = Kit.look(pal.stripe, Enum.Material.SmoothPlastic)
 
 	local x0, x1 = -hw + SHAPE.sideInset, hw - SHAPE.sideInset
 	local zF = -hd + SHAPE.terrace -- the upper floors' face
 	local zB = math.min(hd - 1, zF + SHAPE.bodyDepth)
-	local zWall = zF + SHAPE.porch
+	local zWall = zF + SHAPE.porch -- the lobby's wall, at the back of the porch
 
 	-- The tower: centred, or (rhythm 2) toward the left as far as leaves both wings room.
 	local tower = SHAPE.tower
@@ -182,18 +182,19 @@ local function build(m: Types.Model)
 		tx = -math.clamp(W * SHAPE.offset, 0, (x1 - x0) / 2 - tw / 2 - 8)
 	end
 	local zT = zF - tower.proud -- the tower's face
-	local tTop = H + SHAPE.rise[crown]
-	local d = tw * SHAPE.prow -- the prow's half-width and how far its point stands out of the tower
+	local rise = SHAPE.rise[crown]
+	local tTop = H + rise
+	local d = tw * SHAPE.prow -- the bow's half-width and how far its point stands out of the tower
 	local zTip = zT - d
 
 	-------------------------------------------------------------------------------------------------------
-	-- The wings: body, the upper floors over the set-back lobby, punched windows, eyebrows round three sides
+	-- The wings: body, the upper floors over the porch, punched windows, coloured eyebrows round three sides
 	-------------------------------------------------------------------------------------------------------
 	Kit.box(m, "Body", Vector3.new(x0, -KIT.bury, zWall), Vector3.new(x1, H, zB), white)
 	Kit.box(m, "Upper", Vector3.new(x0 - 0.05, G, zF), Vector3.new(x1 + 0.05, H - 0.04, zWall + 0.4), white)
-	for i, sx in { -1, 1 } do
-		local outer = if sx < 0 then x0 - 0.05 else x1 + 0.05
-		local inner = if sx < 0 then x0 + SHAPE.pier else x1 - SHAPE.pier
+	for i, side in { -1, 1 } do
+		local outer = if side < 0 then x0 - 0.05 else x1 + 0.05
+		local inner = if side < 0 then x0 + SHAPE.pier else x1 - SHAPE.pier
 		Kit.box(m, `Pier{i}`, Vector3.new(outer, -KIT.bury, zF + 0.05), Vector3.new(inner, G, zWall + 0.3), white)
 	end
 	Kit.glass(
@@ -211,6 +212,24 @@ local function build(m: Types.Model)
 			lit = true,
 		}
 	)
+	-- The porch posts, set in a little from the upper floors' face, evenly along each wing.
+	local wings = { { x0 + SHAPE.pier, tx - tw / 2 }, { tx + tw / 2, x1 - SHAPE.pier } }
+	local postZ = zF + 0.9
+	for i, wing in wings do
+		local a, b = wing[1], wing[2]
+		local count = if b - a < 10 then 1 else SHAPE.posts -- a short wing (the tower off-centre) gets one
+		for j = 1, count do
+			local px = a + (b - a) * j / (count + 1)
+			local h = SHAPE.post / 2
+			Kit.box(
+				m,
+				`Post{i}{j}`,
+				Vector3.new(px - h, SHAPE.terraceTop - 0.2, postZ - h),
+				Vector3.new(px + h, G + 0.02, postZ + h),
+				white
+			)
+		end
+	end
 	local sx0, sx1 = x0 + SHAPE.skinMargin, x1 - SHAPE.skinMargin
 	local bays = math.max(2, math.round((sx1 - sx0) / SHAPE.bay))
 	Kit.punched(
@@ -224,39 +243,39 @@ local function build(m: Types.Model)
 		(sx1 - sx0) / bays,
 		f
 	)
-	for i, sx in { -1, 1 } do
-		local wallX = if sx < 0 then x0 else x1
+	for i, side in { -1, 1 } do
+		local wallX = if side < 0 then x0 else x1
 		Kit.punched(
 			m,
 			`Side{i}`,
-			Vector3.new(wallX - sx * 0.4, G, zWall + 0.6),
-			Vector3.new(wallX + sx * 0.06, T, zB - 0.6),
+			Vector3.new(wallX - side * 0.4, G, zWall + 0.6),
+			Vector3.new(wallX + side * 0.06, T, zB - 0.6),
 			P.deco.white,
 			P.window.dark,
-			{ if sx < 0 then LEFT else RIGHT },
+			{ if side < 0 then LEFT else RIGHT },
 			SHAPE.sideBay,
 			f
 		)
 	end
 
 	-- An eyebrow is one slab round the front and both sides (square corners), its back end short of the back wall.
-	local function wrap(name: string, y: number, thick: number, proud: number)
+	local function wrap(name: string, y: number, thick: number, proud: number, look: Kit.Look)
 		Kit.trim(
 			m,
 			name,
 			Vector3.new(x0 - proud, y - thick / 2, zF - proud),
 			Vector3.new(x1 + proud, y + thick / 2, zB - 0.5),
-			white
+			look
 		)
 	end
-	wrap("Canopy", G, SHAPE.canopy.thick, SHAPE.canopy.proud)
+	wrap("Canopy", G, SHAPE.canopy.thick, SHAPE.canopy.proud, white)
 	for k = 1, up do
 		-- The punched windows top out 12 % of a floor under the floor line; the eyebrow sits just over them.
 		local brow = SHAPE.eyebrow
-		wrap(`Brow{k}`, G + k * f - 0.12 * f + brow.thick / 2 + 0.1, brow.thick, brow.proud)
+		wrap(`Brow{k}`, G + k * f - 0.12 * f + brow.thick / 2 + 0.1, brow.thick, brow.proud, bowLook)
 	end
 	local cn = SHAPE.cornice
-	wrap("Cornice", H - cn.thick / 2 + 0.06, cn.thick, cn.proud)
+	wrap("Cornice", H - cn.thick / 2 + 0.06, cn.thick, cn.proud, white)
 	-- A neon line in the cornice's shadow.
 	Kit.neon(
 		m,
@@ -266,49 +285,82 @@ local function build(m: Types.Model)
 		pal.stripeKind,
 		pal.stripe
 	)
-
-	-- The parapet steps: up toward the tower (rhythm 1), or down from the far end of the long wing (rhythm 2).
-	if variant.rhythm == 1 then
-		local wing = math.min(tx - tw / 2 - x0, x1 - tx - tw / 2)
-		local a1, a2 = tw / 2 + wing * 0.45, tw / 2 + wing * 0.2
-		Kit.box(m, "Step1", Vector3.new(tx - a1, H - 0.05, zF + 0.4), Vector3.new(tx + a1, H + 3, zF + 4), white)
-		Kit.box(m, "Step2", Vector3.new(tx - a2, H + 2.95, zF + 0.9), Vector3.new(tx + a2, H + 5.6, zF + 3.6), white)
-	else
-		local wing = x1 - (tx + tw / 2)
-		local edge = x1 - 0.3
-		Kit.box(
+	-- Speed lines beside the tower: a panel in the stripe colour under the punched overlay tinted the bow's colour,
+	-- one opening a tile, so it reads as bars of the two colours.
+	local sp = SHAPE.speed
+	for i, side in { -1, 1 } do
+		local a = tx + side * tw / 2
+		local b = a + side * sp.width
+		local panel = Kit.detail(
 			m,
-			"Step1",
-			Vector3.new(edge - wing * 0.45, H - 0.05, zF + 0.4),
-			Vector3.new(edge, H + 3, zF + 4),
-			white
+			`Speed{i}`,
+			Vector3.new(math.min(a, b), G + 0.6, zF - 0.2),
+			Vector3.new(math.max(a, b), T + 0.4 * (H - T), zF + 0.1),
+			stripeLook
 		)
-		Kit.box(
-			m,
-			"Step2",
-			Vector3.new(edge - wing * 0.22, H + 2.95, zF + 0.9),
-			Vector3.new(edge - 0.3, H + 5.6, zF + 3.6),
-			white
-		)
+		panel.textures = {
+			{ face = Kit.face(m, FRONT), image = City.textures.punched, u = sp.width, v = sp.every, color = pal.bow },
+		}
 	end
 
 	-------------------------------------------------------------------------------------------------------
-	-- The sign tower: the shaft, the prow with the name, the keel and shoulder stripes, the door and its canopy
+	-- The sign tower: stepped shoulders, the bow with the name, the ridge, the racing lines, the door, the sun decks
 	-------------------------------------------------------------------------------------------------------
-	Kit.box(m, "Tower", Vector3.new(tx - tw / 2, -KIT.bury, zT), Vector3.new(tx + tw / 2, tTop, zT + tower.deep), white)
+	local core = d + 1.2 -- the core's half-width: the bow and a margin
+	local yS1 = H + rise * SHAPE.shoulders[1]
+	local yS2 = H + rise * SHAPE.shoulders[2]
+	Kit.box(m, "Tower", Vector3.new(tx - tw / 2, -KIT.bury, zT), Vector3.new(tx + tw / 2, yS1, zT + tower.deep), white)
+	local inner = (tw / 2 + core) / 2
+	Kit.box(
+		m,
+		"TowerMid",
+		Vector3.new(tx - inner, yS1 - 0.04, zT + 0.02),
+		Vector3.new(tx + inner, yS2, zT + tower.deep - 0.6),
+		white
+	)
+	Kit.box(
+		m,
+		"TowerCore",
+		Vector3.new(tx - core, yS2 - 0.04, zT + 0.04),
+		Vector3.new(tx + core, tTop, zT + tower.deep - 1.2),
+		white
+	)
+
 	local s = d * ROOT2 -- the turned square's side
 	local py0, py1 = G + 0.6, tTop - 0.05
-	local prow = Kit.oriented(
+	Kit.oriented(
 		m,
 		"Prow",
 		"block",
 		CFrame.new(tx, (py0 + py1) / 2, zT) * TURN,
 		Vector3.new(s, py1 - py0, s),
-		white,
+		bowLook,
 		"box"
 	)
-	-- The turned square's Front and Right faces are the two faces of the bow (Kit.face keeps them so mirrored).
-	label(m, prow, { FRONT, RIGHT }, pickName(rng), pal.letters, Vector2.new(0.76, 0.94))
+	-- The letters ride on a sleeve a hair proud of the bow's two street faces (its Front and Right once turned), so
+	-- the bow itself stays with the building's still parts; Kit.face keeps those faces when mirrored.
+	local stacked, fullName = pickName(rng)
+	local sleeve = Kit.oriented(
+		m,
+		"ProwLetters",
+		"block",
+		CFrame.new(tx, (py0 + py1) / 2, zT) * TURN,
+		Vector3.new(s + 0.12, py1 - py0 - 3, s + 0.12),
+		bowLook,
+		"detail"
+	)
+	local labels: { MapTypes.LabelSpec } = {}
+	for _, face in { FRONT, RIGHT } do
+		table.insert(labels, {
+			face = Kit.face(m, face),
+			text = stacked,
+			color = pal.letters,
+			font = FONT,
+			size = Vector2.new(0.7, 0.94),
+			pixelsPerStud = KIT.signPixelsPerStud,
+		})
+	end
+	sleeve.labels = labels
 	Kit.oriented(
 		m,
 		"ProwCap",
@@ -318,31 +370,32 @@ local function build(m: Types.Model)
 		white,
 		"trim"
 	)
-	local k = SHAPE.keel
-	local ky0, ky1 = G + 1.6, tTop - 0.6
-	local keel = Kit.oriented(
+	local k = SHAPE.ridge
+	local ky0, ky1 = G + 1.2, tTop - 0.6
+	local ridge = Kit.oriented(
 		m,
-		"Keel",
+		"Ridge",
 		"block",
 		CFrame.new(tx, (ky0 + ky1) / 2, zTip + k / ROOT2 - 0.3) * TURN,
 		Vector3.new(k, ky1 - ky0, k),
-		keelLook,
+		Kit.look(pal.ridge, Enum.Material.SmoothPlastic),
 		"detail"
 	)
-	Kit.lit(keel, pal.keelKind)
+	Kit.lit(ridge, pal.bowKind)
+	-- A racing line up each shoulder, from the door canopy to just under the shoulder's step.
 	local dr = SHAPE.door
 	local shoulder = (d + tw / 2) / 2
 	local sw = math.min(SHAPE.stripe, tw / 2 - d - 0.5)
-	for i, sx in { -1, 1 } do
-		local cx = tx + sx * shoulder
-		local stripe = Kit.detail(
+	for i, side in { -1, 1 } do
+		local cx = tx + side * shoulder
+		local line = Kit.detail(
 			m,
-			`Stripe{i}`,
-			Vector3.new(cx - sw / 2, G - dr.canopyUnder + dr.thick, zT - 0.3),
-			Vector3.new(cx + sw / 2, tTop - 0.5, zT + 0.2),
+			`Racing{i}`,
+			Vector3.new(cx - sw / 2, G - dr.canopyUnder + dr.thick + 0.4, zT - 0.3),
+			Vector3.new(cx + sw / 2, yS1 - 0.8, zT + 0.2),
 			stripeLook
 		)
-		Kit.lit(stripe, pal.stripeKind)
+		Kit.lit(line, pal.stripeKind)
 	end
 	local doorTop = G - dr.canopyUnder
 	Kit.glass(
@@ -369,32 +422,66 @@ local function build(m: Types.Model)
 		zT + 0.5,
 		doorTop,
 		dr.thick,
-		keelLook
+		bowLook
 	)
+	-- The name across the tower's foot, standing on the door canopy under the bow.
+	Kit.sign(
+		m,
+		"Sign",
+		Vector3.new(tx - tw / 2 + 0.6, doorTop + dr.thick + 0.15, zT - 0.3),
+		Vector3.new(tx + tw / 2 - 0.6, G + 0.3, zT - 0.05),
+		FRONT,
+		fullName,
+		P.deco.white,
+		pal.bow,
+		FONT
+	)
+	-- A white pipe rail along each wing's roof edge, set in behind the cornice.
+	for i, side in { -1, 1 } do
+		local a = if side < 0 then x0 + 0.8 else tx + tw / 2 + 0.3
+		local b = if side < 0 then tx - tw / 2 - 0.3 else x1 - 0.8
+		if b - a > 2 then
+			Kit.railing(
+				m,
+				`Rail{i}`,
+				Vector3.new(a, H + 0.08, zF + 0.6),
+				Vector3.new(b, H + 3.2, zF + 0.8),
+				{ FRONT },
+				P.deco.white,
+				1.4
+			)
+		end
+	end
+	-- The sun decks: a flat slab off each shoulder at roof level, held at its outer front corner by one post.
+	local dk = SHAPE.deck
+	for i, side in { -1, 1 } do
+		local a = tx + side * (tw / 2 - 0.3)
+		local room = if side < 0 then (tx - tw / 2) - x0 else x1 - (tx + tw / 2)
+		local out = math.min(dk.out, room - 1.5)
+		if out < 3 then
+			continue
+		end
+		local b = tx + side * (tw / 2 + out)
+		local y = H + dk.over
+		Kit.trim(
+			m,
+			`Deck{i}`,
+			Vector3.new(math.min(a, b), y, zF - 0.6),
+			Vector3.new(math.max(a, b), y + dk.thick, zF - 0.6 + dk.deep),
+			white
+		)
+		local px = b - side * (dk.post / 2 + 0.4)
+		Kit.column(m, `DeckPost{i}`, px, zF + 0.2, H - 0.1, y + 0.02, dk.post, white, "trim")
+	end
 
-	-- The top: setback steps and a needle (crown 1), or the prow climbing on in shrinking turned tiers (crown 2).
+	-- The top: a needle on the bow's flat top (crown 1), or the bow climbing on in shrinking turned tiers (crown 2).
 	local chrome = Kit.look(rgb(220, 224, 228), Enum.Material.Metal)
-	local zc = zT + tower.deep / 2
 	if crown == 1 then
-		local _, top = Kit.setbacks(
-			m,
-			"TowerStep",
-			Vector3.new(tx - tw / 2, 0, zT),
-			Vector3.new(tx + tw / 2, tTop, zT + tower.deep),
-			SHAPE.steps,
-			white
-		)
+		local base = tTop + 0.95
 		local needle = H + SHAPE.needle
-		Kit.spire(m, "Needle", tx, zc, top, needle - top, 1.6, chrome, 3, false)
-		Kit.lit(Kit.ball(m, "Ball", Vector3.new(tx, needle + 0.5, zc), 1.2, stripeLook), pal.stripeKind)
+		Kit.spire(m, "Needle", tx, zT, base, needle - base, 1.6, chrome, 3, false)
+		Kit.lit(Kit.ball(m, "Ball", Vector3.new(tx, needle + 0.5, zT), 1.2, stripeLook), pal.stripeKind)
 	else
-		Kit.box(
-			m,
-			"TowerStep",
-			Vector3.new(tx - tw / 2 + 1.4, tTop - 0.02, zT + 1.4),
-			Vector3.new(tx + tw / 2 - 1.4, tTop + 2.4, zT + tower.deep - 1.4),
-			white
-		)
 		local y = tTop + 0.93
 		for i, tier in SHAPE.tiers do
 			local side = s * tier.share
@@ -402,16 +489,16 @@ local function build(m: Types.Model)
 				m,
 				`Tier{i}`,
 				"block",
-				CFrame.new(tx, y + tier.rise / 2, zT + 1.2) * TURN,
+				CFrame.new(tx, y + tier.rise / 2, zT) * TURN,
 				Vector3.new(side, tier.rise, side),
-				white,
+				if i % 2 == 1 then white else bowLook,
 				"box"
 			)
 			y += tier.rise - 0.02
 		end
 		local mast = H + SHAPE.mast
-		Kit.column(m, "Mast", tx, zT + 1.2, y, mast, 0.5, chrome, "detail")
-		Kit.lit(Kit.ball(m, "Ball", Vector3.new(tx, mast + 0.6, zT + 1.2), 1.2, keelLook), pal.keelKind)
+		Kit.column(m, "Mast", tx, zT, y, mast, 0.5, chrome, "detail")
+		Kit.lit(Kit.ball(m, "Ball", Vector3.new(tx, mast + 0.6, zT), 1.2, bowLook), pal.bowKind)
 	end
 	Kit.roofBox(m, "Stair", Vector3.new(x1 - 11, H, zB - 10), Vector3.new(x1 - 4, H + 6, zB - 3), white)
 
@@ -427,8 +514,10 @@ local function build(m: Types.Model)
 		Kit.look(P.deco.terrazzo, Enum.Material.SmoothPlastic)
 	)
 	local railTop = tTopY + SHAPE.balustrade
-	local tz = (-hd + 1.4 + zF) / 2
-	local room = math.min(SHAPE.umbrella, (zF - 0.4 - tz) * 2, (tz + hd - 1.4) * 2)
+	-- The umbrellas may reach under the porch canopy's edge (they top out well under it), not past the posts.
+	local front = zF - 0.4
+	local tz = (-hd + 1.4 + front) / 2
+	local room = math.min(SHAPE.umbrella, (front - 0.4 - tz) * 2, (tz + hd - 1.4) * 2)
 	local segments = { { -hw + 0.6, tx - tw / 2 - 1 }, { tx + tw / 2 + 1, hw - 0.6 } }
 	for i, seg in segments do
 		local a, b = seg[1], seg[2]
@@ -448,10 +537,10 @@ local function build(m: Types.Model)
 		for j = 1, count do
 			local x = a + 0.8 + len * (j - 0.5) / count
 			local color = if (i + j) % 2 == 0 then pal.stripe else P.deco.white
-			Kit.umbrella(m, `Umbrella{i}{j}`, x, tz, tTopY, math.min(room, len / count - 1), color, true)
+			Kit.umbrella(m, `Umbrella{i}{j}`, x, tz, tTopY, math.max(2, math.min(room, len / count - 1)), color, true)
 		end
 	end
-	-- On the door canopy, washing the prow.
+	-- On the door canopy, washing the bow.
 	Kit.wash(m, "Wash", tx - tw / 2 - 1.5, tx + tw / 2 + 1.5, zT - 2, doorTop + dr.thick, pal.wash)
 end
 

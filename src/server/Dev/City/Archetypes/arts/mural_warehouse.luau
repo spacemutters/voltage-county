@@ -6,11 +6,13 @@
 -- tie rods, inside a block of colour whose top rises toward the painting; a glass shop door with an awning and a
 -- painted name sign at the other end; the painting's hero fills the wall between them, full height. A dark base
 -- course and a paved apron. The roof is one of four: a stepped front parapet with roof units, a sawtooth of
--- north-light glass, a rooftop bar with a pergola, market umbrellas and string lights, or a barrel vault behind a
+-- north-light glass, a rooftop bar with a pergola, café umbrellas and string lights, or a barrel vault behind a
 -- stepped gable (the quarry's hangars).
 --
 -- What makes it itself: the whole street wall is one painting you read at 70 mph (a lightning bolt over a striped
--- sun, speed chevrons, a sunburst over two peaks, or Memphis blocks with a zigzag), wrapping round the corner.
+-- sun, speed chevrons, a sunburst over two peaks, or Memphis blocks with a zigzag), and the paint doesn't stop at the
+-- corners: two parallel diagonal bands sweep across the front of each side wall (the whole side on a street corner),
+-- so the block reads as painted all over from any angle.
 -- Night: the mural's hero shape glows (the bolt and the sun amber, the chevron and the zigzag in the palette's
 -- neon), the shop door and the sawtooth glass are lit, the bar's string lights glow, and some copies wash the wall.
 -- Placement, sizes, heights and its budget: Config/City archetypes.mural_warehouse.
@@ -20,11 +22,13 @@
 -- Sizes: a narrow site (wall under 34) is a studio with only the shop door; 34 to 40 adds a drive-in door, 40 to 58
 -- a truck dock instead, wider both.
 --
--- Previewing: from the street at eye height and from a corner. Check the hero reads whole between the doors and
--- the shop door (no shape clipped by the coping or poking past the wall's ends), the doors stand clear of their
--- colour block, the dock canopy's rods meet the wall below the coping on a 20-stud building, the sawtooth's glass
--- faces the street over the parapet, the barrel's gable steps meet its curve with no daylight between, and at night
--- the hero shape glows without swamping the wall.
+-- Previewing: from the street at eye height and from both front corners (the side bands are half the corner view).
+-- Check the hero reads whole between the doors and the shop door (no shape clipped by the coping or poking past the
+-- wall's ends), the doors stand clear of their colour block, the dock canopy's rods meet the wall below the coping on
+-- a 20-stud building, the side bands stay on the wall (between the base course and the coping, behind the front
+-- corner) and read as one sweep with the front, the sawtooth's glass faces the street over the parapet, the barrel's
+-- gable steps meet its curve with no daylight between, and at night the hero shape glows without swamping the wall.
+-- Preview sites are never on a corner: to see a whole painted side, build one with site.corner set.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -65,7 +69,10 @@ local SHAPE = {
 	awning = { thick = 0.5, proud = 3.2 },
 	sign = 2.4,
 	bollard = { tall = 3.6, wide = 0.9 },
-	wrap = 12, -- the mural turns the corner this far down the side
+	-- The side walls are painted too (the district paints every wall): two parallel diagonal bands over the front of each
+	-- side, `reach` deep (the whole side where it is open to a cross street), `a` and `b` of the wall's painted height
+	-- wide, `gap` apart, standing `out` proud of the wall.
+	side = { reach = 24, a = 0.3, b = 0.14, gap = 0.07, out = 0.08 },
 	step = { tall = 3.4, share = 0.42 }, -- crown 1: the raised centre of the front parapet
 	tooth = { tall = 5.6, deep = 10 }, -- crown 2: the sawtooth roof
 	bar = { pergola = 9, umbrella = 7, rail = 3.2 }, -- crown 3: the rooftop bar
@@ -151,6 +158,30 @@ local function share(width: number, rule: { number }): number
 	return math.clamp(width * rule[1], rule[2], rule[3])
 end
 
+-- The part of the line through `p` along the unit `d` that lies inside the rectangle lo..hi, or nil when less than
+-- two studs of it does (a 2-D Liang-Barsky clip).
+local function clip(p: Vector2, d: Vector2, lo: Vector2, hi: Vector2): (Vector2?, Vector2?)
+	local t0, t1 = -math.huge, math.huge
+	for _, axis in { { p.X, d.X, lo.X, hi.X }, { p.Y, d.Y, lo.Y, hi.Y } } do
+		local at, step, a, b = axis[1], axis[2], axis[3], axis[4]
+		if a > b then
+			return nil, nil -- an empty rectangle
+		elseif math.abs(step) < 1e-9 then
+			if at < a or at > b then
+				return nil, nil
+			end
+		else
+			local ta, tb = (a - at) / step, (b - at) / step
+			t0 = math.max(t0, math.min(ta, tb))
+			t1 = math.min(t1, math.max(ta, tb))
+		end
+	end
+	if t1 - t0 < 2 then
+		return nil, nil
+	end
+	return p + d * t0, p + d * t1
+end
+
 local function build(m: Types.Model)
 	local site = m.site
 	local variant = site.variant
@@ -193,41 +224,93 @@ local function build(m: Types.Model)
 	-------------------------------------------------------------------------------------------------------
 	local span = x1 - x0
 	local doorW = share(span, SHAPE.door.wide)
-	local hasDock = span >= SHAPE.dockFrom
-	local hasDrive = (span >= SHAPE.driveFrom and not hasDock) or span >= SHAPE.bothFrom
 	local hood, dk, cn = SHAPE.hood, SHAPE.dock, SHAPE.canopy
 	local dockTall = math.clamp(wallTop - 3.2 - dk.tall - hood.tall - 0.9, SHAPE.dockDoor[1], SHAPE.dockDoor[2])
 	local driveTall = math.min(SHAPE.door.tall, wallTop - hood.tall - 2.5)
-	local cursor = x0 + 2.5
-	local dockX, driveX = 0, 0
-	local gearTop = 0 -- the top of the doors' hoods and the dock's canopy
-	if hasDock then
-		dockX = cursor + dk.over + doorW / 2
-		cursor = dockX + doorW / 2 + dk.over + 3
-		gearTop = dk.tall + dockTall + hood.tall + 0.9 + cn.thick
-	end
-	if hasDrive then
-		driveX = cursor + doorW / 2
-		cursor = driveX + doorW / 2 + 3
-		gearTop = math.max(gearTop, 0.2 + driveTall + hood.tall)
-	end
-	local hasDoors = hasDock or hasDrive
-	local doorsEnd = cursor - 1.5
 	local en = SHAPE.entry
-	local ex = math.max(x1 - 2.5 - en.wide / 2, cursor - 1 + en.wide / 2)
-	local signHalf = math.min(7, x1 - 1 - ex, ex - (cursor - 2))
-	local entryLeft = ex - math.max(signHalf, en.wide / 2 + 1) - 0.8
+	local mx0, mx1 = x0 + SHAPE.margin, x1 - SHAPE.margin
+	local my0, my1 = SHAPE.base.tall + SHAPE.margin * 0.5, wallTop - SHAPE.margin
+	local MW, MH = mx1 - mx0, my1 - my0
+	local heroMin = math.max(SHAPE.heroMin, MW * 0.24)
+
+	-- One way to lay out the front with the dock, the drive-in door, both or neither; `gap` is the hero's width
+	-- between the doors and the shop door.
+	type Layout = {
+		dock: boolean,
+		drive: boolean,
+		dockX: number,
+		driveX: number,
+		gearTop: number, -- the top of the doors' hoods and the dock's canopy
+		doorsEnd: number,
+		ex: number,
+		signHalf: number,
+		entryLeft: number,
+		gap: number,
+	}
+	local function layout(dock: boolean, drive: boolean): Layout
+		local cursor = x0 + 2.5
+		local dockX, driveX, gearTop = 0, 0, 0
+		if dock then
+			dockX = cursor + dk.over + doorW / 2
+			cursor = dockX + doorW / 2 + dk.over + 3
+			gearTop = dk.tall + dockTall + hood.tall + 0.9 + cn.thick
+		end
+		if drive then
+			driveX = cursor + doorW / 2
+			cursor = driveX + doorW / 2 + 3
+			gearTop = math.max(gearTop, 0.2 + driveTall + hood.tall)
+		end
+		local doorsEnd = cursor - 1.5
+		local ex = math.max(x1 - 2.5 - en.wide / 2, cursor - 1 + en.wide / 2)
+		local signHalf = math.min(7, x1 - 1 - ex, ex - (cursor - 2))
+		local entryLeft = ex - math.max(signHalf, en.wide / 2 + 1) - 0.8
+		local from = math.max(mx0, (if dock or drive then doorsEnd else x0) + 0.8)
+		return {
+			dock = dock,
+			drive = drive,
+			dockX = dockX,
+			driveX = driveX,
+			gearTop = gearTop,
+			doorsEnd = doorsEnd,
+			ex = ex,
+			signHalf = signHalf,
+			entryLeft = entryLeft,
+			gap = math.min(mx1, entryLeft) - from,
+		}
+	end
+	-- The most gear the wall takes while the hero keeps its own stretch of wall: both doors on a wide wall, else the
+	-- dock, else the drive-in door, else neither (a doorway never stands in front of the painting's hero).
+	local options: { { boolean } } = {}
+	if span >= SHAPE.bothFrom then
+		table.insert(options, { true, true })
+	end
+	if span >= SHAPE.dockFrom then
+		table.insert(options, { true, false })
+	end
+	if span >= SHAPE.driveFrom then
+		table.insert(options, { false, true })
+	end
+	local L = layout(false, false)
+	for _, o in options do
+		local candidate = layout(o[1], o[2])
+		if candidate.gap >= heroMin then
+			L = candidate
+			break
+		end
+	end
+	local hasDock, hasDrive = L.dock, L.drive
+	local dockX, driveX, gearTop = L.dockX, L.driveX, L.gearTop
+	local hasDoors = hasDock or hasDrive
+	local doorsEnd = L.doorsEnd
+	local ex, signHalf, entryLeft = L.ex, L.signHalf, L.entryLeft
 
 	-------------------------------------------------------------------------------------------------------
 	-- The mural: flat paint pieces, each a hair proud of the last, inside the wall's margins
 	-------------------------------------------------------------------------------------------------------
-	local mx0, mx1 = x0 + SHAPE.margin, x1 - SHAPE.margin
-	local my0, my1 = SHAPE.base.tall + SHAPE.margin * 0.5, wallTop - SHAPE.margin
-	local MW, MH = mx1 - mx0, my1 - my0
-	-- The hero's box: the wall between the doors and the shop door, full height, when that is wide enough; else the
-	-- whole mural (the doors then stand in front of part of it).
+	-- The hero's box: the wall between the doors and the shop door, full height, when that is wide enough; else (a
+	-- studio with no doors, too narrow) the whole mural behind the shop door.
 	local hx0, hx1 = math.max(mx0, (if hasDoors then doorsEnd else x0) + 0.8), math.min(mx1, entryLeft)
-	local inGap = hx1 - hx0 >= math.max(SHAPE.heroMin, MW * 0.24)
+	local inGap = hx1 - hx0 >= heroMin
 	if not inGap then
 		hx0, hx1 = mx0, mx1
 	end
@@ -426,22 +509,56 @@ local function build(m: Types.Model)
 			paint(paints[1]),
 			"detail"
 		)
-		local amp, step = MH * 0.07, HW * 0.065
-		local zx, zy = hx0 + HW * 0.1, my1 - MH * 0.13
-		for k = 1, 4 do
+		-- The zigzag runs most of the way across the top, six strokes: a band, never a letter.
+		local amp, step = MH * 0.075, HW * 0.13
+		local zx, zy = hx0 + HW * 0.08, my1 - MH * 0.13
+		for k = 1, 6 do
 			local a = Vector2.new(zx + (k - 1) * step, zy + (if k % 2 == 1 then amp else -amp))
 			local b = Vector2.new(zx + k * step, zy + (if k % 2 == 1 then -amp else amp))
 			Kit.lit(stroke(`Zigzag{k}`, a.X, a.Y, b.X, b.Y, math.max(1, MH * 0.06), pal.ink), pal.neon)
 		end
 	end
-	-- The painting turns the corner and runs a little way down the side.
-	Kit.detail(
-		m,
-		"Wrap",
-		Vector3.new(x0 - 0.12, my0, zF - 0.12),
-		Vector3.new(x0 + 0.25, my1, zF + math.min(SHAPE.wrap, zB - zF - 2)),
-		paint(first)
-	)
+	-- The painting turns both corners: two parallel diagonal bands across the front of each side wall (the whole
+	-- side where it is open to a cross street), the first in the colour the front leads with. Each band's centre
+	-- line is clipped to the painted area shrunk by half its width, so no corner of a band passes the wall's edges.
+	local sd = SHAPE.side
+	local sideDepth = SHAPE.paintBack + sd.out
+	for i, sx in { -1, 1 } do
+		local open = if sx < 0 then site.corner.left else site.corner.right
+		local s0 = zF + SHAPE.margin
+		local s1 = if open then zB - SHAPE.margin else math.min(zF + sd.reach, zB - 2)
+		if s1 - s0 < 6 then
+			continue
+		end
+		local plane = if sx < 0 then x0 else x1
+		local cx = plane + sx * (sd.out - SHAPE.paintBack) / 2
+		-- Rising toward the back on one side and toward the front on the other: from a corner both read as one shape.
+		local rise = if (i + rhythm) % 2 == 0 then 1 else -1
+		local dir = Vector2.new(rise * (s1 - s0), MH).Unit
+		local normal = Vector2.new(dir.Y, -dir.X)
+		local centre = Vector2.new((s0 + s1) / 2, (my0 + my1) / 2)
+		local wa, wb = MH * sd.a, MH * sd.b
+		local bands = {
+			{ at = centre, width = wa, color = first },
+			{ at = centre + normal * (wa / 2 + MH * sd.gap + wb / 2), width = wb, color = paints[2] },
+		}
+		for j, band in bands do
+			local half = band.width / 2
+			local a, b = clip(band.at, dir, Vector2.new(s0 + half, my0 + half), Vector2.new(s1 - half, my1 - half))
+			if a and b then
+				Kit.strut(
+					m,
+					`Side{i}_{j}`,
+					Vector3.new(cx, a.Y, a.X),
+					Vector3.new(cx, b.Y, b.X),
+					band.width,
+					paint(band.color),
+					"detail",
+					sideDepth
+				)
+			end
+		end
+	end
 
 	-------------------------------------------------------------------------------------------------------
 	-- The street front: a truck dock and roll-up doors under steel hoods, the shop door, its awning and sign
@@ -661,7 +778,7 @@ local function build(m: Types.Model)
 			)
 		end
 	else
-		-- A rooftop bar: a glass rail along the front, a pergola over the bar, market umbrellas, string lights.
+		-- A rooftop bar: a glass rail along the front, a pergola over the bar, café umbrellas, string lights.
 		local br = SHAPE.bar
 		Kit.detail(m, "BarRail", Vector3.new(x0 + 0.3, H, zF + 0.1), Vector3.new(x1 - 0.3, H + br.rail, zF + 0.4), RAIL)
 		local pz1 = zB - 2
@@ -706,7 +823,7 @@ local function build(m: Types.Model)
 		for i, at in { 0.3, 0.62 } do
 			local color = if i == 1 then paints[1] else pal.wall
 			local size = math.min(br.umbrella, pz0 - zF - 1.5)
-			Kit.umbrella(m, `Umbrella{i}`, x0 + span * at, uz, H, size, color, true)
+			Kit.umbrella(m, `Umbrella{i}`, x0 + span * at, uz, H, size, color)
 		end
 		Kit.roofBox(
 			m,

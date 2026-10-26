@@ -13,9 +13,10 @@
 --               server starts at startClock. The server moves the clock every stepSeconds (a RunService.Heartbeat
 --               connection that adds up frame times, no loop); Lighting replicates it to every client.
 --   the sky     Lighting.Ambient, OutdoorAmbient, FogColor, Brightness, ColorShift_Top and ExposureCompensation, the
---               Atmosphere's Color and Decay and the bloom's Intensity and Threshold follow the clock, blended between
---               dayNight.keyframes (warm bright days, pink-orange golden hours, deep blue nights where neon halos).
---               Lighting gets an Atmosphere (dayNight.atmosphere) if it has none; either way it gets those values.
+--               Atmosphere's Color, Decay, Density, Haze and Glare, the colour grade's tint and the bloom's Intensity
+--               and Threshold follow the clock, blended between dayNight.keyframes (warm bright days, pink-orange golden
+--               hours, deep blue nights where neon halos). Lighting gets an Atmosphere (dayNight.atmosphere) and a Sky
+--               (scene.sky: without one the night sky stays black under any atmosphere) if it has none.
 --   the lights  every part tagged nightLights.tag (Dev/MapBuilder and the city kit tag streetlight heads, lit windows,
 --               neon, crowns, LED edges, washes, signs, the water tower's beacon and the bridge's arches) has a kind
 --               (nightLights.kindAttribute) and its day colour (dayColorAttribute). When the clock crosses dusk the
@@ -57,6 +58,10 @@ export type Look = {
 	exposure: number,
 	bloomIntensity: number,
 	bloomThreshold: number,
+	tint: Color3,
+	density: number,
+	haze: number,
+	glare: number,
 }
 
 local DayNightService = {}
@@ -137,6 +142,9 @@ function DayNightService.lookAt(clock: number, keyframes: { Environment.Keyframe
 	end
 	local gap = (after.clock - before.clock) % HOURS
 	local alpha = if gap > 0 then ((at - before.clock) % HOURS) / gap else 0
+	-- The optional fields fall back to the scene's colour grade and the atmosphere's settings.
+	local grade = DAY_NIGHT.scene.colorCorrection.tintColor
+	local air = DAY_NIGHT.atmosphere
 	return {
 		ambient = before.ambient:Lerp(after.ambient, alpha),
 		outdoorAmbient = before.outdoorAmbient:Lerp(after.outdoorAmbient, alpha),
@@ -148,6 +156,10 @@ function DayNightService.lookAt(clock: number, keyframes: { Environment.Keyframe
 		exposure = lerp(before.exposure, after.exposure, alpha),
 		bloomIntensity = lerp(before.bloomIntensity, after.bloomIntensity, alpha),
 		bloomThreshold = lerp(before.bloomThreshold, after.bloomThreshold, alpha),
+		tint = (before.tint or grade):Lerp(after.tint or grade, alpha),
+		density = lerp(before.density or air.density, after.density or air.density, alpha),
+		haze = lerp(before.haze or air.haze, after.haze or air.haze, alpha),
+		glare = lerp(before.glare or air.glare, after.glare or air.glare, alpha),
 	}
 end
 
@@ -213,6 +225,7 @@ local night: boolean? = nil
 local nightNumber = 0 -- counts the nights; a light show's colour follows it
 local atmosphere: Atmosphere? = nil
 local bloom: BloomEffect? = nil
+local grading: ColorCorrectionEffect? = nil
 local flipToken = 0
 
 -- One tagged part in the day or night look.
@@ -276,6 +289,13 @@ local function applySky(clock: number)
 	if sky then
 		sky.Color = look.atmosphereColor
 		sky.Decay = look.atmosphereDecay
+		sky.Density = look.density
+		sky.Haze = look.haze
+		sky.Glare = look.glare
+	end
+	local grade = grading
+	if grade then
+		grade.TintColor = look.tint
 	end
 	local glow = bloom
 	if glow then
@@ -373,13 +393,24 @@ local function applyScene()
 	Lighting.EnvironmentSpecularScale = scene.environmentSpecularScale
 	Lighting.EnvironmentDiffuseScale = scene.environmentDiffuseScale
 	Lighting.GeographicLatitude = scene.geographicLatitude
-	-- The engine's newer switches: if one is ever refused, say so and keep going, so the clock still runs.
-	local styled, styleProblem = pcall(function()
-		Lighting.LightingStyle = scene.lightingStyle
-		Lighting.PrioritizeLightingQuality = scene.prioritizeLightingQuality
+	-- The lighting style and lighting-quality switch are place settings a game script may not write (they need Studio's
+	-- capability): the place carries them, set in Studio (docs/LAUNCH.md). Edit-mode previews (preview(), with that
+	-- capability) set them; a running server only says so when the place's differ.
+	local styled = pcall(function()
+		if
+			Lighting.LightingStyle ~= scene.lightingStyle
+			or Lighting.PrioritizeLightingQuality ~= scene.prioritizeLightingQuality
+		then
+			Lighting.LightingStyle = scene.lightingStyle
+			Lighting.PrioritizeLightingQuality = scene.prioritizeLightingQuality
+		end
 	end)
 	if not styled then
-		warn(`DayNightService: the lighting style was not set: {styleProblem}`)
+		warn(
+			`DayNightService: set Lighting.LightingStyle to {scene.lightingStyle.Name} and PrioritizeLightingQuality to `
+				.. `{scene.prioritizeLightingQuality} in Studio (a game script can't): the place has `
+				.. `{Lighting.LightingStyle.Name} and {Lighting.PrioritizeLightingQuality}`
+		)
 	end
 	local mapped, mapProblem = pcall(applyToneMapper)
 	if not mapped then
@@ -394,6 +425,21 @@ local function applyScene()
 		color.Brightness = grade.brightness
 		color.TintColor = grade.tintColor
 		color.Parent = Lighting
+		grading = color
+	end
+	-- A Sky when the place has none: without one the engine's plain night sky stays black under any atmosphere.
+	if Lighting:FindFirstChildOfClass("Sky") == nil then
+		local settings = scene.sky
+		local made = Instance.new("Sky")
+		made.Name = settings.name
+		made.SkyboxBk = string.format(settings.faces, "bk")
+		made.SkyboxDn = string.format(settings.faces, "dn")
+		made.SkyboxFt = string.format(settings.faces, "ft")
+		made.SkyboxLf = string.format(settings.faces, "lf")
+		made.SkyboxRt = string.format(settings.faces, "rt")
+		made.SkyboxUp = string.format(settings.faces, "up")
+		made.StarCount = settings.starCount
+		made.Parent = Lighting
 	end
 	local rays = scene.sunRays
 	local sun = Lighting:FindFirstChild(rays.name) or Instance.new("SunRaysEffect")

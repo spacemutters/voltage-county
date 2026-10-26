@@ -5,7 +5,7 @@
 return {
 	district = "beach",
 	weight = 1,
-	maxCopies = 6,
+	maxCopies = 8,
 	perBlock = 2,
 	minSpacing = 220,
 	minWidth = 44,

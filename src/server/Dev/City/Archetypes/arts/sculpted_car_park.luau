@@ -6,9 +6,10 @@
 -- the street and leans across its floor, the next the other way (a zigzag up the facade), the rest stand upright
 -- turned at odd angles in plan, and in the tallest floor pairs of them lean together into Vs. Ramps cross the open
 -- floors as diagonals, a stair zigzags up one end in front of everything, glass shop boxes stand under the first
--- slab and a glass boutique in the tall floor, and a few cars stand parked side-on on the open decks. On top, a
--- glass penthouse or a floating event canopy, planters, and greenery hanging over the top edge; a neon number on the
--- top slab.
+-- slab and a glass boutique in the tall floor, and a few cars stand parked side-on on the open decks. A fine cable
+-- rail (four steel lines drawn on one see-through part) runs along every open edge, the only thing between the decks
+-- and the air. On top, a glass penthouse or a floating event canopy, planters, and a ragged curtain of greenery
+-- spilling over the top edge; a neon number on the top slab.
 --
 -- What makes it itself: bare floors floating at uneven heights on thin blades set at odd angles.
 -- Night: a pale LED line under every slab's front edge (floors floating in light), the lit shops, boutique and
@@ -20,6 +21,9 @@
 -- Previewing: from a corner, so the slab edges' uneven reach and the blades' angles both read; at night from 150
 -- studs. Check no blade pokes through a slab's top or out of the footprint, the Vs meet under the slab, the ramps
 -- and the stair cross the floors as clean diagonals, and the ground floor still reads as shops (not a parking hole).
+-- The cable rails: their lines should read as thin cables (top one about 3.4 over each deck), stop short of the stair,
+-- and not shimmer at 150 studs (if they do, raise rail.every). The greenery should read as hanging plants with a
+-- ragged bottom edge, not as green boards.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -35,7 +39,7 @@ local SHAPE = {
 	front = 5.5, -- the slabs' nominal front edge this far behind the front line
 	sideInset = 2,
 	bodyDepth = 56, -- at most
-	slab = 1.8,
+	slab = 2.2, -- a thick, bare edge: the slabs are the building
 	-- Clear heights of the six floors, bottom up (the ground floor holds the shops), scaled to the site's height.
 	gaps = {
 		{ 14, 9, 11, 16, 9, 22 },
@@ -48,7 +52,7 @@ local SHAPE = {
 	right = { 0.8, -1, 1.4, 0, 1.2, -0.6 },
 	blade = {
 		wide = 5.5,
-		thick = 1.1,
+		thick = 1.3,
 		every = 40,
 		max = 3,
 		margin = 7,
@@ -57,6 +61,7 @@ local SHAPE = {
 		face = 12, -- a leaning blade faces the street, give or take this many degrees, and leans across its floor...
 		lean = 0.32, -- ...by this share of the floor's height, the next one the other way: the facade's zigzag
 		yaws = { 18, -30, 42, -12, 28, -46 }, -- the others stand upright, turned at odd angles
+		shade = 0.18, -- how much darker than the slabs
 	},
 	vee = 0.5, -- in the tallest floor, a V's blades meet this share of the floor's height across
 	ramp = { wide = 12, slope = math.rad(14), from = 8 },
@@ -66,7 +71,21 @@ local SHAPE = {
 	led = 0.3,
 	penthouse = { tall = 9, roof = 0.8, over = 2 }, -- crown 1
 	canopy = { rise = 10, thick = 1, blades = 3 }, -- crown 2
-	vine = 6,
+	-- The greenery over the top edge: strands across each planter's width (shares), hanging this many studs times
+	-- their (shuffled) lengths under the top slab, give or take `jitter`; alternate strands stand `out` further out.
+	vine = {
+		widths = { 0.3, 0.2, 0.28, 0.22 },
+		lengths = { 1, 0.55, 0.85, 0.4 },
+		long = 9,
+		jitter = 1.5,
+		overlap = 0.3,
+		out = 0.25,
+		greens = { P.leaf, Color3.fromRGB(46, 96, 52), Color3.fromRGB(88, 142, 72) },
+	},
+	-- A cable rail along each slab's open front edge: one see-through part with the slab-line image tinted steel
+	-- on its street face, a cable every `every` studs (the top one about 3.4 over the deck), standing `back` behind
+	-- the slab's edge.
+	rail = { tall = 4.3, every = 0.9, back = 0.35, color = Color3.fromRGB(150, 154, 158) },
 	parked = { count = 4, long = 13, deep = 5, z = 8.5 }, -- cars on the open decks, this far behind the front edge
 }
 
@@ -74,9 +93,9 @@ type Palette = { concrete: Color3, glass: Color3, sign: Color3, neon: string }
 local PALETTES: { Palette } = {
 	-- Raw board-formed concrete, a step darker than paint white so the slab edges and blades hold their shading in
 	-- full sun.
-	{ concrete = rgb(192, 188, 180), glass = rgb(44, 60, 70), sign = rgb(255, 79, 154), neon = "neonPink" },
-	{ concrete = rgb(180, 178, 172), glass = rgb(58, 88, 104), sign = rgb(255, 79, 154), neon = "neonPink" },
-	{ concrete = rgb(198, 190, 178), glass = rgb(62, 72, 78), sign = rgb(255, 176, 70), neon = "neonAmber" },
+	{ concrete = rgb(184, 180, 172), glass = rgb(44, 60, 70), sign = rgb(255, 79, 154), neon = "neonPink" },
+	{ concrete = rgb(172, 170, 164), glass = rgb(58, 88, 104), sign = rgb(255, 79, 154), neon = "neonPink" },
+	{ concrete = rgb(190, 182, 170), glass = rgb(62, 72, 78), sign = rgb(255, 176, 70), neon = "neonAmber" },
 }
 
 local NUMBERS = { "1220", "808", "2440", "350", "1616", "707" }
@@ -101,6 +120,9 @@ local function build(m: Types.Model)
 	local t = SHAPE.slab
 	local concrete = Kit.look(pal.concrete, Enum.Material.Concrete)
 	local smooth = Kit.look(pal.concrete, Enum.Material.SmoothPlastic)
+	-- The blades a shade darker than the slabs: in the sky's flat light the two would merge, and the building is the
+	-- blades holding the slabs apart.
+	local bladeLook = Kit.look(pal.concrete:Lerp(Color3.new(0, 0, 0), SHAPE.blade.shade), Enum.Material.Concrete)
 
 	-- The floors: each slab's top, bottom up, scaled so the last is the roof.
 	local gaps = SHAPE.gaps[math.clamp(variant.rhythm, 1, #SHAPE.gaps)]
@@ -160,7 +182,7 @@ local function build(m: Types.Model)
 			"block",
 			CFrame.new(centre) * turn * CFrame.Angles(0, 0, lean),
 			Vector3.new(bl.wide, long, bl.thick),
-			concrete,
+			bladeLook,
 			"box"
 		)
 	end
@@ -252,7 +274,30 @@ local function build(m: Types.Model)
 		local left = k % 2 == 1
 		local a = Vector3.new(if left then sx - run / 2 else sx + run / 2, ya, sz)
 		local b = Vector3.new(if left then sx + run / 2 else sx - run / 2, yb, sz)
-		Kit.strut(m, `Stair{k}`, a, b, st.thick, smooth, "trim", st.wide)
+		-- Board-formed like the slabs (a smooth stair read as a bright white brace across the end).
+		Kit.strut(m, `Stair{k}`, a, b, st.thick, concrete, "trim", st.wide)
+	end
+	-- Cable rails along the open front edges (on the floors the stair reaches, they stop short of it).
+	local rl = SHAPE.rail
+	local stairEnd = x1 - 6 - stairRun - 1
+	for k, e in edges do
+		local r1 = if k <= flights then math.min(e.x1 - 0.6, stairEnd) else e.x1 - 0.6
+		local rail = Kit.detail(
+			m,
+			`Rail{k}`,
+			Vector3.new(e.x0 + 0.6, tops[k] + 0.05, e.z0 + rl.back),
+			Vector3.new(r1, tops[k] + rl.tall, e.z0 + rl.back + 0.2),
+			Kit.look(rl.color, Enum.Material.SmoothPlastic, nil, 1)
+		)
+		rail.textures = {
+			{
+				face = Kit.face(m, Enum.NormalId.Front),
+				image = City.textures.slabLine,
+				u = r1 - e.x0 - 0.6,
+				v = rl.every,
+				color = rl.color,
+			},
+		}
 	end
 
 	-------------------------------------------------------------------------------------------------------
@@ -331,16 +376,36 @@ local function build(m: Types.Model)
 		pal.neon,
 		pal.sign
 	)
-	local leaf = Kit.look(P.leaf, Enum.Material.Grass)
+	-- Greenery spilling over the top edge from two planters: each a curtain of strands of uneven width and length in
+	-- three greens, alternate strands a little further out, so the bottom edge is ragged and the curtain has depth.
+	local vn = SHAPE.vine
 	for i, at in { { 0.42, 0.58 }, { 0.7, 0.84 } } do
 		local va, vb = x0 + span * at[1], x0 + span * at[2]
-		Kit.detail(
-			m,
-			`Vine{i}`,
-			Vector3.new(va, H - t - SHAPE.vine - (i - 1) * 2, top.z0 - 0.35),
-			Vector3.new(vb, H + 0.2, top.z0 - 0.05),
-			leaf
-		)
+		local lengths = table.clone(vn.lengths)
+		for k = #lengths, 2, -1 do
+			local j = rng:NextInteger(1, k)
+			lengths[k], lengths[j] = lengths[j], lengths[k]
+		end
+		local total = 0
+		for _, w in vn.widths do
+			total += w
+		end
+		local cursor = va
+		for j, w in vn.widths do
+			local wide = (vb - va) * w / total
+			local s0 = math.max(va, cursor - vn.overlap)
+			local s1 = math.min(vb, cursor + wide + vn.overlap)
+			local out = if j % 2 == 1 then vn.out else 0
+			local drop = vn.long * lengths[j] + rng:NextNumber() * vn.jitter
+			Kit.detail(
+				m,
+				`Vine{i}_{j}`,
+				Vector3.new(s0, H - t - drop, top.z0 - 0.3 - out),
+				Vector3.new(s1, H + 0.2 + out * 0.5, top.z0 - 0.05 - out * 0.5),
+				Kit.look(vn.greens[(i + j) % #vn.greens + 1], Enum.Material.Grass)
+			)
+			cursor += wide
+		end
 		Kit.planter(m, `Planter{i}`, Vector3.new(va, H, top.z0 + 1), Vector3.new(vb, H + 1.4, top.z0 + 3), smooth)
 	end
 	if variant.crown == 2 then

@@ -5,7 +5,14 @@ lighting look. Companion to `docs/city/TECH.md` (how to make things read sharp, 
 2026-10-25 on `miami-city`.
 
 **Tested** means built in Studio on the Voltage County place under the game's day or night settings and
-photographed (`docs/city/img/scenery-*` and `tech-*`). Untested numbers are proposals and say so.
+photographed (`docs/images/city/scenery-*` and `tech-*`; `img/` below means that folder). Untested numbers are
+proposals and say so.
+
+**Status 2026-10-26 (the scenery Studio step):** the palms, the beach, the bay, the causeway, the lifeguard stands,
+the Town Square and the street furniture are built from the code and photographed (`img/scenery-07` to `-24`). The
+map itself (`Workspace.Map.Generated`) has not been rebuilt: the photos come from the county's plan built into
+`Workspace.CityPreview` over the two areas (the lake and beach; downtown), with the old map's parts there hidden
+while the camera ran. `tests/CityScenery.spec` passes (21 of 21). The assets the code clones or shows are in §10.
 
 What stays fixed: the road graph, every lot, pad and gameplay spot in `Config/MapLayout`, and `Dev/MapCheck`.
 Scenery is decoration: it keeps off roads, sidewalks, pads, locations, house plots and props through MapBuilder's
@@ -49,26 +56,61 @@ placement grid, just as trees do today.
   - Make one MeshPart per variant, set `TextureID`, and `Clone()` it for every palm. A clone keeps the IDs, and
     that is what makes instancing work.
 
-**The test meshes** (persistent assets in Davis's account; good enough to start, worth one more try):
+### What's in the place (built 2026-10-26)
 
-| Species | MeshId | TextureID | Size, tris | Verdict |
+**`ServerStorage.CityAssets.Palms.royal | coconut | sabal`**: one MeshPart each, the templates `Dev/City/Scenery/Palms`
+clones (contract in its header). Each is a generated mesh wearing a **SurfaceAppearance whose colour map cuts the
+broad generated leaves into feathery leaflets** (`AlphaMode = Transparency`, `MeshPart.Transparency = 0`: a cutout,
+opaque and depth-sorted, no blending). `DoubleSided` on, `CollisionFidelity = Box`, anchored, no collisions (the
+build adds the trunk collider), `RenderFidelity = Automatic`. Pivot (`PivotOffset`) at the trunk's foot, +Y up; the
+coconut's pivot faces its lean (-Z). Pictures: `img/scenery-07` (generated vs cut), `-08`, `-09`, `-10`, `-11`, `-14`.
+
+| Species | MeshId | Generated TextureID | Cut ColorMap (SurfaceAppearance) | Size (studs), tris |
 |---|---|---|---|---|
-| Royal | `rbxassetid://99825952232024` | `rbxassetid://94679704607440` | 30 × 50 × 30, 1,998 | Good trunk and crown, broad leaves. Usable; regenerate at 1,200 tris. |
-| Coconut | `rbxassetid://97672368748401` | `rbxassetid://109995022838377` | 26 × 33 × 26, 1,196 | Nice curved trunk; leaves like paddles. Usable. (Published model 81730306703748.) |
-| Sabal | `rbxassetid://133737965738957` | `rbxassetid://110186513338926` | 18 × 30 × 18, 1,200 | **Looks like a small banana palm. Regenerate.** (Published model 93395203815336.) |
+| Royal | `rbxassetid://99825952232024` | `rbxassetid://94679704607440` | `rbxassetid://120193451326426` | 30 × 50.1 × 29.6, 1,998 |
+| Coconut | `rbxassetid://97672368748401` | `rbxassetid://109995022838377` | `rbxassetid://131679333735247` | 26 × 33.0 × 25.7, 1,196 |
+| Sabal | `rbxassetid://96543920466780` | `rbxassetid://90675858150519` | `rbxassetid://99984926853045` | 15.8 × 21.9 × 16, 1,800 |
 
-**Prompt notes for the regenerate:** say "single-piece low-poly game asset", name the frond shape ("pinnate
-feather-like fronds made of many thin leaflets" for royal and coconut, "stiff round fan leaves on long stalks" for
-sabal), ask for `segmentation = none` and `maxTriangles` 1200, and set `size` close to the real tree.
+- Royal and coconut are the 2026-10-25 test meshes above; the sabal was generated on 10-26 (published model
+  103998449735412), replacing the banana-looking one.
+- **Why cut leaves and not new meshes:** seven more generations on 10-26 (royal ×3, coconut ×2, sabal ×2, with and
+  without "low-poly", with species names, with "not broad leaves, not a banana"): every royal and coconut came back
+  with broad paddle leaves and a squat ball of a crown, the "low-poly" ones looked like toys, and only the first sabal
+  (narrow stiff blades) was worth keeping. Prompts over about 500 characters fail ("Character limit exceeded"). Meshes can't be uploaded from here (`AssetService:CreateAssetAsync`
+  is "not available yet" in this Studio), so hand-built frond cards were out. The generated leaves already are cards,
+  so the cut gives them leaflets instead: `tools/palm_leaflets.py` (how it works, and the exact settings for each
+  template, are in its header) with `tools/PalmExport.luau`. Re-running both reproduces the three colour maps to the
+  pixel.
+- The royal mesh had a lumpy orange fruit cluster under its crown; its texels are repainted as the green crownshaft it
+  hides (removing it left a gap between trunk and crown).
+- Measured off the meshes into `Config/CityScenery palms`: royal crown 30 across from 0.56 of its height; coconut
+  trunk leaning 33° at the foot (`baseLean`), its drooping crown from 0.36 of its height and hanging out over the lean,
+  sunk 1.2 so the slanted foot is buried; sabal crown 19 from 0.4. Trunk colliders 2.4-2.6 across.
+- Street palms that lean (`leanOut`, the lake ring's coconuts) lean away from the road, out over the water; the
+  beach's lawn row leans seaward. The causeway rows stand 18 studs off the deck so their crowns never overhang it.
 
-**The upgrade if the roast says "banana leaves":** hand-built palms in Blender with "frond cards": flat strips with
-an alpha-cut leaflet texture, on a `SurfaceAppearance` with `AlphaMode = Transparency` and `MeshPart.Transparency
-= 0` (the docs say Transparency 0 keeps correct depth sorting for foliage). That is about 600-900 triangles and
-truly feathery. It needs Blender and an import, so it is a later step.
+**`ServerStorage.CityAssets.Plants.clump`**: a low clump of palmetto and bird-of-paradise (MeshId
+`rbxassetid://98455972711167`, TextureID `rbxassetid://117688722962320`, published model 100654366340171, 5.5 × 5 ×
+5.3, pivot at its foot), cloned into the Town Square's planters (`Palms.plant`, `Config/CityScenery furniture.planter`).
+Any other planter can take it the same way.
+
+**Variety:** one template per species; each copy draws its own yaw, scale and lean. A second variant per species
+would need a second mesh that doesn't look like a banana (see above).
 
 ---
 
 ## 2. Beach (sand, shoreline, dunes)
+
+**Tested 2026-10-26** (`img/scenery-12`, `-13`, `-14`, `-15`): built as `Dev/City/Scenery/Beach` plans it, on the
+Lakefront Beach band. It reads as a South Beach strand: leaning coconut palms on the sand and along the lawn, the
+terrazzo promenade with globe lamps and benches, the low coral wall, dunes, ten lifeguard stands with boardwalks,
+umbrella sets near the water and the white foam line. Fixed in Studio:
+- The umbrellas were a flat disc on a pole (they read as tables, and dark from above) and the loungers a single wedge
+  (a ramp): now a tipped pole, a coloured canopy with a white crown disc on it and a finial, and two loungers each
+  with a padded bed and a raised backrest (`Beach.drawSet`, 8 parts), in SmoothPlastic (Fabric turned the pastels
+  brown).
+- The promenade and the plaza use a **Terrazzo** MaterialVariant on Marble now in `MaterialService` (generated: cream
+  ground with coral, grey and sea-glass chips; §10).
 
 **Where:** Cedar Lake becomes the bay.
 - The water is x −900..900, z 1,800..2,550, at y −2 over a bed at −12.
@@ -109,6 +151,20 @@ truly feathery. It needs Blender and an import, so it is a later step.
 ---
 
 ## 3. Water: the lake as a bay
+
+**Part water as built (tested 2026-10-26, `img/scenery-12`, `-15`, `-16`, `-17`, `-18`; terrain water stays Davis's
+call):**
+- The first version (see-through **Glass** sheets in five concentric rings, a caustic ripple image) read as a
+  swimming pool: bright azure, a pool-floor net pattern, and hard-edged rectangular rings that showed off the lake's
+  rectangle from the air (`img/scenery-16`).
+- Now (`Dev/City/Scenery/Water`, `Config/CityScenery water`): the turquoise shallows run **only along the beach**, in
+  four strips that each fade into the next through a ramp image tinted with the next strip's colour (no hard line),
+  and one deep blue sheet covers the rest of the bay right up to the stone-edged shores (deep water at a seawall's
+  foot, as in Miami). Nearly solid SmoothPlastic with Reflectance 0.22 (only the first strip is see-through, so the
+  sand shows under it), sheets 0.1 thick so their edges draw no lines, and a sparse **sun-glint** image instead of the
+  ripple net. 11 parts.
+- Still flat and still: the glints don't move. A slow client-side scroll of the glint texture's offset would add life
+  cheaply (new runtime code: not done).
 
 **Tested: terrain water against part water** (`img/scenery-04`, `-05`).
 - Terrain water: animated ripples, sun sparkle, see-through.
@@ -158,6 +214,12 @@ truly feathery. It needs Blender and an import, so it is a later step.
 
 ## 4. Causeway and bridge
 
+**Tested 2026-10-26** (`img/scenery-17`, `-18`, `-23`): round white piers, cap beams and haunches under the deck, the
+pierced X balustrade (the image reads well from the deck), acorn lamps, white arches by day and the cyan-to-pink rib
+gradient at night, the icy glow strip along the deck edge. `Dev/City/Preview.night` now honours a part's own
+`NightColor` the way `DayNightService` does, so the gradient shows in previews. The royal palm rows on the approaches
+stand 18 studs off the deck (14 let their crowns hang over it below the frond clearance).
+
 Lake Avenue crosses the bay on the raised Cedar Lake Bridge: a deck at y 20.2, approaches at 5 %, 10 % and 5 %,
 steel arches either side (`MapLayout` feature `cedar_lake_bridge_arches`, 60 × 90 × 750). The deck, its height and
 the roads stay. Only railings, supports, arches and lights change.
@@ -192,6 +254,12 @@ the approaches, street lamps all along, blue water both sides) and its signature
 
 ## 5. Street furniture
 
+**Tested 2026-10-26** (`img/scenery-10`, `-11`, `-21`, `-22`, `-24`): royal palm rows on the downtown avenues, the
+three streetlight styles (white globes on the lake ring), bus shelters, and the zebra crossings: the uploaded bars run
+the right way (`crosswalks.turn = false`). The Town Square was a bare dark lawn round a lone fountain; it now has a
+terrazzo plaza under the fountain and benches, paths out along the diagonals, and the clump planters (§1;
+`img/scenery-25`).
+
 Cedar Bend and Riverside streets and arterials have kerbed sidewalks (MapBuilder). Everything here stands on
 sidewalks or verges, keeps MapBuilder's existing clearances, and is decor unless it says "collides".
 
@@ -215,6 +283,10 @@ road is rebuilt as a dual carriageway in the road graph, and that isn't this pas
 ---
 
 ## 6. Lifeguard stands
+
+**Tested 2026-10-26** (`img/scenery-19`, `-20`): the four shapes (Deco drum, swoop roof, sunburst, capsule) read as
+South Beach towers and no two neighbours match. The box huts' window was a flat dark panel; it now sits in a white
+frame with two mullions (`LifeguardStand`, up to 25 parts).
 
 The South Beach towers: a raised hut on stilts with a ramp, each painted its own way. Davis wants each to be
 unique.
@@ -321,7 +393,7 @@ Add violet `170,90,255`, mint `80,255,190` and amber `255,170,60` (untested). Ne
 ## 9. The lighting look to aim for
 
 Owned by `Config/Environment dayNight` and `Services/DayNightService`. TECH.md §1 has the switches that matter
-most (LightingStyle Realistic, PrioritizeLightingQuality, the Default tone mapper, Bloom, latitude 25.8).
+most (LightingStyle Realistic, PrioritizeLightingQuality, the Default tone mapper, Bloom, latitude 50: see TECH.md §1 for why not 25.8).
 
 **The look:**
 - **Midday:** a high, hard sun with short, crisp shadows; a saturated cyan sky with fair-weather cumulus; bright
@@ -346,3 +418,24 @@ most (LightingStyle Realistic, PrioritizeLightingQuality, the Default tone mappe
   healthy green and the sky a clean cyan.
 - **Clouds (optional, untested):** a `Clouds` object under Workspace.Terrain (Cover about 0.4, Density about 0.5)
   gives Miami's puffy cumulus. It belongs to whichever builder owns Terrain. Check the cost on Davis's phone first.
+
+---
+
+## 10. Assets the scenery uses (in the place and in Davis's account)
+
+All persistent assets in Davis's account, made 2026-10-25/26 from this repo's tools or Studio's generators; none from
+the Creator Store. The Studio-owned instances live in the place, not the repo (Rojo leaves them alone).
+
+| What | Where in the place | Asset ids | Made with |
+|---|---|---|---|
+| Royal, coconut, sabal palms | `ServerStorage.CityAssets.Palms.<species>` (MeshPart + SurfaceAppearance) | §1 table | `generate_mesh`, then `tools/palm_leaflets.py` |
+| Planter clump | `ServerStorage.CityAssets.Plants.clump` (MeshPart) | Mesh `98455972711167`, texture `117688722962320` | `generate_mesh` |
+| Terrazzo | `MaterialService.Terrazzo` (MaterialVariant, base Marble, 10 studs a tile) | colour `130850450571191`, normal `71254297405545`, roughness `136327940645803`, metalness `97848610436205` | `generate_material` |
+| Zebra crossing bars | `Config/CityScenery crosswalks.image` | `83119463084846` | `tools/draw_scenery_overlays.py` |
+| Pierced X balustrade | `Config/CityScenery causeway.balustradeImage` | `110677524796128` | same |
+| Water glints | `Config/CityScenery water.texture` | `127637677152735` | same |
+| Water ramp (band blend) | `Config/CityScenery water.ramp` | `99210103644499` | same |
+| Water ripple net (retired: read as a pool) | not used | `113926883458394` | same |
+
+All ids are `rbxassetid://<id>`. The images were uploaded with the Studio connector's `upload_image` from a localhost
+server (`python -m http.server` in `assets/city`).

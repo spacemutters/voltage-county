@@ -77,6 +77,15 @@ function Kit.model(site: Site): Model
 	}
 end
 
+-- A seed from a part's name and its site's seed (a stable pick per part, whatever order the parts are made in).
+local function nameSeed(name: string, seed: number): number
+	local h = seed % 2147483647
+	for i = 1, #name do
+		h = (h * 31 + string.byte(name, i)) % 2147483647
+	end
+	return h
+end
+
 -- The site's own random stream, salted so two helpers in one archetype don't share numbers.
 function Kit.rng(m: Model, salt: number?): Random
 	return Random.new((m.site.seed + (salt or 0) * 7919) % 2147483647)
@@ -137,6 +146,15 @@ function Kit.part(
 		error(`Kit: {full} has size {size}`, 2)
 	end
 	m.names[full] = true
+	-- A pale or pastel wall in SmoothPlastic is stucco: Plaster, which doesn't mirror the blue sky the way smooth
+	-- plastic does (roast 2026-10-26 point 5: white walls read baby blue). Trim and details keep their smooth finish.
+	local material = look.material
+	if kind == "box" and material == Enum.Material.SmoothPlastic and (look.transparency or 0) == 0 then
+		local c = look.color
+		if math.min(c.R, c.G, c.B) >= KIT.stuccoMin and math.max(c.R, c.G, c.B) >= KIT.stuccoBright then
+			material = Enum.Material.Plaster
+		end
+	end
 	local class: "Part" | "WedgePart" | "CornerWedgePart" = if shape == "wedge"
 		then "WedgePart"
 		elseif shape == "cornerWedge" then "CornerWedgePart"
@@ -150,7 +168,7 @@ function Kit.part(
 		size = size,
 		cframe = m.frame * cf,
 		color = look.color,
-		material = look.material,
+		material = material,
 		collide = true,
 		query = true,
 		touch = false,
@@ -423,8 +441,10 @@ end
 ---------------------------------------------------------------------------------------------------------------
 
 -- Makes a part a night light of `kind` (Config/Environment nightLights): tagged, with its kind and day colour, in its
--- kind's day look, any Light in it switched off. Services/DayNightService switches it at dusk and dawn.
-function Kit.lit(spec: PartSpec, kind: string): PartSpec
+-- kind's day look, any Light in it switched off. Services/DayNightService switches it at dusk and dawn. `nightColor`,
+-- when given, is this part's own night colour (its NightColor attribute): it beats the kind's, for a gradient rib by
+-- rib or a dimmer shade of a kind.
+function Kit.lit(spec: PartSpec, kind: string, nightColor: Color3?): PartSpec
 	local look = NIGHT.kinds[kind]
 	if look == nil then
 		error(`Kit.lit: unknown night light kind {kind}`, 2)
@@ -433,6 +453,9 @@ function Kit.lit(spec: PartSpec, kind: string): PartSpec
 	local attributes: { [string]: any } = spec.attributes or {}
 	attributes[NIGHT.kindAttribute] = kind
 	attributes[NIGHT.dayColorAttribute] = spec.color
+	if nightColor then
+		attributes[NIGHT.nightColorAttribute] = nightColor
+	end
 	spec.attributes = attributes
 	spec.material = look.dayMaterial
 	local light = spec.light
@@ -489,6 +512,15 @@ function Kit.glass(m: Model, name: string, min: Vector3, max: Vector3, color: Co
 	local o: GlassOptions = options or {}
 	local spec = Kit.box(m, name, min, max, Kit.glassLook(color, o.reflectance))
 	local image = o.image
+	local low = math.min(min.Y, max.Y)
+	-- A tall tower's glass above its podium keeps floor lines only: a mullion grid reads as a checkerboard from afar.
+	if
+		m.site.height >= KIT.gridMaxHeight
+		and low >= KIT.gridFrom
+		and (image == City.textures.windowFine or image == City.textures.windowBold)
+	then
+		image = City.textures.slabLine
+	end
 	if image then
 		local textures: { TextureSpec } = {}
 		local faces: { Enum.NormalId } = o.faces or WALLS
@@ -505,7 +537,14 @@ function Kit.glass(m: Model, name: string, min: Vector3, max: Vector3, color: Co
 		spec.textures = textures
 	end
 	if o.lit then
-		Kit.lit(spec, "window")
+		-- Each run of windows in one of the night's tints, and some upper runs dark (Config/Environment nightLights
+		-- windowTints, windowDarkShare), picked by the part's name so a rebuild lights the same floors.
+		local roll = Random.new(nameSeed(spec.name, m.site.seed))
+		local dark = low >= NIGHT.windowDarkFrom and roll:NextNumber() < NIGHT.windowDarkShare
+		if not dark then
+			local tints = NIGHT.windowTints
+			Kit.lit(spec, "window", tints[roll:NextInteger(1, #tints)])
+		end
 	end
 	return spec
 end
@@ -1283,6 +1322,270 @@ function Kit.archWindow(
 		Kit.lit(head, "window")
 	end
 	return { pane, head }
+end
+
+---------------------------------------------------------------------------------------------------------------
+-- Walls with real openings, and railings (the houses of docs/city/ARCHETYPES.md §7; any facade that wants reveals)
+---------------------------------------------------------------------------------------------------------------
+
+-- An opening in a wall, in the wall's own terms: `a0..a1` along it (x on the front and back, z on the sides) and
+-- `y0..y1` up. `glass` false leaves it open (a doorway the caller hangs a door in, an arcade, a breezeway); `lit`
+-- lights its run of panes at night.
+export type Opening = { a0: number, a1: number, y0: number, y1: number, glass: boolean?, lit: boolean? }
+
+-- Kit.skin's options: the panes' colour and overlay (default: dark window glass with mullions and a transom), a sill
+-- under every glazed opening that doesn't start at the wall's foot, and the pieces' kind (default "trim").
+export type SkinOptions = {
+	glass: Color3?,
+	panes: GlassOptions?,
+	sill: { proud: number, thick: number, look: Look }?,
+	kind: Kind?,
+}
+
+local SKIN_EPS = 1e-3
+local SKIN_FACE: { [Side]: Enum.NormalId } = {
+	front = Enum.NormalId.Front,
+	back = Enum.NormalId.Back,
+	left = Enum.NormalId.Left,
+	right = Enum.NormalId.Right,
+}
+
+-- A wall's outer skin, `depth` thick, standing out from a face of the caller's mass (`side` names the face, `plane` is
+-- its coordinate: z on the front and back, x on the sides), cut round rectangular openings. The skin is the fewest
+-- boxes that tile the rectangle a0..a1 by y0..y1 less the openings (openings in a row share their piers, and pieces
+-- of one width one over another merge), and the panes sit back on the face behind it, so every window has a real
+-- reveal `depth` deep that holds a shadow. Glazed openings of one height in a row (none open between them) share one
+-- glass part behind their piers. The skin's back is the face itself and its ends stop at a0 and a1, so nothing it
+-- adds is coplanar with the mass. Returns the pieces, then the panes, then the sills.
+function Kit.skin(
+	m: Model,
+	name: string,
+	side: Side,
+	plane: number,
+	a0: number,
+	a1: number,
+	y0: number,
+	y1: number,
+	depth: number,
+	wall: Look,
+	openings: { Opening },
+	options: SkinOptions?
+): { PartSpec }
+	local o: SkinOptions = options or {}
+	local outward = if side == "front" or side == "left" then -1 else 1
+	local alongX = side == "front" or side == "back"
+	-- A point `n` out from the face (negative: into the mass behind it).
+	local function at(a: number, y: number, n: number): Vector3
+		local c = plane + outward * n
+		return if alongX then Vector3.new(a, y, c) else Vector3.new(c, y, a)
+	end
+	local lo, hi = math.min(a0, a1), math.max(a0, a1)
+	local ylo, yhi = math.min(y0, y1), math.max(y0, y1)
+	-- The openings inside the wall, clipped to it.
+	local holes: { Opening } = {}
+	for _, h in openings do
+		local c = {
+			a0 = math.max(lo, math.min(h.a0, h.a1)),
+			a1 = math.min(hi, math.max(h.a0, h.a1)),
+			y0 = math.max(ylo, math.min(h.y0, h.y1)),
+			y1 = math.min(yhi, math.max(h.y0, h.y1)),
+			glass = h.glass,
+			lit = h.lit,
+		}
+		if c.a1 - c.a0 > SKIN_EPS and c.y1 - c.y0 > SKIN_EPS then
+			table.insert(holes, c)
+		end
+	end
+
+	-- The horizontal cuts: the wall's foot and top and every opening's sill and head.
+	local ys = { ylo, yhi }
+	for _, h in holes do
+		table.insert(ys, h.y0)
+		table.insert(ys, h.y1)
+	end
+	table.sort(ys)
+	local cuts: { number } = {}
+	for _, y in ys do
+		if #cuts == 0 or y - cuts[#cuts] > SKIN_EPS then
+			table.insert(cuts, y)
+		end
+	end
+	type Piece = { a0: number, a1: number, y0: number, y1: number }
+	local growing: { Piece } = {}
+	local done: { Piece } = {}
+	for i = 1, #cuts - 1 do
+		local ya, yb = cuts[i], cuts[i + 1]
+		local across: { Opening } = {}
+		for _, h in holes do
+			if h.y0 <= ya + SKIN_EPS and h.y1 >= yb - SKIN_EPS then
+				table.insert(across, h)
+			end
+		end
+		table.sort(across, function(p: Opening, q: Opening): boolean
+			return p.a0 < q.a0
+		end)
+		local spans: { { number } } = {}
+		local cursor = lo
+		for _, h in across do
+			if h.a0 - cursor > SKIN_EPS then
+				table.insert(spans, { cursor, h.a0 })
+			end
+			cursor = math.max(cursor, h.a1)
+		end
+		if hi - cursor > SKIN_EPS then
+			table.insert(spans, { cursor, hi })
+		end
+		-- A span as wide as one just under it grows that piece; the rest start new ones.
+		local nextGrowing: { Piece } = {}
+		for _, s in spans do
+			local found: number? = nil
+			for gi, g in growing do
+				if math.abs(g.a0 - s[1]) < SKIN_EPS and math.abs(g.a1 - s[2]) < SKIN_EPS then
+					found = gi
+					break
+				end
+			end
+			if found then
+				local g = table.remove(growing, found) :: Piece
+				g.y1 = yb
+				table.insert(nextGrowing, g)
+			else
+				table.insert(nextGrowing, { a0 = s[1], a1 = s[2], y0 = ya, y1 = yb })
+			end
+		end
+		for _, g in growing do
+			table.insert(done, g)
+		end
+		growing = nextGrowing
+	end
+	for _, g in growing do
+		table.insert(done, g)
+	end
+	table.sort(done, function(p: Piece, q: Piece): boolean
+		if math.abs(p.y0 - q.y0) > SKIN_EPS then
+			return p.y0 < q.y0
+		end
+		return p.a0 < q.a0
+	end)
+
+	local out: { PartSpec } = {}
+	local kind: Kind = o.kind or "trim"
+	for k, p in done do
+		table.insert(out, boxAt(m, `{name}{k}`, at(p.a0, p.y0, depth), at(p.a1, p.y1, 0), wall, kind))
+	end
+
+	-- The panes: glazed openings of one height and one lighting in a row, with no open one between them, share a run.
+	local glazed: { Opening } = {}
+	for _, h in holes do
+		if h.glass ~= false then
+			table.insert(glazed, h)
+		end
+	end
+	table.sort(glazed, function(p: Opening, q: Opening): boolean
+		if math.abs(p.y0 - q.y0) > SKIN_EPS then
+			return p.y0 < q.y0
+		end
+		return p.a0 < q.a0
+	end)
+	local runs: { { Opening } } = {}
+	for _, h in glazed do
+		local run = runs[#runs]
+		local last = run and run[#run]
+		local joins = last ~= nil
+			and math.abs(last.y0 - h.y0) < SKIN_EPS
+			and math.abs(last.y1 - h.y1) < SKIN_EPS
+			and (last.lit == true) == (h.lit == true)
+		if joins and last then
+			for _, gap in holes do
+				if
+					gap.glass == false
+					and gap.a0 >= last.a1 - SKIN_EPS
+					and gap.a1 <= h.a0 + SKIN_EPS
+					and gap.y0 < h.y1
+					and gap.y1 > h.y0
+				then
+					joins = false
+					break
+				end
+			end
+		end
+		if joins and run then
+			table.insert(run, h)
+		else
+			table.insert(runs, { h })
+		end
+	end
+	local color = o.glass or City.palettes.window.dark
+	for k, run in runs do
+		local first, last = run[1], run[#run]
+		local ga0 = math.max(lo + 0.02, first.a0 - 0.1)
+		local ga1 = math.min(hi - 0.02, last.a1 + 0.1)
+		local gy0 = math.max(ylo + 0.02, first.y0 - 0.1)
+		local gy1 = math.min(yhi - 0.02, first.y1 + 0.1)
+		local base: GlassOptions = o.panes
+			or { image = City.textures.windowBold, u = 1.6, lines = City.palettes.frame.white, reflectance = 0.2 }
+		local panes: GlassOptions = {
+			image = base.image,
+			faces = { SKIN_FACE[side] },
+			u = base.u,
+			-- An overlay tile well taller than the pane: only its mullions and transom show, not its spandrel.
+			v = base.v or ((gy1 - gy0) * 1.6 + 2),
+			offsetV = base.offsetV,
+			lines = base.lines,
+			lit = first.lit == true,
+			reflectance = base.reflectance,
+		}
+		table.insert(out, Kit.glass(m, `{name}Glass{k}`, at(ga0, gy0, 0.06), at(ga1, gy1, -0.3), color, panes))
+	end
+
+	-- Sills: a slab under each glazed opening, from the pane out past the skin, its ends tucked into the jambs.
+	local sill = o.sill
+	if sill then
+		for k, h in glazed do
+			if h.y0 > ylo + SKIN_EPS then
+				table.insert(
+					out,
+					Kit.trim(
+						m,
+						`{name}Sill{k}`,
+						at(h.a0 - 0.35, h.y0 - sill.thick + 0.06, depth + sill.proud),
+						at(h.a1 + 0.35, h.y0 + 0.06, 0.02),
+						sill.look
+					)
+				)
+			end
+		end
+	end
+	return out
+end
+
+-- A railing: an invisible part min..max carrying the punched overlay on `faces` (named as on the front, mirrored with
+-- the site), its tiles `bar` studs wide and taller than the part, so only each tile's solid top band and the edges
+-- between the openings show: a top rail over square bars (wrought iron, white pipe and picket rails, a veranda's
+-- balusters). No collisions and no shadow. 1 part.
+function Kit.railing(
+	m: Model,
+	name: string,
+	min: Vector3,
+	max: Vector3,
+	faces: { Enum.NormalId },
+	color: Color3,
+	bar: number?
+): PartSpec
+	local spec = Kit.detail(m, name, min, max, Kit.look(color, Enum.Material.Metal, 0, 1))
+	local tall = math.abs(max.Y - min.Y)
+	local textures: { TextureSpec } = {}
+	for _, face in faces do
+		table.insert(textures, {
+			face = Kit.face(m, face),
+			image = City.textures.punched,
+			u = bar or 1.1,
+			v = math.max(6, tall * 1.8),
+			color = color,
+		})
+	end
+	spec.textures = textures
+	return spec
 end
 
 ---------------------------------------------------------------------------------------------------------------

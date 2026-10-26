@@ -33,7 +33,10 @@ Write-Host "== brand names" -ForegroundColor Cyan
 $patterns = Get-Content scripts/banned-names.txt | Where-Object { $_.Trim() -and -not $_.StartsWith("#") }
 $cityPatterns = Get-Content scripts/banned-city-names.txt | Where-Object { $_.Trim() -and -not $_.StartsWith("#") }
 $allFiles = Get-ChildItem src, tests -Recurse -File | Where-Object { $_.FullName -notmatch "\\Vendor\\" }
-$hits = $allFiles | Select-String -Pattern "\b($((@($patterns) + @($cityPatterns)) -join '|'))\b"
+# A name counts whole wherever it stands, also inside an identifier: "_" and "-" separate words like a space does
+# (so "marine_stadium" and "ocean-drive" are caught), and a space in a pattern matches any of the three.
+$joined = (@($patterns) + @($cityPatterns) | ForEach-Object { $_.Trim().Replace(" ?", "[ _-]?").Replace(" ", "[ _-]") }) -join '|'
+$hits = $allFiles | Select-String -Pattern "(?<![A-Za-z0-9])($joined)(?![A-Za-z0-9])"
 if ($hits) {
 	$hits | ForEach-Object { Write-Host "  $($_.Path):$($_.LineNumber): $($_.Line.Trim())" }
 	Fail "brand names (a real carmaker, model, building or place name in game code)"

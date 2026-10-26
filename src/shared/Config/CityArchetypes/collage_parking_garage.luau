@@ -6,16 +6,16 @@
 return {
 	district = "arts",
 	weight = 1,
-	maxCopies = 2,
+	maxCopies = 4,
 	perBlock = 1,
-	minSpacing = 600,
+	minSpacing = 450,
 	minWidth = 120,
 	maxWidth = 230,
 	minDepth = 50,
 	maxPlots = 6,
 	heights = { min = 64, max = 76 },
 	crownMax = 14,
-	budget = 100, -- a one-off landmark: the widest (all five outfits, seven cars in the jam) needs about 93
+	budget = 108, -- a one-off landmark: the widest (all five outfits, seven cars and their headlights) is 102
 	palettes = 3,
 	crowns = 4,
 	rhythms = 3,

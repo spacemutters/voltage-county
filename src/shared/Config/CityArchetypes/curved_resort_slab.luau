@@ -14,7 +14,7 @@ return {
 	maxPlots = 5,
 	heights = { min = 128, max = 168 },
 	crownMax = 16,
-	budget = 130,
+	budget = 136, -- about 123 on its 200 x 140 landmark site, plus a row of three pool umbrellas (6) on a deep site
 	palettes = 2,
 	crowns = 2,
 	rhythms = 2,

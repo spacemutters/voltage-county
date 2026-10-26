@@ -1,22 +1,22 @@
 --!strict
 -- T10 telescope_tower (docs/city/ARCHETYPES.md §5, T10): an upside-down tower, like a telescope standing on its
--- narrow end. Three glass tiers, each wider and deeper than the one under it, on a glass lobby narrower still. A
--- white soffit wraps the foot of every tier where it steps out, and at night an LED line round each soffit and the
--- roof makes three rings that widen upward. Dark vertical stripes run up the front and the free side of every tier,
--- and white balcony slabs stack up the other side, tucked under each overhang. The roof is a white slab, or (crown 2)
--- a white lid floating over an open top floor with a lit lounge under it.
+-- narrow end. Three glass tiers, each a big step wider than the one under it, cantilevering out along the road (on
+-- both sides, or all to one side) over a glass lobby narrower still, with a pool on the ground under each overhang.
+-- Every tier is striped by white balcony slabs every second floor and framed by white corner piers, so each reads as
+-- its own drum of lines, and a thick white soffit closes the underside of every step out. At night an LED line round
+-- each soffit and the roof makes four rings that widen upward.
 --
 -- What makes it itself: each of its three glass tiers is wider than the one beneath it.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/telescope_tower.
--- Variants: palette (3 glass and stripe sets), crown (1 a white roof slab and a plant room, 2 a lid floating on four
--- columns over an open floor), rhythm (1 the tiers widen evenly all round, 2 they share the back and one side and all
--- of the widening cantilevers to the front and the balcony side), mirror.
+-- Variants: palette (3 glass and white sets), crown (1 a white roof slab and a plant room, 2 a lid floating on four
+-- columns over an open top floor with a lit lounge), rhythm (1 the tiers widen evenly to both sides, 2 they share
+-- one end and all of the widening cantilevers to the other), mirror.
 --
--- Seen in Studio 2026-10-25, day and night (docs/images/city/telescope_tower-day.jpg, -night.jpg).
--- Preview check: the three steps out read from the street at 70 mph and from far off (the
--- soffit bands catch the sun); rhythm 2's cantilever looks deliberate, not broken; the stripes and balconies give each
--- face two depths; the three rings read at night, widening upward; the floating lid's gap shows sky; nothing pokes
--- past the footprint at 70 and 130 wide, 46 and 53 deep.
+-- Preview check (the Studio step): the three steps out read from the street at 70 mph and from across downtown (the
+-- soffits catch the sun and throw a deep shadow on the tier below); rhythm 2's one-sided cantilever looks deliberate,
+-- not broken; the balcony slabs and corner piers give every face two depths; the pools sit under the overhangs, clear
+-- of the lobby; the four rings read at night, widening upward; the floating lid's gap shows sky; nothing pokes past the
+-- footprint at 76 and 130 wide, 46, 53 and 100 deep.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -34,34 +34,33 @@ local FRONT, LEFT, RIGHT = Enum.NormalId.Front, Enum.NormalId.Left, Enum.NormalI
 local SHAPE = {
 	floor = 12,
 	lobby = 16, -- the first tier's foot
-	sideSpare = 10, -- the top tier is the site's width less this (its balconies reach past one side)...
-	width = { 56, 80 }, -- ...between these
-	front = 3, -- the top tier's faces from the front and back lines
-	back = 2,
-	depth = { 40, 80 },
-	-- By rhythm: each tier is this share of the top tier's width narrower than the one over it (half each side, or
-	-- all on one side): big enough steps that the upside-down stack reads from across downtown.
-	stepX = { 0.18, 0.24 },
-	stepZ = { 0.18, 6, 10 }, -- and this much shallower (share of the top tier's depth, clamped; 1.5 times in rhythm 2)
+	sideSpare = 6, -- the top tier is the site's width less this (its slabs reach past its ends)...
+	width = { 66, 96 }, -- ...between these
+	back = 3, -- the tiers' backs from the back line (the slabs reach out behind)
+	depth = { 7, 36, 60 }, -- the tiers' depth: the site's less the first number, clamped
+	step = { 0.12, 7, 11 }, -- each step out, each side (share of the top tier's width, clamped); twice that on one side
 	lobbyInset = 4, -- the lobby sits this far in under the first tier
 	split = { 0.34, 0.67 }, -- the tiers' breaks, share of the height over the lobby (whole floors)
-	soffit = { thick = 3, proud = 0.5 },
-	ring = { proud = 0.15, from = 0.6, tall = 0.6 }, -- an LED line round a soffit or the roof, `from` over its foot
-	stripes = { 0.25, 0.5, 0.75 }, -- where the dark stripes stand across each face
-	stripe = { wide = 3, proud = 0.3 },
-	balcony = { every = 24, reach = 3.5, thick = 1.2, first = 12, keep = 6, inset = 1.5 },
+	-- The white frame round every tier is bold, as the real tower's stepped perimeter structure (Studio round 1: 3-thick
+	-- soffits, 1.4-wide piers and 1.2 slabs read as hairlines on plain glass boxes from across downtown).
+	soffit = { thick = 4.5, proud = 0.6 },
+	ring = { proud = 0.15, from = 0.9, tall = 0.7 }, -- an LED line round a soffit or the roof, `from` over its foot
+	pier = { wide = 2.6, proud = 1 }, -- white piers on each tier's corners
+	plate = { every = 24, first = 12, keep = 6, thick = 1.6, ends = 1.8, faces = 2.8 }, -- balcony slabs
 	roof = 3, -- the roof slab or the lid...
 	roofProud = 1.5, -- ...overhanging this far
 	open = 12, -- crown 2: the open floor under the lid
 	lid = { column = 0.9, inset = 1.5, lounge = { 10, 8 } }, -- the lounge keeps this far in from the tier's sides
 	plant = 8,
+	pool = { side = 2, gap = 1.5, ends = 6, least = 6 }, -- a pool under each overhang
+	litTop = 0.5, -- the share of copies whose top tier's glass glows at night
 }
 
--- Glass, the dark stripes, the white of soffits, slabs and roof.
+-- Glass and the white of slabs, piers, soffits and roof.
 local PALETTES = {
-	{ glass = P.glass.aqua, stripe = P.frame.charcoal, white = P.frame.white },
-	{ glass = P.glass.silver, stripe = rgb(40, 52, 70), white = P.frame.white },
-	{ glass = P.glass.blue, stripe = rgb(30, 36, 42), white = P.frame.warm },
+	{ glass = P.glass.aqua, white = P.frame.white },
+	{ glass = P.glass.silver, white = P.frame.white },
+	{ glass = P.glass.blue, white = P.frame.warm },
 }
 
 local RAIL = Kit.look(rgb(214, 236, 242), Enum.Material.Glass, 0.1, KIT.railTransparency)
@@ -79,17 +78,18 @@ local function build(m: Types.Model)
 	local F = SHAPE.floor
 	local yb = -KIT.bury
 	local white = Kit.look(pal.white, Enum.Material.SmoothPlastic)
-	local stripe = Kit.look(pal.stripe, Enum.Material.SmoothPlastic)
 	local tag = City.signNames.towers[rng:NextInteger(1, #City.signNames.towers)]
+	local litTop = rng:NextNumber() < SHAPE.litTop
 
 	-------------------------------------------------------------------------------------------------------
-	-- The tiers: the top one fills the site, each one under it narrower and shallower
+	-- The tiers: the top one fills the site's width, each one under it a step narrower on each side (rhythm 1) or
+	-- two steps narrower on one side (rhythm 2); all as deep, set toward the back
 	-------------------------------------------------------------------------------------------------------
 	local w3 = math.clamp(W - SHAPE.sideSpare, SHAPE.width[1], SHAPE.width[2])
-	local zFront, zBack = -hd + SHAPE.front, hd - SHAPE.back
-	local d3 = math.clamp(zBack - zFront, SHAPE.depth[1], SHAPE.depth[2])
-	local dz = math.clamp(d3 * SHAPE.stepZ[1], SHAPE.stepZ[2], SHAPE.stepZ[3])
-	local zc = (zFront + zBack) / 2
+	local s = math.clamp(w3 * SHAPE.step[1], SHAPE.step[2], SHAPE.step[3])
+	local d = math.clamp(D - SHAPE.depth[1], SHAPE.depth[2], SHAPE.depth[3])
+	local z1 = hd - SHAPE.back
+	local z0 = z1 - d
 	local roofBase = H - SHAPE.roof
 	local over = roofBase - SHAPE.lobby
 	local y1 = SHAPE.lobby + F * math.round(over * SHAPE.split[1] / F)
@@ -101,19 +101,19 @@ local function build(m: Types.Model)
 	local tiers: { Tier } = {}
 	for k = 1, 3 do
 		local j = 3 - k -- steps under the top tier
-		local t: Tier
+		local x0, x1
 		if rhythm == 1 then
-			local w, d = w3 - j * SHAPE.stepX[1] * w3, d3 - j * dz
-			t = { x0 = -w / 2, x1 = w / 2, z0 = zc - d / 2, z1 = zc + d / 2, y0 = feet[k], y1 = heads[k] }
+			x0, x1 = -w3 / 2 + j * s, w3 / 2 - j * s
 		else
-			local w, d = w3 - j * SHAPE.stepX[2] * w3, d3 - j * 1.5 * dz
-			t = { x0 = -w3 / 2, x1 = -w3 / 2 + w, z0 = zBack - d, z1 = zBack, y0 = feet[k], y1 = heads[k] }
+			x0, x1 = -w3 / 2, w3 / 2 - 2 * j * s
 		end
-		table.insert(tiers, t)
+		table.insert(tiers, { x0 = x0, x1 = x1, z0 = z0, z1 = z1, y0 = feet[k], y1 = heads[k] })
 	end
 
 	local sp, st = SHAPE.soffit.proud, SHAPE.soffit.thick
 	local rg = SHAPE.ring
+	local pr = SHAPE.pier
+	local pl = SHAPE.plate
 	local lines = pal.glass:Lerp(pal.white, 0.45)
 	for k, t in tiers do
 		-- The glass, a floor to a tile from its top (its foot and head are whole floors apart up to the roof).
@@ -123,8 +123,10 @@ local function build(m: Types.Model)
 			u = 6,
 			v = F,
 			lines = lines,
+			lit = k == 3 and litTop,
 		})
-		-- The white soffit round its foot: the step out reads as a band in the sun.
+		-- The white soffit closing its underside: the step out reads as a thick band in the sun, and an LED line round
+		-- it at night.
 		Kit.trim(
 			m,
 			`Soffit{k}`,
@@ -132,57 +134,42 @@ local function build(m: Types.Model)
 			Vector3.new(t.x1 + sp, t.y0 + 0.02, t.z1 + sp),
 			white
 		)
-		if k > 1 then
-			local e = sp + rg.proud
-			Kit.neonStrip(
-				m,
-				`Ring{k}`,
-				Vector3.new(t.x0 - e, t.y0 - st + rg.from, t.z0 - e),
-				Vector3.new(t.x1 + e, t.y0 - st + rg.from + rg.tall, t.z1 + e),
-				"ledBlue",
-				pal.white
-			)
+		local e = sp + rg.proud
+		Kit.neonStrip(
+			m,
+			`Ring{k}`,
+			Vector3.new(t.x0 - e, t.y0 - st + rg.from, t.z0 - e),
+			Vector3.new(t.x1 + e, t.y0 - st + rg.from + rg.tall, t.z1 + e),
+			"ledEdge",
+			pal.white
+		)
+		-- White piers on its four corners: each tier framed like a section of the telescope.
+		-- Each corner: x, z and which way is out.
+		for i, corner in { { t.x0, t.z0, -1, -1 }, { t.x1, t.z0, 1, -1 }, { t.x0, t.z1, -1, 1 }, { t.x1, t.z1, 1, 1 } } do
+			local cx, cz, ox, oz = corner[1], corner[2], corner[3], corner[4]
+			local a = Vector3.new(cx + ox * pr.proud, t.y0 + 0.02, cz + oz * pr.proud)
+			local b = Vector3.new(cx - ox * (pr.wide - pr.proud), t.y1 - 0.02, cz - oz * (pr.wide - pr.proud))
+			Kit.trim(m, `Pier{k}_{i}`, a, b, white)
 		end
-		-- Dark stripes up the front and the free (left) side.
-		local half = SHAPE.stripe.wide / 2
-		local sp2 = SHAPE.stripe.proud
-		for i, f in SHAPE.stripes do
-			local x = t.x0 + (t.x1 - t.x0) * f
-			Kit.trim(
-				m,
-				`StripeF{k}{i}`,
-				Vector3.new(x - half, t.y0 + 0.02, t.z0 - sp2),
-				Vector3.new(x + half, t.y1 - 0.02, t.z0 + 0.1),
-				stripe
-			)
-			local z = t.z0 + (t.z1 - t.z0) * f
-			Kit.trim(
-				m,
-				`StripeL{k}{i}`,
-				Vector3.new(t.x0 - sp2, t.y0 + 0.02, z - half),
-				Vector3.new(t.x0 + 0.1, t.y1 - 0.02, z + half),
-				stripe
-			)
-		end
-		-- White balcony slabs up the right side, the lower tiers' tucked under the overhang above.
-		local bc = SHAPE.balcony
-		local y = t.y0 + bc.first
-		local count = 0
-		while y + bc.thick <= t.y1 - bc.keep do
-			count += 1
-			Kit.trim(
-				m,
-				`Balcony{k}_{count}`,
-				Vector3.new(t.x1 - 0.5, y, t.z0 + bc.inset),
-				Vector3.new(t.x1 + bc.reach, y + bc.thick, t.z1 - bc.inset),
-				white
-			)
-			y += bc.every
-		end
+		-- Balcony slabs every second floor round the tier, the first a floor over its soffit.
+		Kit.plates(
+			m,
+			`Plate{k}_`,
+			Vector3.new(t.x0, 0, t.z0),
+			Vector3.new(t.x1, 0, t.z1),
+			t.y0 + pl.first,
+			t.y1 - pl.keep,
+			pl.every,
+			pl.thick,
+			pl.ends,
+			pl.faces,
+			white
+		)
 	end
 
 	-------------------------------------------------------------------------------------------------------
-	-- The foot: a glass lobby narrower than the first tier, the name on the first soffit, paving and planters
+	-- The foot: a glass lobby narrower than the first tier, the name on the first soffit, paving, a pool under each
+	-- overhang, planters
 	-------------------------------------------------------------------------------------------------------
 	local t1 = tiers[1]
 	local li = SHAPE.lobbyInset
@@ -210,18 +197,29 @@ local function build(m: Types.Model)
 		Vector3.new(cx1 + 8, SHAPE.lobby - 0.2, soffitFront - 0.05),
 		FRONT,
 		tag,
-		pal.stripe,
+		rgb(40, 44, 50),
 		pal.white,
 		City.districtLooks.downtown.font
 	)
 	local granite = Kit.look(rgb(196, 192, 184), Enum.Material.Granite)
 	Kit.detail(m, "Paving", Vector3.new(-hw + 1, 0, -hd + 0.5), Vector3.new(hw - 1, 0.3, hd - 0.5), granite)
+	local po = SHAPE.pool
+	local pz0, pz1 = z0 + po.ends, z1 - po.ends
+	local function pool(name: string, a: number, b: number)
+		if b - a >= po.least and pz1 - pz0 >= po.least then
+			Kit.pool(m, name, Vector3.new(a, 0, pz0), Vector3.new(b, 0, pz1), 0.3)
+		end
+	end
+	if rhythm == 1 then
+		pool("PoolL", -w3 / 2 + po.side, t1.x0 - po.gap)
+	end
+	pool("PoolR", t1.x1 + po.gap, w3 / 2 - po.side)
 	local edge = -hd + 1.2
 	Kit.planter(m, "PlanterL", Vector3.new(-hw + 3, 0.3, edge), Vector3.new(-hw + 13, 1.8, edge + 2), white)
 	Kit.planter(m, "PlanterR", Vector3.new(hw - 13, 0.3, edge), Vector3.new(hw - 3, 1.8, edge + 2), white)
 
 	-------------------------------------------------------------------------------------------------------
-	-- The top: a white roof slab, or a lid floating over an open floor; the third ring round it
+	-- The top: a white roof slab, or a lid floating over an open floor; the last ring round it
 	-------------------------------------------------------------------------------------------------------
 	local t3 = tiers[3]
 	local rf = SHAPE.roofProud
@@ -233,7 +231,7 @@ local function build(m: Types.Model)
 		"RingTop",
 		Vector3.new(t3.x0 - e, roofBase + 1.2, t3.z0 - e),
 		Vector3.new(t3.x1 + e, roofBase + 1.2 + rg.tall, t3.z1 + e),
-		"ledBlue",
+		"ledEdge",
 		pal.white
 	)
 	if variant.crown == 2 then

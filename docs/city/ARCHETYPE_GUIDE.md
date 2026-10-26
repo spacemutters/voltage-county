@@ -127,13 +127,23 @@ returns the spec(s) it added. Corners are `Vector3` in site coordinates; the kit
 | `planter(m, name, min, max, look)` | 2 | a planter box with greenery |
 | `umbrella(m, name, x, z, y, size, color, square?)` | 2..3 | café and market umbrellas |
 | `roofBox(m, name, min, max, look?)` | 1 | stair and plant rooms |
+| `skin(m, name, side, plane, a0, a1, y0, y1, depth, wall, openings, options?)` | pieces + 1 per run of panes (+ sills) | a wall's outer skin `depth` thick cut round rectangular openings (`{ a0, a1, y0, y1, glass?, lit? }`), the panes set back on the face behind it: real reveals that hold a shadow. Openings in a row share piers and one glass part; `glass = false` leaves a doorway or a loggia open. A picture frame is a skin with one opening |
+| `railing(m, name, min, max, faces, color, bar?)` | 1 | an invisible part with the punched overlay: a top rail over square bars on the faces named (wrought iron, pipe rails, balusters) |
 | `lit(spec, kind)` | — | makes any spec a night light (`Config/Environment nightLights.kinds`) |
 | `rng(m, salt?)`, `floors(height, floor)`, `face(m, face)` | — | helpers |
 
-**Night-light kinds** (`Config/Environment nightLights.kinds`): `window` (glass that glows warm: day material Glass),
-`sign` (cyan), `neonPink`, `neonViolet`, `neonAmber`, `neonBlue`, `crown` (a cool white for tower crowns), `ledBlue`
-(balcony and podium edges), `uplight` (the wash fixture), `beacon`, `floodlight`, `streetlight`, `arch`. At most two
-neon colours per building. No PointLights or SpotLights on buildings; a wash is the only light, one per hero facade.
+**Night-light kinds** (`Config/Environment nightLights.kinds`): `window` (glass that glows a soft warm white: day
+material Glass), `sign` (cyan), `neonPink`, `neonViolet`, `neonAmber`, `neonBlue`, `neonCyan`, `crown` (a cool white
+for tower crowns), `crownShow` (a crown's white most nights; on some nights one colour from a short list, the same on
+every crownShow part that night), `ledBlue` (balcony and podium edges), `ledEdge` (pale ice-blue LED for slab edges
+and soffits), `stained` (glows in the part's own day colour: give it saturated, mid-bright colours), `uplight` (the
+wash fixture), `beacon`, `floodlight`, `streetlight`, `arch`. ARCHETYPES.md's snake_case names map to these
+camelCase kinds (`neon_pink` is `neonPink`, `led_edge` is `ledEdge`, `crown_show` is `crownShow`...); `Kit.lit`
+errors on the snake_case spellings. A part's own `NightColor` attribute (Color3,
+`Environment.nightLights.nightColorAttribute`, set through `spec.attributes`) beats its kind's colour at night: a
+gradient rib by rib, or a dimmer shade of a kind. Sign and neon kinds raise their lettering's brightness at night.
+At most two neon colours per building. No PointLights or SpotLights on buildings; a wash is the only light, one per
+hero facade.
 
 **Textures** (`City.textures`, drawn for the city, in Davis's account): `windowFine` (curtain wall: thin mullions, a
 spandrel per tile), `windowBold` (the same, bolder: lobbies, screens), `slabLine` (floor lines only), `punched` (a
@@ -227,13 +237,15 @@ neon_fin_hotel = {
 | `crownMax` | How far crowns, spires, signs and flagpoles may rise over the roof |
 | `budget` | Parts per site, at most. `tests/City.spec` prints the range it saw |
 | `palettes`, `crowns`, `rhythms` | How many of each variant the module knows. Placement draws each copy's variant and gives every copy a look (archetype, palette, crown, rhythm) no other copy has while one is left |
-| `ownModel` | Its own Atomic model (`Buildings/Tower<n>`): yes for towers (anything 160+ gets one anyway) |
+| `ownModel` | Named a tower's model (`Buildings/Tower<n>`) even when low. Every site gets its own Atomic SLIM model either way (`Buildings/Tower<n>` from 160 up, else `Buildings/Site<n>`), with its night lights, signs and lights in a small `BuildingLights/<same name>` model beside it |
+| `claimDepth`, `corner` | Optional: the depth it would like with a core claim when its block has room, and `"only"`/`"prefer"` for block corners (also `City.cornerArchetypes`) |
 
-Placement, in short (CityBuilder header has the detail): plots are grouped in runs (one frontage, no gap); on each
-plot the plot's own random stream draws among the archetypes that fit (width, depth, cap, copies, spacing, block)
-and the old facade; one archetype never stands beside itself on a run. Deterministic: the same layout gives the same
-city. Not yet done (the planner's step): claims into the empty block cores, the one-off landmarks of CITY_PLAN §5,
-neighbours across the street and round corners, the no-twin-heights rule.
+Placement, in short (the CityBuilder header and CITY_PLAN §4 have the detail): one-offs first at their anchors
+(`City.landmarks`), then one band-T tower per downtown block, then every run plot by plot. Sites deeper than a plot
+claim depth from the block's empty core; neighbours (beside, across the street, round the corner) never share an
+archetype; corner archetypes stand on corners, mirrored; no two towers near each other stand within two floors of
+one height; the tallest put their main masses in the Persistent Skyline model (CITY_PLAN §7.2, §7.3). A plot nothing
+fits stays open (`City.openFallback`). Deterministic: the same layout gives the same city.
 
 ## 6. The quality bar
 
@@ -308,7 +320,14 @@ return tostring(ok) .. " " .. tostring(result)
 3. Photograph it with `screen_capture` from the south (the fronts face +Z): for a low building about 90 studs
    out at eye height, e.g. camera `(-46, 12, 4072)` looking at `(6, 28, 4000)`; for a tower a mid view
    `(x + 60, 120, 4250)` and a street view at y 6. `Preview.night(true)` for the night look (and `false` to go
-   back). Options: `width`, `depth`, `height`, `variant`, `seed`, `facing = "north"`.
+   back): it shows each light as the game does at runtime (its own NightColor, stained glass in its own colour,
+   sign text brightened). Options: `width`, `depth`, `height`, `variant`, `seed`, `facing = "north"`.
+   - SurfaceGui sign text renders lazily in Edit-mode captures: the first capture after a build often shows blank
+     boards, so take a second one.
+   - The Studio connector puts `Workspace.CurrentCamera.CameraType` back to what it was when each execute_luau call
+     started, so setting Custom inside the call that ends a shoot doesn't stick: set it in `task.delay(1, ...)`.
+   - `Kit.sign` text is TextScaled across 92 % x 80 % of the board, so a long name on a narrow board is limited by
+     the board's width: widen it rather than making it taller.
 4. Compare it honestly with a photo of the real inspiration (Wikimedia Commons has most of them). Fix what
    doesn't read, rebuild, photograph again: at least two rounds.
 5. `Preview.clear()` removes the models and puts Lighting and the camera back. Put the best pictures in
@@ -340,14 +359,11 @@ attribute afterwards.
 
 ## 9. Known limits and what comes next
 
-- **Placement is per plot and per run.** The planner step (CITY_PLAN §4) still has to add: tower claims into the
-  empty block cores (L1), the one-off landmarks at their anchors (§5), neighbours across the street and round
-  corners, the no-twin-heights rule, density overrides (L2) and the Skyline model.
-- **Night lights share the building's model.** For SLIM (TECH §6) they move to sibling light models; `Kit.lit` is the
-  one place that tags them, so the split is one change in the kit and CityBuilder.
-- **Lit glass glows strongly orange** on large areas (`window`'s night colour). TECH §4 suggests a dimmer, less
-  saturated colour; that is the lighting owner's call.
-- **Budgets.** With the two references placed, the county plans about 15,800 parts (`mapParts` 16,000) and 5,800
-  building parts (`buildingParts` raised to 6,400). The full city needs CITY_PLAN §9's budgets (L4, after a perf
-  drive and Davis's phone).
+- **The planner is built** (CITY_PLAN §4): core claims, one-offs, across-street and corner neighbours, the no-twin
+  rule, density overrides, the Skyline model and separate light models (§7.2). See CITY_PLAN §4 and §7.2.
+- **Copies are the city's limit.** Every repeatable has a `maxCopies`; together with the part budgets they decide how
+  many plots get a building. The plots left over stay open (`City.openFallback`).
+- **Budgets** (CITY_PLAN §9): `mapParts` 30,000, `buildingParts` 15,000, `inViewParts` 20,000 (the phone gate,
+  worst at downtown's centre), building night lights 2,200. Raising an archetype's budget or copies shows up in
+  `tests/MapBuilder.spec`'s totals: run it.
 - **Sign text** shows in Edit-mode screenshots for these parts but check it in a playtest too.

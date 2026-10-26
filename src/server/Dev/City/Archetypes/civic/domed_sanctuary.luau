@@ -2,8 +2,9 @@
 -- C05 domed_sanctuary (docs/city/ARCHETYPES.md §9, C05): the beach district's domed sanctuary, Byzantine forms made
 -- smooth in the Deco manner. A pale smooth block on a low plinth under a stepped cornice; on its front a tall arched
 -- portal of stained glass in a stone frame, flanked by two short square towers with stepped tops and small domes;
--- tall arched windows down the sides. On the roof the signature: a drum ringed with a band of lit windows between
--- ribs, and one big round dome with a lantern, washed with light at night.
+-- tall arched windows down the sides. On the roof the signature: a tall rotunda drum ringed with a band of lit windows
+-- between ribs, and one big round dome with a lantern standing about ten storeys over the street, washed with light at
+-- night.
 --
 -- What makes it itself: a smooth pale block under one big round dome.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/domed_sanctuary.
@@ -13,8 +14,9 @@
 --
 -- Previewing (Studio helper): Preview.build("domed_sanctuary", { width = 82, depth = 53 }) for the full look (with the
 -- school wing); width 58 is the smallest. Check: the dome sits on the drum with no gap and reads round from the
--- street; the portal's arch reads as an arch (the glass half-disc over the glass, a stone ring round it); at night the
--- wash lights the dome, the drum band, the portal and side windows glow, the lantern is amber.
+-- street, the dome dominating the block (about 95 studs to the finial); the portal's arch reads as an arch (the glass
+-- half-disc over the glass, a stone ring round it); at night the wash lights the dome, the drum band, the portal (a
+-- deep stained-glass colour, not a blown-out one) and side windows glow, the lantern is amber.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -48,12 +50,13 @@ local SHAPE = {
 	},
 	drum = {
 		byCrown = {
-			{ share = 0.56, max = 44, height = 17 }, -- crown 1
-			{ share = 0.5, max = 38, height = 20 }, -- crown 2
+			{ share = 0.58, max = 44, height = 26 }, -- crown 1: a tall rotunda drum (the dome stands ten storeys high)
+			{ share = 0.52, max = 38, height = 29 }, -- crown 2
 		},
-		band = { from = 4, to = 11 },
-		ribs = 8,
-		rib = 1.4,
+		band = { from = 6, to = 18 }, -- the rotunda's ring of tall windows
+		-- Wide stucco piers round the band, so it reads as a ring of tall windows, not a glass belt.
+		ribs = 12,
+		rib = 5.2,
 	},
 	lantern = { diameter = 4, height = 4.5 },
 	finial = { 3, 8 }, -- by crown
@@ -61,12 +64,14 @@ local SHAPE = {
 
 -- Walls, trim, the dome, the stained glass, the lantern's day colour, the wash.
 local PALETTES = {
+	-- `glass` is the side and drum windows: dark, tinted (Glass renders far brighter than its colour, so a mid blue
+	-- reads as blue plastic by day). `stained` is the portal: a deep jewel tone that glows in its own colour at night.
 	{
 		wall = rgb(240, 228, 204),
 		trim = rgb(216, 198, 164),
 		dome = Kit.look(rgb(111, 158, 142), Enum.Material.SmoothPlastic),
-		glass = rgb(64, 96, 132),
-		stained = rgb(58, 108, 188),
+		glass = rgb(40, 58, 76),
+		stained = rgb(18, 36, 76),
 		lantern = rgb(236, 214, 160),
 		wash = rgb(255, 214, 170),
 	},
@@ -74,8 +79,8 @@ local PALETTES = {
 		wall = rgb(246, 244, 238),
 		trim = rgb(214, 216, 214),
 		dome = Kit.look(rgb(201, 205, 208), Enum.Material.Foil),
-		glass = rgb(56, 88, 120),
-		stained = rgb(46, 128, 168),
+		glass = rgb(38, 56, 72),
+		stained = rgb(14, 48, 66),
 		lantern = rgb(226, 228, 230),
 		wash = rgb(200, 220, 255),
 	},
@@ -83,8 +88,8 @@ local PALETTES = {
 		wall = rgb(236, 222, 196),
 		trim = rgb(206, 186, 150),
 		dome = Kit.look(rgb(160, 122, 72), Enum.Material.Metal),
-		glass = rgb(86, 70, 110),
-		stained = rgb(124, 72, 168),
+		glass = rgb(52, 46, 66),
+		stained = rgb(44, 24, 70),
 		lantern = rgb(246, 220, 150),
 		wash = rgb(255, 200, 150),
 	},

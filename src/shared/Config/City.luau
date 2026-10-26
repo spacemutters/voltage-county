@@ -153,6 +153,12 @@ local City = {
 	-- end of its plots.
 	siteGap = 5,
 
+	-- A plot in a city district that no archetype fits (its archetypes' copies used up, or a lone plot too narrow for
+	-- them) stays open: its run's paved lot, or ground, kept clear of trees. False brings back the old glass facade
+	-- there. Filling every plot with archetypes would cost about 7,000 more parts than buildingParts and the phone gate
+	-- allow (2026-10-26, measured in Studio), so the city is fewer, bigger buildings with open lots between.
+	openFallback = true,
+
 	-- Every site is its own Atomic model, so it streams and swaps its level of detail as one piece (docs/city/TECH.md
 	-- §6): Buildings/Tower<n> for sites this tall or taller (or ownModel), Buildings/Site<n> for the rest.
 	towerModelFrom = 160,
@@ -209,7 +215,7 @@ local City = {
 		lifeguard_stand = true,
 		causeway_bridge = true,
 		lighthouse_water_tower = true,
-		folded_roof_marine_stadium = true,
+		folded_roof_lake_stadium = true,
 	} :: { [string]: boolean },
 
 	-- Areas (see AreaConfig), the first holding a plot's centre wins. Downtown's outer frontages and blocks borrow the
@@ -280,7 +286,7 @@ local City = {
 			},
 		},
 		{
-			id = "ocean_drive", -- the north shore road's land side: a continuous hotel row (decision L2)
+			id = "shore_hotel_row", -- the north shore road's land side: a continuous hotel row (decision L2)
 			zone = "lakefront",
 			min = Vector2.new(-1135, 1300),
 			max = Vector2.new(1135, 1496),
@@ -407,14 +413,20 @@ local City = {
 		{ id = "triple_tower_podium", at = Vector2.new(-451, 940), depth = 110, face = "back" },
 		{ id = "sail_supertall", at = Vector2.new(783, 950), depth = 110, face = "back" },
 		{ id = "sky_court_slab", at = Vector2.new(-164, 945), depth = 70, face = "back" },
-		{ id = "red_ziggurat_lowrise", at = Vector2.new(119, 943) },
-		{ id = "bayfront_arena", at = Vector2.new(450, 950), radius = 260, depth = 180, face = "back" },
-		{ id = "harbor_market_pavilions", at = Vector2.new(-740, 950), radius = 220, depth = 160, face = "back" },
+		-- The arena takes the d7..e7 run (x 40..192, 147 wide: the breakdown spot at (450, 936) and unbuilt plots leave
+		-- nothing wider east of it), before the ziggurat, which takes the short run east of it. Both civic one-offs face
+		-- the road: their gateways, arcades, signs and video board are on their fronts, boardwalks and terraces behind.
+		{ id = "bayfront_arena", at = Vector2.new(116, 950), radius = 260, depth = 180 },
+		{ id = "red_ziggurat_lowrise", at = Vector2.new(372, 951), radius = 120 },
+		{ id = "harbor_market_pavilions", at = Vector2.new(-740, 950), radius = 220, depth = 160 },
 		-- The beach.
 		{ id = "curved_resort_slab", at = Vector2.new(1195, 1650), radius = 260, depth = 140 }, -- the east road
 		{ id = "deco_porthole_highrise", at = Vector2.new(620, 1460) }, -- the hotel row's tallest deco hotel
 		{ id = "lighthouse_corner_hotel", at = Vector2.new(-1000, 1460), radius = 200, corner = true },
 		{ id = "domed_sanctuary", at = Vector2.new(-414, 1460) },
+		-- The hotel row has few corners wide enough for the corner sign tower (48 studs): the one where the x = 56 street
+		-- meets the shore road, taken before the per-plot draw can split it.
+		{ id = "corner_spire_hotel", at = Vector2.new(56, 1442), radius = 120, corner = true },
 		-- The arts district.
 		{ id = "collage_parking_garage", at = Vector2.new(2352, 53), depth = 80 }, -- Plant Avenue
 		{ id = "faceted_gallery", at = Vector2.new(2015, -56) }, -- Plant Avenue, east of the Plant Gate
@@ -437,9 +449,12 @@ local City = {
 	-- together; tests/MapBuilder.spec prints any district past its share); the Skyline model and the night-light parts
 	-- of all the buildings (both held: DayNightService flips night lights 200 a frame at dusk).
 	budgets = {
-		districts = { downtown = 8800, beach = 2100, suburbs = 1500, arts = 1600, quarry = 120 } :: { [string]: number },
+		-- As built 2026-10-26 (238 sites, the old look nowhere): downtown 7,573, beach 2,099, suburbs 3,051, arts 813,
+		-- quarry 106 of buildingParts' 15,000. The suburbs' houses took the share the arts district's open lots left.
+		districts = { downtown = 8000, beach = 2300, suburbs = 3300, arts = 1100, quarry = 120 } :: { [string]: number },
 		skyline = 200,
-		nightLights = 1400,
+		-- About 1,950 measured 2026-10-26 (238 sites); DayNightService flips 200 a frame, so dusk takes 11 frames.
+		nightLights = 2200,
 	},
 
 	-- Shared numbers for Dev/City/Kit (docs/city/TECH.md §2 and §5; CITY_PLAN §8.4 "sharpness rules").
@@ -448,7 +463,15 @@ local City = {
 		minProud = 0.05, -- anything laid on a face stands at least this far proud of it (no coplanar faces)
 		glassInset = 0.6, -- glass sits this far inside its frame
 		frontClear = 3, -- solid masses stand at least this far behind the site's front line
-		glassReflectance = 0.15, -- tower glass mirrors the sky
+		glassReflectance = 0.27, -- tower glass mirrors the sky (roast point 2: 0.25..0.3)
+		-- A tower this tall or taller drops the window-grid overlay above its podium for floor lines only (Kit.glass):
+		-- from across the city a grid of mullions turns into a blue checkerboard (roast point 2).
+		gridMaxHeight = 160,
+		gridFrom = 40, -- studs up: the lobby and podium glass below keep their grid
+		-- A pale or pastel SmoothPlastic wall (a box part) is built in Plaster, stucco that doesn't mirror the blue
+		-- sky: every channel at least stuccoMin and the brightest at least stuccoBright (0..1).
+		stuccoMin = 0.45,
+		stuccoBright = 0.75,
 		railTransparency = 0.55, -- balcony glass rails, the only see-through glass
 		railHeight = 3.2,
 		trimShadowMin = 1, -- trim thinner than this in both directions casts no shadow
@@ -470,15 +493,18 @@ local City = {
 	},
 
 	palettes = {
-		-- Tower glass, cool blues and teals (Glass, reflectance kit.glassReflectance): bright blue in sun to a deep
-		-- harbour navy.
+		-- Tower glass (Glass, reflectance kit.glassReflectance). 2026-10-26 roast point 2: every tower wore one
+		-- saturated cobalt and the skyline blurred into one box. These are ARCHETYPES.md's tokens, pale and varied the
+		-- way a Miami condo's glass shows the sky: pale aqua (glass_aqua), silver (glass_silver), a sea-green teal, a soft sky
+		-- blue, charcoal (glass_dark, kept under the old name navy) and a warm grey smoke. Each archetype's palettes
+		-- pick their own from these.
 		glass = {
-			aqua = rgb(64, 110, 128),
-			blue = rgb(52, 86, 112),
-			teal = rgb(40, 84, 100),
-			navy = rgb(34, 64, 82),
-			silver = rgb(110, 140, 160),
-			smoke = rgb(38, 48, 58),
+			aqua = rgb(94, 154, 168),
+			blue = rgb(96, 136, 166),
+			teal = rgb(74, 132, 128),
+			navy = rgb(44, 58, 68),
+			silver = rgb(159, 179, 191),
+			smoke = rgb(76, 80, 82),
 		},
 		-- Frames, slab edges and fins.
 		frame = {

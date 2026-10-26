@@ -32,6 +32,15 @@ export type Keyframe = {
 	-- A high threshold by day keeps white stucco from glowing; a lower one at night lets neon and crowns halo.
 	bloomIntensity: number,
 	bloomThreshold: number,
+	-- The colour grade's tint (scene.colorCorrection's effect, TintColor): the whole frame warmed or cooled, the one
+	-- lever that turns sunlit white stucco cream by day and peach at golden hour (the sun tint above only adds light,
+	-- and white is already as bright as it gets). Nil: scene.colorCorrection.tintColor.
+	tint: Color3?,
+	-- The Atmosphere's thickness, haze and glare at this hour (nil: dayNight.atmosphere's). A thicker, hazier one at
+	-- night is what paints the sky navy instead of black (it needs the Sky scene.sky makes; 2026-10-26 in Studio).
+	density: number?,
+	haze: number?,
+	glare: number?,
 }
 
 -- The shape of a day: what DayNightService's clock maths reads (tests/DayNight.spec also passes its own).
@@ -100,37 +109,47 @@ local function mix(species: string, weight: number): Mix
 end
 
 -- The sky by day, the same from mid-morning to late afternoon: a high, hard subtropical sun, a saturated cyan sky and a
--- slightly warm sun tint (docs/city/SCENERY.md §9). The fill light is kept low so the sun, the shadows and the sky's
--- reflections give the shapes their edges (2026-10-25: a brighter fill washed every model flat). The bloom threshold
--- stays above sunlit white stucco, so by day only glints and the sun glow.
+-- warm sun (docs/city/SCENERY.md §9). The fill light is kept low so the sun, the shadows and the sky's reflections give
+-- the shapes their edges (2026-10-25: a brighter fill washed every model flat), and warm (2026-10-26 roast point 5: a
+-- grey-blue fill turned white stucco "freezer frost" blue in the shade; a warm one and the cream grade read as Ocean
+-- Drive's warm white). The bloom threshold stays above sunlit white stucco, so by day only glints and the sun glow.
 local DAY: Keyframe = {
 	clock = 0,
-	ambient = rgb(58, 60, 68),
-	outdoorAmbient = rgb(116, 118, 126),
-	fogColor = rgb(190, 212, 232),
-	atmosphereColor = rgb(192, 212, 232),
-	atmosphereDecay = rgb(98, 118, 142),
+	ambient = rgb(70, 64, 58),
+	outdoorAmbient = rgb(132, 124, 114),
+	fogColor = rgb(196, 214, 230),
+	atmosphereColor = rgb(200, 214, 228),
+	atmosphereDecay = rgb(110, 124, 146),
 	brightness = 2.8,
-	colorShiftTop = rgb(24, 18, 8),
+	colorShiftTop = rgb(70, 50, 24),
 	exposure = 0,
 	bloomIntensity = 0.6,
 	bloomThreshold = 2.2,
+	tint = rgb(255, 246, 232),
+	density = 0.26,
+	haze = 0.8,
+	glare = 0.25,
 }
 
--- The sky by night: a deep electric blue (never black), with as much fill light as before so a road and a car still
--- read on a phone, a touch of exposure, and a lower bloom threshold so neon signs and tower crowns halo.
+-- The sky by night: a deep navy going electric blue at the horizon (never black: the thicker, hazier, blue atmosphere
+-- paints it, over the Sky scene.sky makes; 2026-10-26 in Studio), with enough fill light that a road, a car and a
+-- suburb street read on a phone, a touch of exposure, and a lower bloom threshold so neon signs and tower crowns halo.
 local NIGHT: Keyframe = {
 	clock = 0,
-	ambient = rgb(28, 34, 62),
-	outdoorAmbient = rgb(56, 66, 112),
-	fogColor = rgb(20, 24, 48),
-	atmosphereColor = rgb(48, 58, 110),
-	atmosphereDecay = rgb(28, 34, 84),
+	ambient = rgb(32, 38, 70),
+	outdoorAmbient = rgb(68, 78, 128),
+	fogColor = rgb(26, 30, 66),
+	atmosphereColor = rgb(60, 64, 134),
+	atmosphereDecay = rgb(60, 46, 118),
 	brightness = 1.4,
 	colorShiftTop = rgb(0, 6, 18),
 	exposure = 0.2,
 	bloomIntensity = 1,
 	bloomThreshold = 1.8,
+	tint = rgb(242, 244, 255),
+	density = 0.3,
+	haze = 1.9, -- 2.1 washed the whole skyline electric blue in the playtest; 1.7 left the zenith nearly black
+	glare = 0,
 }
 
 local function at(clock: number, look: Keyframe): Keyframe
@@ -172,6 +191,10 @@ local Environment = {
 				exposure = 0.15,
 				bloomIntensity = 0.95,
 				bloomThreshold = 1.85,
+				tint = rgb(246, 238, 255),
+				density = 0.3,
+				haze = 1.7,
+				glare = 0,
 			},
 			{
 				-- Dawn: low pink-orange light.
@@ -182,40 +205,54 @@ local Environment = {
 				atmosphereColor = rgb(240, 180, 160),
 				atmosphereDecay = rgb(204, 120, 116),
 				brightness = 2.1,
-				colorShiftTop = rgb(60, 30, 14),
+				colorShiftTop = rgb(150, 76, 34),
 				exposure = 0.05,
 				bloomIntensity = 0.8,
 				bloomThreshold = 2,
+				tint = rgb(255, 234, 216),
+				density = 0.27,
+				haze = 1,
+				glare = 0.35,
 			},
 			{
 				-- The morning golden hour, warming into day.
 				clock = 7.75,
-				ambient = rgb(66, 62, 66),
-				outdoorAmbient = rgb(130, 120, 116),
+				ambient = rgb(70, 64, 62),
+				outdoorAmbient = rgb(134, 122, 114),
 				fogColor = rgb(216, 200, 186),
 				atmosphereColor = rgb(222, 206, 194),
 				atmosphereDecay = rgb(150, 128, 124),
 				brightness = 2.5,
-				colorShiftTop = rgb(40, 26, 10),
+				colorShiftTop = rgb(110, 70, 30),
 				exposure = 0,
 				bloomIntensity = 0.7,
 				bloomThreshold = 2.1,
+				tint = rgb(255, 242, 226),
+				density = 0.27,
+				haze = 1,
+				glare = 0.3,
 			},
 			at(9, DAY),
 			at(16, DAY),
 			{
-				-- The evening golden hour: pink-orange light on the white towers.
+				-- The evening golden hour: pink-orange light on the white towers. The sun tint is strong and the sun a
+				-- little lower in brightness so white can take its colour (at full brightness white just clips), the grade
+				-- warms the frame to peach, and a hazier pink atmosphere keeps the sky from going teal (roast point 5).
 				clock = 17.25,
-				ambient = rgb(80, 66, 64),
-				outdoorAmbient = rgb(156, 120, 106),
+				ambient = rgb(84, 66, 62),
+				outdoorAmbient = rgb(158, 118, 104),
 				fogColor = rgb(236, 170, 142),
 				atmosphereColor = rgb(240, 170, 150),
 				atmosphereDecay = rgb(210, 110, 120),
-				brightness = 2.4,
-				colorShiftTop = rgb(72, 34, 18),
+				brightness = 2.1,
+				colorShiftTop = rgb(200, 96, 44),
 				exposure = 0,
 				bloomIntensity = 0.8,
 				bloomThreshold = 2,
+				tint = rgb(255, 230, 208),
+				density = 0.27,
+				haze = 1, -- 1.6 hung a milky veil over the skyline across the bay (playtest 2026-10-26)
+				glare = 0.4,
 			},
 			{
 				-- Dusk: violet, the neon just on (duskClock 18).
@@ -226,10 +263,14 @@ local Environment = {
 				atmosphereColor = rgb(132, 102, 150),
 				atmosphereDecay = rgb(90, 60, 120),
 				brightness = 1.7,
-				colorShiftTop = rgb(20, 8, 24),
+				colorShiftTop = rgb(60, 24, 60),
 				exposure = 0.1,
 				bloomIntensity = 0.95,
 				bloomThreshold = 1.85,
+				tint = rgb(250, 236, 255),
+				density = 0.3,
+				haze = 1.7,
+				glare = 0.1,
 			},
 			at(19.75, NIGHT),
 		} :: { Keyframe },
@@ -251,7 +292,19 @@ local Environment = {
 			lightingStyle = Enum.LightingStyle.Realistic, -- the naturalistic look (Soft is the stylized, flat one)
 			-- When a phone has to drop quality, keep shadows and good shaders close by and give up view distance first.
 			prioritizeLightingQuality = true,
-			geographicLatitude = 25.8, -- degrees north: a high sun with short, crisp shadows
+			-- Degrees north. Not Miami's real 25.8: the engine always draws the midsummer sun, so at 25.8 it passed almost
+			-- straight overhead and the beach row's south fronts (and every south face downtown) never saw it, standing in
+			-- blue shade all day (2026-10-26 in Studio, roast point 5). At 50 the noon sun stands 63 degrees up, a little
+			-- to the south: still high and hard with short shadows, and the fronts facing the sea take the light.
+			geographicLatitude = 50,
+			-- The Sky made under Lighting when it has none (the place had none). Without one the engine draws its plain
+			-- night sky, black whatever the Atmosphere says; with one the night atmosphere turns it navy. Its six faces
+			-- are the engine's own default sky, so the day looks as before.
+			sky = {
+				name = "SceneSky",
+				faces = "rbxasset://textures/sky/sky512_%s.tex", -- %s: bk, dn, ft, lf, rt, up
+				starCount = 2000,
+			},
 			globalShadows = true,
 			shadowSoftness = 0.1, -- 0 = razor-sharp, 1 = blurry
 			environmentSpecularScale = 1, -- sky reflections on paint, glass and metal
@@ -291,6 +344,15 @@ local Environment = {
 		showSeed = 7919,
 		-- Parts switched per frame at dusk and dawn, so the lights come on across the county over a few frames.
 		flipPerStep = 200,
+		-- Lit window runs (Dev/City/Kit glass with `lit`): each run glows in one of these (its own NightColor attribute,
+		-- picked by its name), a mix of warm lamp light, cream and cool screen light as a real tower at night has,
+		-- instead of one flat amber (roast 2026-10-26 point 3). Kept as dim as the old single colour so they stay under
+		-- the night bloom. windowDarkShare of the runs above windowDarkFrom studs stay dark at night (the archetypes
+		-- already light only some floors, so about 35..55 % of a tower glows); the lobbies and shopfronts below it
+		-- always light.
+		windowTints = { rgb(104, 80, 50), rgb(100, 94, 82), rgb(70, 84, 112) },
+		windowDarkShare = 0.3,
+		windowDarkFrom = 30,
 		kinds = {
 			streetlight = {
 				dayMaterial = Enum.Material.SmoothPlastic,
@@ -524,16 +586,17 @@ local Environment = {
 		-- coconut, sabal) or a block tree (Dev/MapBuilder TUNING.treeSpecies). The towns are mostly palms
 		-- (docs/city/SCENERY.md §1, CITY_PLAN §6); the country keeps its broadleaf woods, and the outskirts lean to pines.
 		mixes = {
+			-- No two-cube broadleaf trees in the city or its parks (roast 2026-10-26 point 9): palms, sea grape and the
+			-- flat live oak only. The country and the outskirts keep their broadleaf woods.
 			park = {
 				mix("coconut", 0.3),
-				mix("sabal", 0.25),
-				mix("royal", 0.1),
-				mix("sea_grape", 0.15),
-				mix("broadleaf", 0.2),
+				mix("sabal", 0.3),
+				mix("royal", 0.15),
+				mix("sea_grape", 0.25),
 			},
-			suburbs = { mix("live_oak", 0.35), mix("sabal", 0.25), mix("royal", 0.2), mix("broadleaf", 0.2) },
+			suburbs = { mix("live_oak", 0.3), mix("sabal", 0.35), mix("royal", 0.25), mix("sea_grape", 0.1) },
 			beach = { mix("coconut", 0.45), mix("sabal", 0.25), mix("sea_grape", 0.3) },
-			arts = { mix("sabal", 0.4), mix("royal", 0.3), mix("live_oak", 0.3) },
+			arts = { mix("sabal", 0.45), mix("royal", 0.35), mix("live_oak", 0.2) },
 			country = {
 				mix("broadleaf", 0.35),
 				mix("live_oak", 0.15),

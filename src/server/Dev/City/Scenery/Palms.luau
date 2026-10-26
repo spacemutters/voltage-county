@@ -76,7 +76,7 @@ function Palms.specs(
 	end
 	local s, height = Palms.size(species, rolls, scale)
 	local lean = species.lean[1] + rolls.lean * (species.lean[2] - species.lean[1])
-	local pivot = pivotAt(foot - Vector3.yAxis * PALMS.sink, yaw, lean)
+	local pivot = pivotAt(foot - Vector3.yAxis * (species.sink or PALMS.sink), yaw, lean)
 	local trunkFrame = pivot * CFrame.Angles(-math.rad(species.baseLean), 0, 0)
 
 	-- The trunk a car hits.
@@ -128,6 +128,38 @@ function Palms.specs(
 		},
 	}
 	return trunk, crown
+end
+
+-- A plant cloned from a template the same way (a planter's clump): one decor spec standing for its box, its foot at
+-- `foot`, turned `yaw` (radians), scaled to `height` tall, about `spread` across. Its stand-in is nothing (Palms.fallback
+-- knows no species by the template's name), so a planter stays an empty box while the mesh is missing.
+function Palms.plant(
+	folder: string,
+	name: string,
+	path: { string },
+	foot: Vector3,
+	yaw: number,
+	height: number,
+	spread: number
+): PartSpec
+	local pivot = CFrame.new(foot) * CFrame.Angles(0, yaw, 0)
+	return {
+		folder = folder,
+		name = name,
+		class = "Part",
+		shape = "block",
+		role = "scenery",
+		size = Vector3.new(spread, height, spread),
+		cframe = pivot * CFrame.new(0, height / 2, 0),
+		color = Color3.fromRGB(70, 120, 60),
+		material = Enum.Material.LeafyGrass,
+		collide = false,
+		query = false,
+		touch = false,
+		shadow = false,
+		transparency = 1,
+		template = { path = path, pivot = pivot, height = height, variant = 1, fallback = path[#path] },
+	}
 end
 
 ---------------------------------------------------------------------------------------------------------------
@@ -307,8 +339,16 @@ function Palms.fit(clone: Instance, t: TemplateSpec)
 	end
 end
 
+-- The attribute a stand-in palm's Model carries. The plan and the phone gate count a palm as two parts; a stand-in is
+-- about ten, so Dev/MapCheck fails a map that holds any (the templates are Studio-owned: a place copy without
+-- ServerStorage.CityAssets would otherwise pass its budgets while far over them).
+Palms.standInAttribute = "PalmStandIn"
+
+local warned = false
+
 -- What the build puts in a palm crown's place: the template's clone, or a Model of the stand-in's parts made with
--- `makePart` (Dev/MapBuilder createPart). Named after the spec.
+-- `makePart` (Dev/MapBuilder createPart), marked with standInAttribute (warned once per session). Named after the
+-- spec.
 function Palms.instantiate(spec: PartSpec, makePart: (PartSpec) -> BasePart): Instance
 	local t = spec.template
 	if t == nil then
@@ -321,8 +361,16 @@ function Palms.instantiate(spec: PartSpec, makePart: (PartSpec) -> BasePart): In
 		clone.Name = spec.name
 		return clone
 	end
+	if not warned then
+		warned = true
+		warn(
+			`[Palms] no template at ServerStorage.{table.concat(t.path, ".")}: building parts-only stand-in palms, `
+				.. "about five times the parts the budgets count (Dev/MapCheck fails while any stand)"
+		)
+	end
 	local model = Instance.new("Model")
 	model.Name = spec.name
+	model:SetAttribute(Palms.standInAttribute, true)
 	for _, part in Palms.fallback(t, spec.folder, spec.name) do
 		makePart(part).Parent = model
 	end

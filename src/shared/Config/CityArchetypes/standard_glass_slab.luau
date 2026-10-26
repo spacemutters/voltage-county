@@ -5,9 +5,9 @@
 return {
 	district = "downtown",
 	weight = 1,
-	maxCopies = 10,
+	maxCopies = 16,
 	perBlock = 1,
-	minSpacing = 600,
+	minSpacing = 400,
 	minWidth = 70,
 	maxWidth = 150,
 	minDepth = 46,

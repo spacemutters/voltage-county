@@ -3,22 +3,26 @@
 -- round a pool court open to the road (a U, or an L), flat roofs reaching out over the court; along the back wing an
 -- upper catwalk on pairs of thin pastel V-struts, a balustrade of slim bars, doors in two alternating pastels, jalousie
 -- window bands; a stair rising to the catwalk beside a flat-arched portal; stone-faced piers at the wings' road ends,
--- teal shadow boxes and a shell fountain. By the road its signature: a pill-shaped name board held up by two lattice
--- pylons in two bright colours (crown 1 leaning in toward each other, crown 2 splayed out under a starburst), with a
--- VACANCY panel; and over the office a raked porte-cochère on V-legs whose masts pierce it and end in saucers.
+-- teal shadow boxes and a shell fountain. By the road its signature: a cloud-shaped name board (a pill with two bumps
+-- along its top) held high over the roof by two lattice pylons in two bright colours, standing in a planted island of
+-- stone (crown 1 leaning in a little under an AIR CONDITIONED header bar, crown 2 splayed out under a starburst), with
+-- a VACANCY panel under it; and over the office a raked porte-cochère on V-legs whose masts pierce it and end in
+-- saucers.
 --
--- What makes it itself: a name board held high by two leaning lattice pylons in front of a catwalk motel.
+-- What makes it itself: a cloud of a name board held high by two lattice pylons in front of a catwalk motel.
 -- Placement, sizes, heights and its budget: Config/CityArchetypes/mimo_truss_motel.
 -- Variants: palette (4 pairs of pylon colours with their doors, struts and board), crown (1 pylons leaning in, ball
--- finials; 2 pylons splayed out, a starburst over the board), rhythm (1 a U round the court, 2 an L, the court open on
--- the sign's side), mirror (the sign and the office swap sides).
+-- finials, a header bar; 2 pylons splayed out, a starburst over the board), rhythm (1 a U round the court, 2 an L, the
+-- court open on the sign's side), mirror (the sign and the office swap sides). The pylons stand further apart on a
+-- wider site.
 --
 -- Previewing (the Studio helper): look from the road at eye height and from a front corner. Check that the pylons'
--- lattice zigzags between their two rails, that the board's round ends sit on the pylons, that the V-struts meet the
--- catwalk's edge, that the stair's slope rises toward the portal (not away), that the bars of the balustrade show
--- (a see-through part with a bar texture), that the porte-cochère rakes up toward the road. At night: the board glows
--- pink, the VACANCY panel and the office sign cyan, the pool cyan, the ground-floor rooms warm, and the wash lights the
--- upper doors. Compare with photos of its inspiration (ARCHETYPES.md B11).
+-- lattice zigzags between their two rails, that the board's round ends sit on the pylons and its two bumps read as a
+-- cloud's top (the header and the starburst clear of them), that the V-struts meet the catwalk's edge, that the
+-- stair's slope rises toward the portal (not away), that the bars of the balustrade show (a see-through part with a
+-- bar texture), that the porte-cochère rakes up toward the road. At night: the board and its bumps glow pink, the
+-- header, the VACANCY panel and the office sign cyan, the pool cyan, the ground-floor rooms warm, and the wash lights
+-- the upper doors. Compare with photos of its inspiration (ARCHETYPES.md B11).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -50,18 +54,22 @@ local SHAPE = {
 	shadowBox = { size = 2.4, proud = 0.8, step = 3.4 },
 	fountain = { basin = 7, height = 1.5, shell = 6 },
 	sign = {
-		rise = 12,
-		lean = 6,
-		rail = 0.5,
+		rise = 17, -- the pylons' tops over the roof
+		lean = 3,
+		rail = 0.55,
 		gap = 2.8,
-		spread = 18,
-		lattice = 5,
-		bar = 0.35,
+		spread = { 0.24, 15, 21 }, -- the pylons apart: share of the site's width, clamped
+		lattice = 6,
+		bar = 0.4,
 		behind = 1,
-		board = { 1, 8 },
+		board = { 4, 11 }, -- the board's foot and top over the roof
+		bumps = { 0.36, 0.7, 0.12 }, -- the cloud's two bumps: out from the middle (share of the board's width), their
+		-- diameter (share of its height) and how far under its top their centres sit (share of its height)
+		header = { 0.62, 0.9, 1.8 }, -- the header bar: share of the board's width, its gap over the bumps, its height
 	},
+	island = { 1.2, 1.4 }, -- the planted island round the pylons' feet: its margin and its height
 	vacancy = { width = 8, height = 2 },
-	star = { size = 5, lift = 3 }, -- crown 2: the starburst over the board
+	star = { size = 5, lift = 3.6 }, -- crown 2: the starburst over the board's cloud
 	porte = { width = 22, low = 11, high = 13, thick = 0.8, mast = 7, saucer = 3, vee = 1.4, leg = 0.4, inset = 4 },
 	court = 0.3, -- the paving's top
 	foot = 0.5, -- slanted legs and rails start this far under the ground (their corners dip a little further)
@@ -394,9 +402,10 @@ local function build(m: Types.Model)
 	-- The sign: two lattice pylons (leaning in, or splayed out) holding a pill-shaped board and a VACANCY panel
 	-------------------------------------------------------------------------------------------------------
 	local sg = SHAPE.sign
+	local spread = math.clamp(W * sg.spread[1], sg.spread[2], sg.spread[3])
 	local Hp = H + sg.rise
 	local slope = math.tan(math.rad(sg.lean)) * (if crown == 1 then -1 else 1) -- outward drift per stud of height
-	local reachOut = sg.spread / 2 + sg.gap / 2 + math.max(0, slope * Hp) + sg.rail
+	local reachOut = spread / 2 + sg.gap / 2 + math.max(0, slope * Hp) + sg.rail
 	local sxC = x1 - reachOut - 1
 	local zP = -hd + 3.5
 	local zR = zP + sg.behind -- the pylons' plane
@@ -406,7 +415,7 @@ local function build(m: Types.Model)
 	end
 	local tops: { number } = {}
 	for i, side in { -1, 1 } do
-		local foot = sxC + side * sg.spread / 2
+		local foot = sxC + side * spread / 2
 		local look = Kit.look(pal.pylons[i], Enum.Material.SmoothPlastic)
 		-- Two rails side by side along the road (so the lattice faces the street), behind the board.
 		for r, dx in { -sg.gap / 2, sg.gap / 2 } do
@@ -441,8 +450,8 @@ local function build(m: Types.Model)
 	local names = City.signNames.hotels
 	local yb0, yb1 = H + sg.board[1], H + sg.board[2]
 	local bh = yb1 - yb0
-	local edgeL = xAt(sxC - sg.spread / 2, -1, yb1) + 0.3
-	local edgeR = xAt(sxC + sg.spread / 2, 1, yb1) - 0.3
+	local edgeL = xAt(sxC - spread / 2, -1, yb1) + 0.3
+	local edgeR = xAt(sxC + spread / 2, 1, yb1) - 0.3
 	local boardLook = Kit.look(pal.board, Enum.Material.SmoothPlastic)
 	Kit.sign(
 		m,
@@ -470,6 +479,52 @@ local function build(m: Types.Model)
 			"neonPink"
 		)
 	end
+	-- Two bumps along the board's top, so it reads as a cloud, and a header bar over them.
+	local bw = edgeR - edgeL
+	local bp = sg.bumps
+	local bumpD = bh * bp[2]
+	local bumpY = yb1 - bh * bp[3]
+	for i, dx in { -1, 1 } do
+		Kit.lit(
+			Kit.tube(
+				m,
+				`Bump{i}`,
+				Vector3.new(sxC + dx * bw * bp[1], bumpY, zP - 0.25),
+				Vector3.new(sxC + dx * bw * bp[1], bumpY, zP + 0.25),
+				bumpD,
+				boardLook,
+				"detail"
+			),
+			"neonPink"
+		)
+	end
+	if crown == 1 then
+		-- (Crown 2 has its starburst there instead.)
+		local hd2 = sg.header
+		local hy0 = bumpY + bumpD / 2 + hd2[2]
+		Kit.sign(
+			m,
+			"Header",
+			Vector3.new(sxC - bw * hd2[1] / 2, hy0, zP - 0.2),
+			Vector3.new(sxC + bw * hd2[1] / 2, hy0 + hd2[3], zP + 0.2),
+			Enum.NormalId.Front,
+			"AIR CONDITIONED",
+			pal.board,
+			P.deco.white,
+			Enum.Font.Sarpanch,
+			"sign"
+		)
+	end
+	-- The planted island the pylons stand in.
+	local isl = SHAPE.island
+	local ix = spread / 2 + sg.gap / 2 + sg.rail + isl[1]
+	Kit.planter(
+		m,
+		"Island",
+		Vector3.new(sxC - ix, 0, zR - isl[1] - 0.6),
+		Vector3.new(sxC + ix, isl[2], zR + isl[1] + 0.4),
+		Kit.look(rgb(185, 168, 142), Enum.Material.Sandstone)
+	)
 	local vc = SHAPE.vacancy
 	Kit.sign(
 		m,

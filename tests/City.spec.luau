@@ -125,7 +125,16 @@ return function(t: Harness.Api)
 				need(districts[c.district] == true and City.districtLooks[c.district] ~= nil, "unknown district")
 				need(c.weight >= 0 and c.maxCopies >= 1 and c.perBlock >= 1, "weights and copies")
 				need(c.minWidth > 0 and c.minWidth <= c.maxWidth, "widths")
-				need(c.minDepth > 0 and c.minDepth <= DEPTH, "depth deeper than a plot")
+				-- A site deeper than a plot reaches back with a core claim (Config/City claims), a one-off as deep as its
+				-- landmark entry asks.
+				local deepest = math.max(DEPTH, City.claims.maxDepth)
+				for _, entry in City.landmarks do
+					if entry.id == id and entry.depth then
+						deepest = math.max(deepest, entry.depth :: number)
+					end
+				end
+				need(c.minDepth > 0 and c.minDepth <= deepest, "depth deeper than a plot and any claim")
+				need(c.claimDepth == nil or (c.claimDepth :: number) >= c.minDepth, "claimDepth under minDepth")
 				need(c.maxPlots >= 1, "maxPlots")
 				need(c.heights.min > 0 and c.heights.min <= c.heights.max, "heights")
 				need(c.crownMax >= 0 and c.budget > 0, "crown or budget")
@@ -261,6 +270,19 @@ return function(t: Harness.Api)
 			Kit.gableRoof(m, "Gable", Vector3.new(-10, 20, -6), Vector3.new(10, 26, 6), "x", 1.5, 0.5, white, white)
 			Kit.archHead(m, "Arch", -3, 3, 9, -6, -4.6, 2.4, white)
 			Kit.archWindow(m, "ArchWindow", -2, 2, 12, 16, -6, Color3.new(0.2, 0.3, 0.4), { lit = true })
+			Kit.skin(m, "Skin", "front", -6, -8, 8, 0, 10, 0.8, white, {
+				{ a0 = -6, a1 = -2, y0 = 2, y1 = 7, lit = true },
+				{ a0 = 2, a1 = 6, y0 = 0, y1 = 8, glass = false },
+			}, { sill = { proud = 0.4, thick = 0.3, look = white } })
+			Kit.skin(m, "SideSkin", "right", 12, -5, 5, 0, 10, 0.8, white, { { a0 = -2, a1 = 2, y0 = 2, y1 = 7 } })
+			Kit.railing(
+				m,
+				"Railing",
+				Vector3.new(-4, 30, -6),
+				Vector3.new(4, 33, -5.5),
+				{ Enum.NormalId.Front, Enum.NormalId.Left },
+				white.color
+			)
 			return m.specs
 		end
 
@@ -476,6 +498,41 @@ return function(t: Harness.Api)
 			t.expect(window[2].tag).toBe(Environment.nightLights.tag)
 		end)
 
+		t.it("cuts a wall's skin round its openings, panes set back behind it, mirrored with the site", function()
+			for _, mirror in { false, true } do
+				local m = model(mirror)
+				local out = Kit.skin(m, "SK", "front", 0, 0, 20, 0, 12, 1, white, {
+					{ a0 = 2, a1 = 6, y0 = 3, y1 = 8, lit = true },
+					{ a0 = 9, a1 = 13, y0 = 3, y1 = 8, lit = true },
+					{ a0 = 15, a1 = 18, y0 = 0, y1 = 9, glass = false },
+				}, { sill = { proud = 0.4, thick = 0.3, look = white } })
+				local area, pieces, panes, sills = 0, 0, 0, 0
+				for _, spec in out do
+					local lo, hi = Kit.localBounds(m.frame, spec)
+					if spec.material == Enum.Material.Glass then
+						panes += 1
+						t.expect(lo.Z).toBeNear(-0.06, EPS) -- on the face behind the skin, never level with it
+						t.expect(spec.tag).toBe(Environment.nightLights.tag)
+					elseif string.find(spec.name, "Sill") then
+						sills += 1
+						t.expect(lo.Z).toBeNear(-1.4, EPS)
+					else
+						pieces += 1
+						area += (hi.X - lo.X) * (hi.Y - lo.Y)
+						t.expect(lo.Z).toBeNear(-1, EPS)
+						t.expect(hi.Z).toBeNear(0, EPS)
+						t.expect(lo.X >= (if mirror then -20 else 0) - EPS).toBe(true)
+						t.expect(hi.X <= (if mirror then 0 else 20) + EPS).toBe(true)
+					end
+				end
+				-- The wall less its openings, in seven boxes (the door's jamb merges up its whole height).
+				t.expect(pieces).toBe(7)
+				t.expect(area).toBeNear(20 * 12 - 2 * 4 * 5 - 3 * 9, EPS)
+				t.expect(panes).toBe(1) -- the two windows share one run of glass behind their pier
+				t.expect(sills).toBe(2)
+			end
+		end)
+
 		t.it("gives masses collisions and shadows, trim shadows only, and detail neither", function()
 			local m = model(false)
 			local box = Kit.box(m, "B", Vector3.zero, Vector3.one * 4, white)
@@ -537,7 +594,23 @@ return function(t: Harness.Api)
 				local problems: { string } = {}
 				local most, fewest = 0, math.huge
 				local widths = { config.minWidth, (config.minWidth + config.maxWidth) / 2, config.maxWidth }
-				local depths = { config.minDepth, DEPTH }
+				-- Its shallowest, a plot's, and the deeper sites a core claim gives it (its claimDepth; a one-off's
+				-- landmark depth).
+				local depths = { config.minDepth }
+				local function addDepth(d: number)
+					if not table.find(depths, d) then
+						table.insert(depths, d)
+					end
+				end
+				addDepth(math.max(config.minDepth, DEPTH))
+				if config.claimDepth then
+					addDepth(math.min(config.claimDepth :: number, City.claims.maxDepth))
+				end
+				for _, entry in City.landmarks do
+					if entry.id == id and entry.depth then
+						addDepth(entry.depth :: number)
+					end
+				end
 				local heights = { config.heights.min, config.heights.max }
 				local n = 0
 				for _, width in widths do
