@@ -144,31 +144,35 @@ cluster, the 560-stud spire, and the north peak.
 
 ### Block caps for repeatable buildings
 
-One-offs are exempt. An asterisk means the block holds a one-off or a gameplay spot (section 5).
+One-offs are exempt. An asterisk means the block holds a one-off or a gameplay spot (section 5). Updated 2026-10-25
+for the heights in ARCHETYPES.md: the repeatable towers there are 260..490 studs, so the tower blocks are capped at
+300..520 (d4 stays at 380 under the twin ribbon towers by the spawn street). The live numbers are
+`Config/City.heightCaps`.
 
 ```
           a        b        c         d          e           f
-row 1   M 130    M 150    H 200     T 300      H 220       M 160
-row 2   M 120    H 180    H 240     T 340*     T 300*      H 220*
-row 3   M 110    H 170    (park)    T 360*     T 320       H 240*
-row 4   M 120*   H 180    H 260     T 380*     T 340*      H 240
-row 5   M 100    M 150*   H 240*    H 220*     L 60* spawn L 70* showroom
-row 6   M 110    H 180    T 300     T 340*     H 220       (auto mall)
+row 1   M 140    H 200    T 300     S 420      T 320       H 200
+row 2   H 160    T 260    S 440     S 500*     S 460       T 320*
+row 3   M 150    T 300    (park)    S 520*     S 480       T 360
+row 4   H 160    T 320    S 460     T 380*     S 480*      T 340
+row 5   M 130    H 220    T 400*    S 420      L 60* spawn L 70* showroom
+row 6   M 140    T 260    S 420     S 460*     T 260       (auto mall)
 outer   north L 60 (motel row) | west L 54 (bright storefront row) | east M 96 (garages, lofts) |
-        south: the bay row, H 200 between its one-offs
+        south: the bay row, H 240 between its one-offs
 ```
 
-Rules on top of the caps:
+Rules on top of the caps (all in `Dev/City/CityBuilder`):
 
-- **Tower slots.** In a T-cap block, at most one repeatable tower (band T); a one-off takes that slot. In an H-cap
-  block, at most two H sites. Everything else in the block is M or L.
-- **Low near gameplay spots.** A site within 40 studs of a MapLayout location's footprint is capped at M. This keeps
-  the charging plaza, the used lot, the fuel station and the depots open to the eye.
-- **Tower site in a run.** In a run that gets a tower, the tower takes the end nearest the block's peak corner (the
-  corner nearest Main and Commerce, or the north peak for rows 1..2). The rest of the run steps down: podium sites at
-  30..60 % of the tower's height.
+- **Tower slots** (`City.slots`). A block whose cap reaches band T holds one repeatable tower (band T); a one-off that
+  tall takes that slot. A downtown block holds at most two H sites. Once a slot is taken, the rest of the block is
+  capped under that band.
+- **Low near gameplay spots.** A site within 40 studs of a MapLayout location's footprint is capped at 160
+  (`nearSpotCap`). This keeps the charging plaza, the used lot, the fuel station and the depots open to the eye.
+- **Tower site in a run.** Each tower slot takes the window of free plots nearest a skyline peak (`City.towers.peaks`:
+  Main and Commerce, and the north peak). The rest of its run steps down to at most 60 % of the tower
+  (`rules.stepDown`).
 - **No twin heights.** No two T or S buildings within 600 studs of each other are within 24 studs (two floors) of the
-  same height.
+  same height. Later ones move inside their own height range (`rules.twinRange`, `twinGap`).
 
 ## 3. Districts
 
@@ -183,13 +187,17 @@ Code ids are neutral, and in-game zone names stay as they are (decision D2):
 | mesa_test_site | `quarry` | a coral-rock limestone quarry and airfield proving ground |
 | county_loop | `loop` | Florida expressway and sawgrass country |
 
-How the archetype tables work:
+Which building types stand where (updated 2026-10-25). The building types and their ids are `ARCHETYPES.md`'s
+(T01..T18, B01..B12, R01..R08, W01..W05, C01..C09); the older ids this plan used first (balcony_stack, fin_tower,
+motel_pylon, deco_three_part, med_villa, sawtooth_hall...) are retired. Placement and the live
+numbers are in `Config/City` (`areas`, `landmarks`, `heightCaps`) and `Config/CityArchetypes/<id>` (each type's
+sizes, heights, copies and budget).
 
-- Each archetype names the real buildings it takes after (docs only).
-- "Fits" is the smallest site, width along the road by depth.
-- "Parts" is the target per building, and the builder holds it under that.
-- Every archetype composes the shared kit (section 8.4): podium, glass core, slab bands, fins, rounded corners,
-  crowns, awnings, eyebrows, signs.
+- Each district draws its own types (an archetype's `district`). An **area** (`City.areas`) can mix in other
+  districts' low and mid-rise types, weight by weight, so a low block is never an old box: downtown borrows motels,
+  garden apartments, townhouse rows, arcades and garages.
+- One-offs (section 5) are placed first at their anchors, then one repeatable tower per tower block, then the rest.
+- Every archetype composes the shared kit (section 8.4).
 
 ### 3.1 Downtown: Brickell and Downtown Miami
 
@@ -197,35 +205,18 @@ Identity: big glass towers on street podiums. White balcony slabs stack up blue-
 Pool-deck crowns, lit tops at night. At street level, shops and palms. On the edges, mid-century motels and bright
 storefronts.
 
-**Repeatable archetypes**
+**Types (ARCHETYPES.md ids)**
 
-| Id | Inspiration | Band | Fits | Parts | Silhouette idea | Variation knobs |
-|---|---|---|---|---|---|---|
-| balcony_stack | Brickell condo towers with white wrap-around balcony slabs (Icon Brickell, Echo Brickell, Paramount Miami Worldcenter) | H, T | 45x40 (H), 70x60 (T) | 30..55 | white slab edges every 1 to 3 floors over tinted glass, pool-deck crown with cabana and pergola | glass tint, slab rhythm (1/2/3 floors), square or rounded corners, crown (cabana, pergola, lit fins), mirror |
-| fin_tower | glass towers with vertical fins (Panorama Tower, Brickell World Plaza, 1450 Brickell) | H, T | 60x50 | 25..45 | fin rhythm on glass, notched corners, lit lantern top | fin spacing 8/10/12, fin colour, lantern height, podium screen pattern |
-| rounded_tower | rounded glass towers (Brickell Flatiron) | H, T | 55x50 | 20..35 | vertical cylinders at the corners make a rounded prism; curved crown | corner radius, band interval, crown |
-| shifted_plates | towers of shifted floor blocks (One River Point, the "stacked box" condos) | T | 70x60 | 30..45 | blocks of 4..6 floors shifted alternately | shift 4..8 studs, block height, tint |
-| twin_slab | twin slender towers on one podium with a sky bridge (Brickell Heights; Rise and Reach) | T | 120x60 | 45..60 | two slabs, a sky bridge, one podium | height ratio, bridge floor, tint |
-| podium_tower | towers on parking podiums with art screens (the SLS Lux Brickell podium mural) | H | 70x50 | 25..40 | colourful podium screen under a slim tower | screen pattern and palette, tower offset |
-| office_box | Brickell office slabs with ribbon windows and stepped tops (Brickell Bay Office Tower, 701 Brickell) | M, H | 45x40 | 15..30 | horizontal spandrel bands, stepped lit top | band colour, step count |
-| setback_tower | 1920s-30s Miami stepped towers (Dade Commonwealth Building, Alfred I. duPont Building) | M | 40x35 | 15..25 | limestone setbacks, vertical piers | stone colour, setbacks |
-| hotel_tower | bayfront hotel slabs with lit edges and a top band (JW Marriott Marquis, the Biscayne Boulevard hotels) | H | 55x45 | 25..35 | slab with LED edge strips and a top band | strip colour (night kind), band |
-| art_garage | city garages with art screens | L, M | 45x40 | 10..20 | perforated screens or angled fins in colour | pattern, palette |
-| storefront_low | historic 2-4 storey retail (Flagler Street) | L | 26x20 | 8..14 | arcade or awnings, cornice, blade sign | awning colour, cornice, sign |
-| motel_pylon | Biscayne Boulevard mid-century motels (cheese-hole walls, angled pylons, boomerang canopies) | L | 30x25 | 10..16 | pylon sign, cheese-hole screen | palette, pylon side |
-| bright_storefront | Little Havana storefronts (Calle Ocho stucco, murals, neon) | L | 26x20 | 8..14 | coloured stucco, mural panel, neon | palette, mural |
-
-**Where they go**
-
-- T-cap blocks: balcony_stack, fin_tower, shifted_plates, twin_slab, rounded_tower for the tower slot. office_box,
-  podium_tower and hotel_tower for H podiums. storefront_low between them.
-- H-cap blocks: balcony_stack (H), rounded_tower (H), podium_tower, office_box, hotel_tower.
-- M-cap blocks: office_box, setback_tower, art_garage, storefront_low.
-- Outer frontages:
-  - north: motel_pylon and storefront_low
-  - west: bright_storefront and storefront_low
-  - east: art_garage, office_box (M) and storefront_low
-  - south (the bay row): rounded_tower and balcony_stack at H between the one-offs
+| Where | Types |
+|---|---|
+| Tower slots (band T, one per tower block) | T06 standard_glass_slab, T07 flatiron_wedge_tower (corners only), T10 telescope_tower, T13 cantilever_slab_tower, T14 fin_column_tower, T15 parallelogram_void_tower, T17 car_lift_cylinder_tower |
+| H sites (two per block) | T08 sky_court_slab, T09 stair_wing_slab, T11 twisting_twin_towers, and the lower copies of the tower types |
+| Mid and low (the rest of a block, area `downtown`) | T18 tiled_mural_midrise; mixed in: R05 red_ziggurat_lowrise, W04 sculpted_car_park, W03 collage_parking_garage, R08 mosaic_townhouse_row, R07 mimo_garden_apartment, B11 mimo_truss_motel, B12 arcade_village_street |
+| North outer frontage (area `downtown_north`, cap 60) | B11 mimo_truss_motel (the Biscayne Boulevard motel row), R07, B12, R08 |
+| West outer frontage (area `downtown_west`, cap 54) | B12 arcade_village_street, R08, R07, W01 mural_warehouse (the Little Havana storefronts and murals) |
+| East outer frontage (area `downtown_east`, cap 96) | W03 collage_parking_garage, W04 sculpted_car_park, W01, W02 faceted_gallery |
+| Bay row (area `bay_row`, cap 240) | the bay-row one-offs (section 5.1), then H towers and R05 between them |
+| One-offs | T01, T02, T03, T04, T05, T12, T16, C01, C02 (section 5.1) |
 
 **Palettes**
 
@@ -255,7 +246,7 @@ storefronts.
   and driveway cuts stay.
 - **Furniture:** bus shelters on the arterials every ~500 studs, benches, café sets outside storefront_low, two
   kiosks, and ladder crosswalks at the 14 Main and Commerce crossings.
-- **Neon at night:** tower crowns (crown), LED balcony edges on some balcony_stack towers (ledBlue, ledMagenta),
+- **Neon at night:** tower crowns (crown), LED balcony edges on some glass towers (ledBlue, ledMagenta),
   blade signs on storefronts and motels (neonPink, sign cyan, neonAmber).
 
 ### 3.2 Beach: South Beach, Ocean Drive, the bay, the causeway
@@ -265,31 +256,28 @@ hotels on the land side faces south across the road to a palm park, a sand beach
 two north corners stand big mid-century resorts. The west road holds waterfront villas, the east road
 mid-century motels and the diner, and the south shore a small cluster of slender condo towers.
 
-**Plot sides**
+**Plot sides** (areas in `Config/City.areas`)
 
-- **Land side** (north of the road, z 1422..1478): hotels. Raise this frontage's occupancy to 0.95 (decision L2).
-  Plots stay where they are; only more of them get a building. That gives about 50 hotels instead of about 10.
-- **Beach side** (south of the road, z 1517..1578, between the road and the beach): pavilions and kiosks capped at 16
-  studs, so the hotels see the water.
-- **West road** (x = -1150): waterfront villas.
-- **East road** (x = 1150): motels, the diner, the Overlook.
-- **South shore and the south avenue** (z = 2850 and beyond): towers up to 240 and low pastel apartments.
+- **Land side** (north of the road, z 1422..1478, area `ocean_drive`, cap 200): hotels. Its occupancy is raised to
+  0.95 (decision L2). Plots stay where they are; only more of them get a building.
+- **Beach side** (south of the road, z 1517..1578, area `ocean_beach`): nothing built (density 0), so the hotels look
+  over the sand to the water. (The pavilions this plan first wanted have no archetype in ARCHETYPES.md; the
+  lifeguard stands, C08, stand on the beach itself.)
+- **West road** (x = -1150, area `lake_west`, cap 60): waterfront villas, R06 tropical_modern_villa first, R04, R01,
+  R03 and some beach types.
+- **East road** (x = 1150, area `lake_east`, cap 60): B11 mimo_truss_motel, R07 and beach types; the diner; B10 at the
+  north end (a one-off).
+- **South shore and the south avenue** (z = 2850 and beyond, area `south_shore`, cap 480, two tower slots): T13
+  cantilever_slab_tower, T17 car_lift_cylinder_tower and T14 (the Collins Avenue towers), R07 and R08 low pastel
+  apartments.
 
-**Archetypes**
+**Types (ARCHETYPES.md ids)**
 
-| Id | Inspiration | Band | Fits | Parts | Silhouette idea | Variation knobs |
-|---|---|---|---|---|---|---|
-| deco_three_part | symmetric deco hotels with a centre fin rising over a stepped parapet, eyebrow ledges (The Carlyle, The Leslie, The Cavalier) | L 36..54 | 30x25 | 18..24 | three-part facade, centre fin, eyebrows over every window band | pastel body, trim colour, fin height, parapet steps, porch |
-| deco_blade | deco hotels with a vertical neon name fin (The Colony, The Breakwater, The Winter Haven) | L 36..54 | 28x25 | 16..22 | blade sign tower with the hotel's name, canopy | body and trim, blade side, sign text, neon kind |
-| streamline_corner | Streamline Moderne corner hotels with rounded corners, speed stripes and a corner tower (The Cardozo, The Avalon, Waldorf Towers) | L 36..60 | corner sites, 35x30 | 18..26 | rounded corner (cylinder), three speed stripes, lighthouse cupola | cupola or not, stripe colour, body |
-| nautical | nautical deco (Essex House, the beach lifeguard headquarters) | L | 30x25 | 16..22 | porthole windows, mast spire, ship rails | portholes, mast, body |
-| tall_deco | the tall deco hotels (The Tides, The Netherland, The Raleigh) | M 96..130 | 40x35 | 22..30 | 8-10 floors in white limestone, vertical fins, setback top with a sign | fins, top, stone tone |
-| resort_slab | mid-century resort slabs with a rooftop sign and a swoosh canopy (Deauville, Seagull, Eden Roc) | M 100..150 | 50x40 | 22..30 | slab, folded-plate canopy, rooftop name sign | slab tint, canopy, sign |
-| beach_pavilion | beach pavilions, deco kiosks and shower towers (Lummus Park) | ≤ 16 | 20x15 | 6..12 | low pastel kiosk with eyebrows and umbrellas | colour, shape (round, box, porthole) |
-| waterfront_villa | island mansions: white modern boxes with pools and palms (Star Island, Venetian Islands) | L 24..36 | 35x30 | 14..20 | stacked white boxes, glass, slat screen, pool | massing mirror, slats, pool side |
-| motel_pylon | Collins Avenue mid-century motels (shared with downtown) | L | 30x25 | 10..16 | | |
-| pointe_tower | South Pointe condo towers (Continuum, Murano at Portofino) | H 160..240 | 55x45 | 25..35 | slender white tower, bowed glass front, sky deck | bow, tint, crown |
-| shore_apartments | South of Fifth low pastel apartments | L 24..36 | 26x22 | 10..14 | catwalk balconies, jalousie bands | palette, catwalk side |
+| Where | Types |
+|---|---|
+| The hotel row (land side) | B01 deco_stripe_hotel, B02 neon_fin_hotel, B03 sign_tower_prow_hotel, B05 streamline_round_corner (prefers corners), B06 corner_spire_hotel and B07 lighthouse_corner_hotel (corners only), B08 finned_tower_hotel, B09 domed_cupola_hotel, B11 mimo_truss_motel, B12 arcade_village_street |
+| One-offs | B04 deco_porthole_highrise (the tallest deco hotel), B07 at the north-west corner, C05 domed_sanctuary, B10 curved_resort_slab (section 5.2) |
+| Scenery, not on plots (`City.notOnPlots`) | C08 lifeguard_stand, C06 folded_roof_marine_stadium, C09 causeway_bridge |
 
 **Palettes**
 
@@ -344,22 +332,17 @@ Identity:
 - **Over the rooftops** rises a bell-towered hotel.
 - **Throughout:** live oaks and royal palms, ficus hedges, coral-rock walls.
 
-**Archetypes**
+**Types (ARCHETYPES.md ids)**
 
-| Id | Inspiration | Band | Fits | Parts | Silhouette idea | Variation knobs |
-|---|---|---|---|---|---|---|
-| arcade_shops | Miracle Mile arcaded shopfronts | L 20..30 | 26x20 | 10..14 | arcade of arches (dark insets), clay-tile roof edge, awnings | stucco colour, arch count, awning |
-| med_villa | Coral Gables Mediterranean revival villas | L 20..30 | 30x25 | 12..18 | hipped ClayRoofTiles roof (wedges), arched loggia, small tower, iron balcony | tower or not, stucco, loggia side |
-| tropical_modern | contemporary Miami houses | L 18..26 | 30x25 | 10..14 | white boxes, wood slat screens, flat roof with a deep overhang | massing mirror, slats |
-| garden_apartments | 1950s mid-century garden apartments | L 24..36 | 35x25 | 12..16 | exterior catwalks, breeze-block screen, jalousie bands | pastel, screen pattern |
-| gables_mixed | Ponce de Leon Boulevard mixed-use: 4-6 storeys, arcades, tile roofs | M 48..72 | 40x35 | 16..22 | arcade base, tile roof, corner tower | colour, tower |
+| Where | Types |
+|---|---|
+| River Avenue (area `river_avenue`, cap 60) | B12 arcade_village_street (the Miracle Mile arcades), R08 mosaic_townhouse_row, R07 mimo_garden_apartment, a few houses |
+| The side streets and Willow Bend (area `suburbs`, cap 50) | R01 mediterranean_villa, R02 coral_rock_cottage, R03 veranda_raised_house, R04 pink_layered_house, R06 tropical_modern_villa, R07, R08 |
+| Kept downtown | R05 red_ziggurat_lowrise (weight 0 here) |
+| Scenery | C07 lighthouse_water_tower restyles the water tower feature (not on plots) |
 
-**Where they go**
-
-- River Avenue (arterial): arcade_shops, with gables_mixed on runs of 2+ plots.
-- Main Street and Orchard Lane: gables_mixed and arcade_shops.
-- Elm Street, Sycamore Lane and Willow Bend: med_villa (55 %), tropical_modern (25 %), garden_apartments (20 %).
-- Heights: up to 36 studs, except the one-offs.
+The suburb one-offs this plan first listed (the bell-towered hotel, the colonnade hall, the mission church) have no
+type in ARCHETYPES.md yet; their anchors are kept in section 5.2 for when they do.
 
 **Palettes**
 
@@ -386,26 +369,13 @@ tropical) is a separate, later step that keeps every functional offset (decision
 Identity: low concrete and brick warehouses covered in murals, sawtooth roofs, a few new loft blocks, sleek boutique
 fronts on Plant Avenue, and the Ohm plant with the biggest mural in the county.
 
-**Archetypes**
+**Types (ARCHETYPES.md ids)**
 
-| Id | Inspiration | Band | Fits | Parts | Silhouette idea | Variation knobs |
-|---|---|---|---|---|---|---|
-| mural_warehouse | Wynwood Walls warehouses | L 20..32 | 30x25 | 10..18 | concrete-block box, parapet, roll-up door; a geometric mural of 4..8 colour panels on the road face and the sides | mural pattern (stripes, chevrons, discs, blocks), palette, roof |
-| sawtooth_hall | north-light factory halls, Wynwood's old garment factories | L 24..36 | 40x35 | 10..14 | three sawtooth roof teeth (wedges and glass), brick base | teeth count, brick or concrete |
-| gallery_box | warehouse galleries with a glass-box addition (Rubell Museum, de la Cruz Collection) | L 24..40 | 35x30 | 12..16 | blank box plus a cantilevered glass box | addition side, cladding |
-| boutique_screen | Design District boutiques with patterned screen facades (Paradise Plaza) | L 24..40 | 30x25 | 12..18 | glossy white or black box behind a patterned screen of fins | screen rhythm, colour |
-| loft_block | new Wynwood mid-rise lofts | M 60..96 | 45x35 | 18..26 | balconies over a mural base | balcony rhythm, mural |
-| brick_shop | old brick shopfronts with roll-up doors and tags | L 18..26 | 26x20 | 8..12 | brick box, roll-up doors, painted tags | doors, colour |
-
-**Where they go**
-
-- Plant Avenue (z = 0): boutique_screen, gallery_box, loft_block on runs of 2+ plots.
-- North Road, Foundry Road, Assembly Way, Depot Road and South Road: mural_warehouse (40 %), sawtooth_hall (25 %),
-  brick_shop (20 %), gallery_box (15 %).
-- North Road's 7-plot, 295-stud run at (2301, -750) is the mural row: alternating mural_warehouse and sawtooth_hall,
-  each with a different mural, facing the Mesa road.
-- Farm Road and Harbor Road: mural_warehouse and brick_shop.
-- Height cap 96, set in `City.districts.arts`, up from the zone's 60.
+| Where | Types |
+|---|---|
+| Plant Avenue (z = 0, area `plant_avenue`, cap 120) | W02 faceted_gallery, W04 sculpted_car_park, W03 collage_parking_garage, T18 tiled_mural_midrise, W01 |
+| The other streets (area `arts`, cap 96) | W01 mural_warehouse (with its sawtooth and barrel roof variants) and the rest of the district's types |
+| One-offs | W03 at the garage anchor, W02 by the Plant Gate, W05 port_crane_yard by the freight depot (section 5.2) |
 
 **Murals are part-built**: flat colour panels 0.2 studs proud of the wall, decor only. The patterns come from a
 seeded catalogue (stripes, chevrons, a big disc made of a flat cylinder, blocky shapes, a sunburst made of wedges).
@@ -428,7 +398,8 @@ Identity: Miami's limestone quarry country west of the city, with an old airfiel
 (they are trails, ramps and the summit meet spot), recoloured from desert tan to pale oolite limestone (214,206,184),
 with darker bench lines. The ground stays sandy.
 
-- **hangar**: barrel-vault hangars after the Opa-locka airfield hangars. L 20..30, 8..12 parts, on the 6 plots.
+- **Hangars**: the 6 plots draw W01 mural_warehouse in its barrel-roof variant (area `quarry`, cap 40); a hangar type
+  after the Opa-locka airfield hangars has no ARCHETYPES.md entry yet.
 - **Mesa Control** (the control_tower landmark) becomes a Moorish revival control building after Opa-locka City Hall:
   white walls, crenellations, two minaret towers and a teal dome over the glass control cab (section 5.3). Its
   footprint and the no-fly volume stay.
@@ -449,168 +420,144 @@ Identity: a Florida expressway through flat sawgrass country with tree islands.
   pines; no poplars or broadleaf pines.
 - **Ground:** the grass shades go a little more yellow-green, toward sawgrass. The edge hills stay, retinted as
   hammock green.
-- **Optional (decision L5):** a canal along the outside of the south straight (a thin MapLayout lake, about
+- **Not this round (decision L5):** a canal along the outside of the south straight (a thin MapLayout lake, about
   x -2400..2400, z 3480..3540), for the causeway-beside-water feel. The lake system already gives it banks.
-- **Optional:** four overhead sign gantries before the interchanges, with original destination names (the zone
+- **Not this round (decision L5):** four overhead sign gantries before the interchanges, with original destination names (the zone
   display names). Posts outside the shoulders, the beam above 20 studs.
 
 ## 4. Placement rules: the planner
 
-Inputs:
+Built 2026-10-25 in `src/server/Dev/City/CityBuilder.luau` (`place`), with every number in `Config/City`. Inputs:
 
-- the plot list from the plot pass (section 8.2)
-- MapLayout locations, parks and landmarks
-- `City.landmarks` (the one-offs)
-- the grid
+- the plot list from the plot pass (section 8.2), each plot with its block face and whether it stands on a block
+  corner (within `rules.cornerReach`, 30 studs, of its frontage's cut end)
+- an Env from Dev/MapBuilder with the clear checks a core claim needs (the plots' own grid test)
+- `City.landmarks`, `City.areas`, `City.heightCaps` and every `Config/CityArchetypes/<id>`
 
-Output: a list of sites, each with an archetype, a height, a variant and its claimed rects. Everything is pure and
-seeded from `MapLayout.seed`.
+Output: the sites, each with an archetype, a height, a variant, its footprint (plots and any core claim), its face
+and corner flags; the plots no archetype fits (the old look); the one-offs that found no site (`unplaced`) and the
+ones whose archetype isn't written yet (`missing`). Everything is pure and seeded from `MapLayout.seed`.
 
 ### 4.1 Occupancy
 
-Today a plot gets a building when its roll is under the zone's density. `City.densityOverrides` may raise or lower
-that threshold inside a rect, for example the Ocean Drive land side to 0.95. The roll is drawn either way, so no plot
-moves and no later plot changes.
+A plot gets a building when its roll is under its density: its area's `density` if it has one (the hotel row's land
+side 0.95, the beach side 0), else the zone's. The roll is drawn either way, so no plot moves.
 
 ### 4.2 Runs
 
-A run is the occupied plots of one frontage (edge id and side) with no gap. Each run knows:
+A run is the occupied plots of one frontage (edge id and side), in one zone, with no gap. A site is a window of a run's
+free plots: its width is their span less the 5-stud gap (2.5 at each end), its depth a plot's (53) or more with a core
+claim.
 
-- its block face (from `findBlocks`)
-- its band cap (section 2)
-- whether its first or last plot is a block corner: within 30 studs of the frontage's cut end
+### 4.3 Three passes
 
-### 4.3 One-offs first
+1. **One-offs** (`City.landmarks`, in order). Each takes the window of free plots within its radius of its anchor that
+   its archetype fits (`minWidth..maxWidth`, `maxPlots`), scored by distance to the anchor plus how far it falls short
+   of the width and depth it asks for, with a core claim behind its plots when it wants more depth than a plot. It
+   keeps its archetype's tallest height (or the one it gives); caps don't apply. A one-off with no site is reported
+   (`plan.city.unplaced`), and tests/MapBuilder.spec and Dev/MapCheck fail on it.
+2. **Tower slots.** Every downtown block whose cap reaches band T holds one repeatable tower; an area with `towers`
+   (the south shore) holds that many. Each takes the free window nearest a skyline peak whose plots' caps reach band
+   T, draws among the tower archetypes that fit it, claims depth back into the block's core (`towers.claimDepth`, 100,
+   stepping down to what the archetype needs), and stands between band T and its cap, at least `towers.rise` (65 %) of
+   the way up.
+3. **The rest**, run by run. On each free plot, its own random stream draws among the archetypes its area mixes in
+   that fit the plots from it on, taking the widest fit `rules.wideShare` (60 %) of the time (fewer, bigger
+   buildings). A plot nothing fits keeps the old look, alone.
 
-For each `City.landmarks` entry, in order:
+### 4.4 Core claims
 
-1. Take the run whose centre is nearest the anchor, within its search radius, that is wide enough.
-2. Carve the plots nearest the anchor into one site of at least `minWidth`.
-3. Mark those plots used.
+A site that wants more depth than a plot reaches back from its plots into its block's empty core, up to
+`claims.maxDepth` (110 from the front line; a one-off may ask for more, such as the bay-row arena's 180 into the open
+land behind). The claim is a rectangle as wide as the site. It passes the same clear checks a plot does: inside the map,
+flat ground (`maxLevelError`), and clear by the plots' 2-stud clearance of everything a lot keeps off (`LOT_BLOCKERS`:
+roads, sidewalks, driveways, supports, landmarks, ramps, mesas, water, locations and their access corridors, props,
+streetlights, parks, features, and every other frontage's plots and earlier claims). A claim that doesn't fit is tried
+`claims.step` (10) shallower, down to what the archetype needs. A taken claim is paved (`Lots/ClaimB<n>`) and put in the
+grid as a lot, so later claims and trees keep off. The core-square rule this plan first had (never in another
+frontage's plot band, even an empty one) was dropped: by the time claims run every plot is placed, so the grid test is
+enough, and it lets a tower take an empty corner.
 
-A one-off that finds no run leaves a note, and notes fail tests/MapBuilder.spec. Anchors below are today's runs.
+### 4.5 Rules on every pass
 
-### 4.4 Sites
-
-The rest of each run is cut into sites by its cap:
-
-| Site | Plots merged | Width | Depth |
-|---|---|---|---|
-| Tower (T) | 2..4 | ≥ 70 | ≥ 60 with the core claim |
-| H | 2 | ≥ 50 | |
-| M and L | 1, or 2 when one plot is narrower than 30 | | |
-
-Other rules:
-
-- **Footprint.** A site's buildable rect is the union of its plots' rects: full plot band, front line to 53 studs
-  back. Solid masses stand at least 3 studs behind the front line. Entrance canopies and terraces may reach the front
-  line.
-- **Gaps.** Where two sites meet inside a run, each keeps 2.5 studs back, which keeps today's 5-stud gap.
-- **Core claim (deep sites only).** A T or S site may claim a rect behind it, into its block's empty core, up to 110
-  studs back from the front line. The claim stays inside the core square: never inside another frontage's plot band.
-  It passes the same `LOT_BLOCKERS` grid test plus a 2-stud clearance, and is inserted into the grid (kind `lot`,
-  owner = the site) so trees and later claims keep off. If the claim fails, the site falls back to its plot rects and
-  a lower band.
-- **Corners.** A corner site prefers corner archetypes (streamline_corner, rounded_tower, setback_tower) and may face
-  both streets.
-
-### 4.5 Archetype choice
-
-Candidates are the district's archetypes whose band includes the site's band and whose "Fits" the site meets. Each
-candidate gets a weight from `City.weights[district][band]`, and the planner draws one from the site's own stream.
-Then the rules below apply.
-
-**Neighbours.** A site's neighbours are:
-
-- the sites beside it on the same frontage
-- the site directly across the street (the opposite frontage, overlapping along the road)
-- the first site round each corner
-
-Two neighbours never share an archetype. Across the street, the same archetype is allowed only with a different
-palette and a height at least 25 % different.
-
-**Repeats**
-
-- An archetype appears at most twice in a block.
-- A tower archetype (T) appears at most 6 times in the whole map.
-- An archetype appears at most 18 % of its district's sites, or 6, whichever is larger.
-
-**A repeat must look different.** Every built site has a look key: archetype, palette, crown, rhythm. A look key is
-never used twice in the map. Each repeat changes the palette and at least one more knob:
-
-- height ±10..25 %
-- mirror (flip along the road)
-- crown variant (each archetype has 3..4)
-- rhythm (fin spacing or balcony interval)
-- podium variant (storefront, arcade, screen)
-- corner treatment
-
-**Relaxing.** When nothing fits, the rules relax in this order, and a note is left after the third step:
-
-1. palette
-2. crown
-3. allow the same archetype across the street
-4. a plain fallback for the band
+- **Caps.** A repeatable's cap is the lowest of its plots' block caps (section 2), its area's cap, 160 beside a
+  gameplay spot, band H once its block's T slot is taken, band M once its two H slots are, and 60 % of its run's tower.
+- **Neighbours.** Two sites whose footprints come within `rules.neighbourGap` (90 studs) of each other are neighbours:
+  beside, across a street or an avenue, round the corner. Neighbours never share an archetype. As the last resort
+  (nothing else fits), the same archetype may stand across the street (another block), a palette apart and at least
+  25 % taller or lower.
+- **Repeats.** An archetype stands at most `min(perBlock, rules.perBlock)` (2) times in a block, `maxCopies` times in the
+  map, and `minSpacing` from its other copies.
+- **A repeat looks different.** Every copy draws a look (palette, crown, rhythm) no other copy has while one is left,
+  plus its own height and mirror.
+- **Corners.** `City.cornerArchetypes`: flatiron_wedge_tower, corner_spire_hotel and lighthouse_corner_hotel stand only
+  on a block corner; streamline_round_corner is three times as likely there. Each is mirrored so its corner is at its
+  drawn +x end (`site.corner.right`).
+- **No twin heights.** After the passes, in placement order (one-offs first), a tower within 600 studs of an earlier
+  one and within 24 studs of its height moves to the nearest height inside its own range that twins none.
 
 ### 4.6 Heights
 
-- Draw a height within the site's band, under its block cap, scaled by its place in the run (the tower end tallest).
-- Snap to the district's floor height: 12 downtown, 12 beach (16-stud ground floor), 11 suburbs, 14..18 arts.
-- Push T and S heights apart to meet the no-twin rule.
-- One-offs use their listed height.
+- One-offs: their listed height, or their archetype's tallest.
+- Towers: between band T and their cap, at least 65 % of the way up.
+- The rest: their archetype's range under their cap, by the plot's height roll.
 
 ### 4.7 Determinism
 
-- Sites are processed in a stable order: edge index, side, position along the road.
-- Each site's random stream is `mixSeed(seed, shade, index)` of its first plot, as today.
+- Runs are processed in the plot pass's order; one-offs in their list order.
+- Each plot's random stream is `mixSeed(seed, shade, index)`, as before; the tower pass uses a salted one.
 - Building the map twice gives the same parts. MapCheck compares the instance counts of two builds, and
-  tests/MapBuilder.spec compares two plans.
+  tests/MapBuilder.spec and tests/City.spec compare two plans.
 
 ## 5. One-off landmarks
 
-These are built once each and listed in `City.landmarks`. Each entry has an id (also the model name), an archetype
-module, an anchor (x, z) with a search radius of 120, minWidth, minDepth, height, and an optional "show face": the
-side its feature faces when that differs from its road, such as the spawn or the bay.
+These are listed in `City.landmarks` (updated 2026-10-25 to ARCHETYPES.md's ids). Each entry names its archetype
+(`id`), an anchor (x, z) and optionally a search radius (default `landmarkRadius`, 160), the width and depth it would
+like (a depth past a plot's 53 is a core claim), a face (`back` turns its front away from its road, to the bay or the
+spawn), a corner flag and a height (default its archetype's tallest). An archetype whose `maxCopies` is 1 stands only
+here; one with more copies (sky_court_slab, stair_wing_slab...) has its first copy here and the rest placed as
+repeatables. A one-off whose module isn't written yet is skipped (`plan.city.missing`).
 
-The anchors below are today's real runs; the run centre and width were measured on 2026-10-25.
+The anchors are today's real runs; the run centre and width were measured on 2026-10-25. A site's width is its
+plots' span less 5 studs, so a 202-stud run gives at most 197. The widths needed come from each archetype's
+`minWidth` (Config/CityArchetypes); the widest runs downtown are on the bay row (236 and 200).
 
 ### 5.1 Downtown
 
-| Id | Inspiration (docs only) | Anchor (x, z) and run | Height | Model notes |
+| Id (ARCHETYPES.md) | Inspiration (docs only) | Anchor (x, z) and run | Depth | Notes |
 |---|---|---|---|---|
-| spire | Panorama Tower | (150, -65): block d3's south frontage on Commerce Ave, 5 plots, 202 wide, plus a core claim into d3 | 560 | the tallest; slab with blue glass and white vertical fins on the long faces, slab bands every 4 floors, notched corners, glass podium with a canopy, lit crown; 40..55 parts |
-| tiered_tower | Miami Tower (stepped semicircular tiers lit in colours) | (468, 60): block e4's north frontage on Commerce Ave, 4 plots, 170 wide, plus core claim | 440 | show face south, toward the spawn and the bay: three half-cylinder tiers stepping back, each tier's rim a different neon colour at night (ledBlue, neonPink, ledTeal), a mast; 28..36 parts. It is straight ahead of a new player at the spawn, about 300 studs away |
-| exoskeleton | One Thousand Museum (curving white exoskeleton) | (64, -447): block d2's west frontage on Main Ave, 4 plots, 129 wide, plus core claim | 500 | the north peak; glass core with four white corner piers that fork at the base and curve in at the crown, made of tapered wedge runs; 40..50 parts |
-| crown_tower | Four Seasons Hotel Miami | (115, 856): block d6's south frontage, 4 plots, 153 wide, plus core claim | 470 | slender, chamfered corners, a stepped crown of four lit fins and a mast; the first tall tower seen from the bridge; 35..45 parts |
-| sky_court | The Atlantis (sky-court hole with a palm, red spiral stair, red triangle, yellow triangular balconies, blue grid) | (-164, 945): the bay row (south outer frontage), 5 plots, 205 wide | 230 | long slab facing the lake; a square hole through it at mid-height with a palm and a red spiral stair inside, a blue grid facade, yellow triangular balconies on one end, a red triangle on the roof; 35..45 parts |
-| staircase | The Palace (stepped staircase slab) | (-451, 940): bay row, 6 plots, 241 wide | 260 | slab whose top steps down in 8..10 stairs toward one end, with a contrasting low block cutting through its base; 20..28 parts |
-| ziggurat | Babylon (red stepped condo) | (119, 943): bay row, 4 plots, 147 wide | 130 | six red stepped tiers with glass bands; 14..18 parts. Sits right in front of crown_tower |
-| sail | Aston Martin Residences (sail-shaped tower) | (783, 950): bay row, 4 plots, 155 wide | 400 | plan-view lens of faceted glass slabs, a white spine, a tapering top; 30..40 parts |
-| cupola_tower | Freedom Tower (Mediterranean revival, buff stucco, ornate cupola) | (66, -190): block d3's west frontage on Main Ave, facing Town Square across the avenue | 170 | buff Plaster tower, arched dark window insets, tiered cupola with a lantern, two low wings with tile roofs, floodlit; 30..38 parts |
-| courthouse | Miami-Dade County Courthouse (limestone tower with a stepped pyramid top) | (-66, 530): block c5's east frontage on Main Ave, beside the Courthouse hotspot (-48, 450) | 270 | limestone setbacks to a stepped pyramid with a beacon, a colonnade base; 30..38 parts |
-| theatre | Olympia Theater and Tower Theater (palazzo with a vertical blade marquee) | (525, -548): block e2's north frontage, east of the Theater Row hotspot (450, -567) | 70 | palazzo box, arched entry, a vertical blade sign reading THE CIRCUIT, a marquee canopy with lights; 18..24 parts |
-| market_hall | Bayside Marketplace (two-storey open-air arcade with a big sign) | (-548, -370): block b2's west frontage, north of the Market Street hotspot (-567, -450) | 36 | two-storey arcade of columns, roof terrace, a big sign reading CEDAR BEND MARKET; 22..28 parts |
-| led_hotel | InterContinental Miami (a facade that becomes a giant light display at night) | (741, -58): block f3's south frontage on Commerce Ave, 4 plots, 165 wide | 300 | slab whose road face carries an LED palm-and-wave picture in neon parts at night, seen arriving from The Plant; 30..40 parts |
-| ribbon_mall | Brickell City Centre (two slanting towers over a shopping podium under a woven "climate ribbon") | (130, 251): block d4's south frontage, 5 plots, 172 wide, near the spawn street | 330 and 300 | three-storey shop podium, a ribbon canopy of 8..10 angled slats over its courtyard (inside its own site, never over a road), two towers slanted by stepped offsets; 55..70 parts |
-| sawtooth_tower | Southeast Financial Center (dark glass, sawtooth stepped top, glass atrium) | (732, -347): block f2's south frontage, 5 plots, 208 wide, plus core claim | 380 | dark glass, a sawtooth crown of stepped wedges, a glass atrium with a steel frame and palms; 28..36 parts |
+| T01 stacked_cube_supertall | Waldorf Astoria Hotel & Residences | (150, -65): block d3's south frontage on Commerce Ave, 5 plots, 202 wide | 110 | the peak, 660..700 tall; was "spire" |
+| T03 tiered_curve_crown_tower | Miami Tower | (468, 60): block e4's north frontage on Commerce Ave, 4 plots, 170 wide | 110 | face back, toward the spawn and the bay; was "tiered_tower" |
+| T02 exoskeleton_tower | One Thousand Museum | (64, -447): block d2's west frontage on Main Ave, 4 plots, 129 wide | 110 | the north peak; was "exoskeleton" |
+| T05 sawtooth_office_tower | Southeast Financial Center | (732, -347): block f2's south frontage, 5 plots, 208 wide | 110 | was "sawtooth_tower" (needs 140 wide) |
+| T16 ribbon_canopy_towers | Brickell City Centre | (130, 251): block d4's south frontage, 5 plots, 172 wide, near the spawn street | 110 | was "ribbon_mall" |
+| T09 stair_wing_slab | The Palace | (115, 856): block d6's south frontage, 4 plots, 153 wide | 120 | its stairs step down toward the bridge; first copy (reuse 2); takes the "crown_tower" anchor (Four Seasons has no type) |
+| C01 cupola_bell_tower | Freedom Tower | (66, -190): block d3's west frontage on Main Ave, facing Town Square | 90 | was "cupola_tower" |
+| C02 stepped_crown_courthouse | Miami-Dade County Courthouse | (-66, 530): block c5's east frontage on Main Ave, beside the Courthouse hotspot | 110 | was "courthouse" |
+| T12 triple_tower_podium | Icon Brickell | (-451, 940): the bay row, 6 plots, 241 wide | 110 | face back, to the lake; needs 170 wide, so it takes the widest run (the old "staircase" anchor) |
+| T04 sail_supertall | Aston Martin Residences | (783, 950): bay row, 4 plots, 155 wide | 110 | face back, the sail to the lake; was "sail" |
+| T08 sky_court_slab | The Atlantis | (-164, 945): bay row, 5 plots, 205 wide | 70 | face back; first copy (reuse 2); was "sky_court" |
+| R05 red_ziggurat_lowrise | Babylon | (119, 943): bay row, 4 plots, 147 wide | plot | first copy (reuse 3); was "ziggurat" |
+| C04 bayfront_arena | Kaseya Center | (450, 950), radius 260: the bay row between the ziggurat and the sail | 180 | face back, claims into the open land behind the bay row |
+| C03 harbor_market_pavilions | Bayside Marketplace | (-740, 950), radius 220: the bay row's west end | 160 | face back; replaces "market_hall" |
 
-That is 4 supertalls (560, 500, 470, 440) and 8 talls (400, 380, 330 and 300 as one twin, 300, 270, 260, 230).
+No type in ARCHETYPES.md yet, so not placed: "theatre" (Olympia Theater, (525, -548)), "led_hotel" (InterContinental,
+(741, -58)) and "crown_tower" (Four Seasons). Their anchors are free for future one-offs.
 
 ### 5.2 Beach, suburbs, arts
 
-| Id | Inspiration | Anchor (x, z) | Height | Notes |
+| Id (ARCHETYPES.md) | Inspiration | Anchor (x, z) | Depth | Notes |
 |---|---|---|---|---|
-| curve_resort | Fontainebleau (curved mid-century slab) | (1106, 1569): the two east-road plots at the lake's north-east corner | 150 | a slab in 5..6 facets following a quarter curve, cabanas, a swoosh canopy, a rooftop name sign |
-| sign_slab_resort | Eden Roc and Deauville | (-1188, 1500): the plots round the lake's north-west corner | 120 | slab with a big rooftop name sign, folded-plate porte-cochère |
-| courtyard_mansion | Casa Casuarina (the Versace mansion) | (-414, 1460): Ocean Drive's land side | 40 | three-storey stone villa round a courtyard, a corner tower, barrel tile roofs, a mosaic pool deck |
-| lifeguard_hq | the beach lifeguard headquarters (a streamline building shaped like a ship) | (98, 1541): beach side, east of the bridge head | 20 | ship-like curved pavilion, portholes, a mast with flags |
-| tall_deco_one | The Tides | (620, 1460): Ocean Drive's land side | 120 | the tallest deco hotel on the strip |
-| lighthouse_corner | Waldorf Towers | the land-side corner plot nearest (-1000, 1460) | 54 | round corner tower with a lighthouse cupola |
-| bell_tower_hotel | Biltmore Hotel (Giralda-style tower over a long Mediterranean hotel) | (-2363, -65): River Avenue's north side, rv_main to rv_ave_w, 3 plots, 110 wide | 130 | long tile-roofed hotel wings and a stepped bell tower with a lantern, floodlit; seen across the suburbs |
-| colonnade_hall | Coral Gables City Hall (semicircular colonnade and clock tower) | (-1918, -62): River Avenue's north side, rv_ave_e to rv_main, 3 plots, 109 wide, just west of the Riverside Market hotspot (-1800, -48) | 60 | curved colonnade front (columns on an arc), clock tower |
-| mission_church | Coral Gables Congregational Church (Spanish mission bell tower) | (-1580, 445): Elm Street's south side, 2 plots, 82 wide (the north side holds house plots) | 70 | mission facade with a curved gable and a bell tower |
-| art_garage_stack | Museum Garage (each facade by a different designer) | (2352, 53): Plant Avenue's south side, pl_depot to pl_assembly, 6 plots, 216 wide | 72 | four facade panels side by side, each wildly different: a car-stack cut-out, puzzle blocks, a cartoon panel, a coloured fin field |
-| mural_court | Wynwood Walls (an open courtyard of mural walls) | (2015, -56): Plant Avenue's north side, pl_foundry to pl_depot, 4 plots, 143 wide, east of the Plant Gate hotspot | 24 | a low entry building and 4..6 freestanding mural walls round a courtyard, with string lights |
+| B10 curved_resort_slab | Fontainebleau | (1195, 1650), radius 260: the east road's north end | 140 | claims east into the open land; was "curve_resort" |
+| B04 deco_porthole_highrise | The Tides | (620, 1460): the hotel row's land side | plot | first copy (reuse 3); was "tall_deco_one" |
+| B07 lighthouse_corner_hotel | Waldorf Towers | the corner plot nearest (-1000, 1460), radius 200 | plot | corner only; first copy; was "lighthouse_corner" |
+| C05 domed_sanctuary | Temple Emanu-El | (-414, 1460): the hotel row's land side | plot | takes the "courtyard_mansion" anchor (Casa Casuarina has no type) |
+| W03 collage_parking_garage | Museum Garage | (2352, 53): Plant Avenue's south side, 6 plots, 216 wide | 80 | first copy (reuse 2); was "art_garage_stack" |
+| W02 faceted_gallery | ICA Miami | (2015, -56): Plant Avenue's north side, 4 plots, 143 wide, east of the Plant Gate | plot | first copy (reuse 3); takes the "mural_court" anchor |
+| W05 port_crane_yard | PortMiami cranes | (2515, 600), radius 420: by the freight depot | 140 | clear of the depot's yards and trailer spots (they are locations) |
+
+No type yet, so not placed: "sign_slab_resort" ((-1188, 1500)), "lifeguard_hq" ((98, 1541), now open beach),
+"bell_tower_hotel" ((-2363, -65)), "colonnade_hall" ((-1918, -62)) and "mission_church" ((-1580, 445)).
 
 ### 5.3 Restyled MapLayout landmarks
 
@@ -712,22 +659,29 @@ SLIM (Model.LevelOfDetail = SLIM) keeps a building visible past the streaming ra
 cuts draw calls up close. But it **breaks on models whose parts change at runtime**, and night lights change material
 and colour at dusk.
 
-So every model is one of two kinds:
+Built 2026-10-25 (`Dev/MapBuilder` addCity, `CityBuilder.file`):
 
-- **Still models: SLIM.** Plain geometry only: Buildings/... and Landmarks/..., plus Trees and Streetscape tiles. They
-  hold no NightLight-tagged part, no SurfaceGui labels, no AdGui and no Light.
-- **Light models: not SLIM.** Everything that switches or carries text goes here: lit glass, neon strips, signs.
-  Folders are `BuildingLights/<district>/Tile<x>_<z>` and `LandmarkLights/<id>`, Atomic. The landmark roof sign and
-  its light bar move here.
+- **Still models: SLIM.** Every city site is its own Atomic model, `Buildings/Tower<n>` (160 studs and up, or an
+  archetype with `ownModel`) or `Buildings/Site<n>`, with `LevelOfDetail` SLIM. It holds no NightLight-tagged part, no
+  SurfaceGui label, no Light and no AdGui.
+- **Light models: not SLIM.** Each site's night lights, signs and lights go in `BuildingLights/<the same name>`
+  (Atomic, `LevelOfDetail` Disabled): a handful of parts each.
+- The old look's block tiles (`Buildings/Block<n>`, only where no archetype fits) keep their lit glass and get no
+  level of detail.
+- `Container.lod` names the level of detail; `MapBuilder.build` sets it when the Studio knows it, and warns once if not.
+- tests/MapBuilder.spec and Dev/MapCheck fail on a light inside a SLIM model.
 
 ### 7.3 The Skyline model
 
-`Skyline` is a Persistent Model of at most 200 parts. It holds the main masses (glass core and crown) of every S and T
-building and the bay-row one-offs, with their crown neon. The details (fins, slabs, podiums) stream as usual.
+`Skyline` is a Persistent Model of at most 200 parts (`City.budgets.skyline`). For each site of band T and up,
+tallest first while the budget lasts (4 parts a site, so up to 50 towers), it holds the site's 3 biggest solid masses
+that rise past 40 % of its height and its crown light (a night light in its top 15 %), moved there by
+`CityBuilder.file`. The details (fins, slabs, podiums) stream with the tower's own model.
 
-This keeps the skyline visible from the bridge and the lake even without SLIM. The spire, for example, is 2,240 studs
-from the middle of the bridge, past the 2,048-stud streaming target, and would otherwise vanish. With SLIM the whole
-tower shows.
+Built 2026-10-25. It stays even though SLIM can now be used (Team Create is on and the place is published): SLIM shows
+far towers in their day look and drops their lights models past the streaming radius, so without the Skyline the
+skyline would go dark from the beach at night. T01 at the peak is about 2,240 studs from the middle of the bridge, past
+the 2,048-stud streaming target.
 
 ### 7.4 Sign text and fonts
 
@@ -754,63 +708,66 @@ LabelSpec gains a `font` field.
 
 ### 8.1 Modules
 
+As built (2026-10-25):
+
 | File | What it is |
 |---|---|
-| `src/shared/Config/City.luau` | districts by zone, bands, block caps, density overrides, palettes and materials, archetype weights and repeat limits, `landmarks` (the one-offs), `scenery` (fountain, gateway, lifeguard stands, sound walls), sign names, budgets |
-| `src/server/Dev/City/Planner.luau` | pure: plots in, sites out (sections 4.1..4.7) |
+| `src/shared/Config/City.luau` | districts by zone, district looks, bands, block caps, areas (mixes, caps, densities, tower counts), the one-offs (`landmarks`), claims, tower slots, placement rules, corner archetypes, the Skyline, budgets, the kit's numbers, textures, palettes, sign names |
+| `src/shared/Config/CityArchetypes/<id>.luau` | one per archetype: its district, weight, copies, sizes, heights, crown room, part budget and variant counts (optional `claimDepth`, `corner`) |
+| `src/server/Dev/City/CityBuilder.luau` | the planner (section 4: `place`), and building, checking and filing a site (`build`, `check`, `file`) |
+| `src/server/Dev/City/Types.luau` | `Plot`, `Site`, `Env`, `Variant`, `Model`, `Archetype` |
 | `src/server/Dev/City/Kit.luau` | pure shape helpers that emit PartSpecs (8.4) |
-| `src/server/Dev/City/Archetypes/<district>/<id>.luau` | one module per archetype or one-off: `{ id, district, bands, minWidth, minDepth, corner, budget, crowns, build(site, kit) }` |
-| `src/server/Dev/City/Streetscape.luau` | street palms, furniture, block-core decks, the beach, promenade, seawall, lifeguard stands, sound walls, the Town Square layout |
-| `src/server/Dev/City/CityBuilder.luau` | runs the planner, calls each site's archetype, places the Skyline masses, checks every site's parts against its budget and its rects |
-| `src/server/Dev/MapParts.luau` | MapBuilder's part helpers moved out so the city modules can use them without a circular require: `block`, `wedge`, `cylinder`, `decor`, `nightLight`, `add`, `container`, `note`, `mixSeed`, `lift`, `planAt` |
+| `src/server/Dev/City/Archetypes/<district>/<id>.luau` | one module per archetype: `{ id, build(m) }`, found by `Archetypes/Index` |
+| `src/server/Dev/City/Scenery/` | street palms, furniture, the beach, the causeway (the scenery step) |
+| `src/server/Dev/MapTypes.luau` | the PartSpec and Container types MapBuilder and the city share (`Container.lod`) |
 
 ### 8.2 The hook
 
-`addBuildings` keeps its loop line for line: the same draws, `usable()`, grid inserts and paved lots. It differs only
-in two places:
+`addBuildings` keeps its loop: the same draws, `usable()`, grid inserts and paved lots. It differs in three places:
 
-- the density test reads `City.densityOverrides`
-- where it called `addBuilding`, it appends a Plot record
+- the density test reads `CityBuilder.density` (an area's density, else the zone's)
+- where it called `addBuilding`, it appends a Plot record (with `cornerStart` and `cornerEnd`)
+- block tile models are made only for the old-look buildings that stand in them
 
-At the end it calls `CityBuilder.addSites(ctx, plots)`.
+At the end `addCity` hands the plots and an Env (the clear check and the claim, on MapBuilder's grid) to
+`CityBuilder.place`, builds every site, files its parts in its model, its lights model and the Skyline, builds the old
+look on the plots no archetype fits, and fills `plan.city` (fallbacks and parts by district, lights, Skyline, claims,
+unplaced and missing one-offs).
 
 ```lua
 export type Plot = {
-	index: number, -- today's building number (stable)
-	edgeId: number, side: number, frontage: string, face: number, -- block face from findBlocks
-	along: number, width: number, -- plot start and width along the road
-	setback: number, depth: number, tall: number, shade: number, -- today's draws, kept for fallbacks
-	zone: ZoneData, rect: Rect, -- the full plot rect (front line to plotDepth back)
-	u: Vector2, front: number, -- road direction and front line offset
+	index: number, -- MapBuilder's building number (stable)
+	frontage: string, -- "<edge id>:<side>"
+	block: number, -- block face from findBlocks
+	along: number, width: number, plotDepth: number, -- along the road; 53 deep
+	frontStart: Vector2, u: Vector2, away: Vector2, -- its corner on the front line, the road's way, into the plot
+	zone: string, tall: number, nearSpot: boolean, shade: number,
+	folder: string, cornerStart: boolean?, cornerEnd: boolean?,
+	center: Vector2, buildingDepth: number, buildingWidth: number, height: number, color: Color3, -- the old look
 }
 ```
-
-Order in `planWith`: addLandmarks (now restyled through CityBuilder's landmark archetypes), ..., addParks,
-addBuildings (plots, then sites), **addStreetscape**, then addTrees, so trees keep off furniture and core claims.
 
 ### 8.3 What an archetype gets
 
 ```lua
 export type Site = {
 	id: string, -- "B<index>" of its first plot; part names start with it
-	district: string, zone: ZoneData,
-	frame: CFrame, -- footprint centre on the ground; local X along the road, local -Z toward the road
-	width: number, depth: number, -- buildable size in that frame (plots ∪ core claim)
-	rects: { Rect }, -- what it may build on: its plot rects and any core claim
-	height: number, band: "L" | "M" | "H" | "T" | "S",
-	roadKind: string, corner: { left: boolean, right: boolean }, -- open to a cross street at that end
-	face: number, -- block face, for neighbour rules
-	seed: number, -- mixSeed(layout.seed, shade, index): its own random stream
-	variant: { palette: string, crown: number, rhythm: number, mirror: boolean, podium: number },
-	folder: string, -- still geometry: Buildings/<district>/Block<n> or Tower<id> (SLIM, Atomic)
-	lightsFolder: string, -- BuildingLights/<district>/Tile<x>_<z> (Atomic, not SLIM)
-	skyline: boolean, -- S and T: main masses go to Skyline (Persistent)
-	budget: number, -- parts it may use
+	archetype: string, district: string, zone: string,
+	frame: CFrame, -- footprint centre on the ground; local X along the road, local -Z toward its front
+	width: number, depth: number, -- its plots, plus its core claim (`claim` studs of the depth)
+	height: number, maxHeight: number, band: string, -- "L", "M", "H", "T" or "S"
+	seed: number, variant: { palette: number, crown: number, rhythm: number, mirror: boolean },
+	folder: string, -- Buildings/Tower<n> or Site<n> (Atomic, SLIM)
+	lightsFolder: string, -- BuildingLights/<the same name> (Atomic, not SLIM)
+	plots: { number }, block: number,
+	face: "road" | "back", -- its front looks at its road, or away from it
+	claim: number,
+	corner: { left: boolean, right: boolean }, -- open to a cross street at that end, as drawn (after the mirror)
+	landmark: boolean, skyline: boolean,
 }
 ```
 
-Buildings in band H and up get their own Model (`Tower<id>`), so all of a tower switches detail together under SLIM.
-Low and mid sites share block-tile Models, as today.
+Every site is its own Model, so it streams and switches detail as one piece (TECH §6).
 
 ### 8.4 The kit
 
@@ -865,16 +822,15 @@ The kit is pure. Every helper takes the site frame and local coordinates (front 
 |---|---|---|
 | Ground, Roads | Persistent | — |
 | Skyline | Persistent, ≤ 200 parts | — |
-| Buildings/<district>/Block<n>, Tower<id>, <oneOffId> | Atomic | SLIM |
-| Landmarks/<id> | Atomic | SLIM |
-| Trees/Tile<x>_<z>, Streetscape/Tile<x>_<z> | Atomic | SLIM |
-| BuildingLights/..., LandmarkLights/<id>, Features/<id> | Atomic | — |
+| Buildings/Tower<n>, Buildings/Site<n> (city sites) | Atomic | SLIM |
+| BuildingLights/Tower<n>, BuildingLights/Site<n> | Atomic | Disabled |
+| Buildings/Block<n> (the old look, only where no archetype fits) | Atomic | — |
+| Lots (plots and `ClaimB<n>` core claims) | Folder | — |
 
-Supporting changes:
+The scenery step's folders (Trees, Streetscape and their lights) are that step's.
 
-- `Container` gains `lod: Enum.ModelLevelOfDetail?`, and `build()` sets it.
-- SLIM needs the place published with Team Create on (decision D1). Without that, SLIM quietly falls back to normal
-  streaming and the Skyline model carries the skyline.
+Supporting changes (built): `Container` has `lod: string?`, and `build()` sets `Model.LevelOfDetail` from it. SLIM needs
+the place published with Team Create on (decision D1: on as of 2026-10-25).
 
 ## 9. Budgets
 
@@ -902,23 +858,23 @@ Supporting changes:
 
 Night-light parts (about 1,400) sit inside their district budgets.
 
-New `Environment.budget`, replacing the single `buildingParts`:
+As built (2026-10-25), `Config/Environment.budget` and `Config/City.budgets`:
 
-| Key | Value |
-|---|---|
-| mapParts | 30,000 |
-| treeParts | 4,200 |
-| streetscapeParts | 2,600 |
-| skylineParts | 200 |
-| districts | downtown 8,800, beach 2,100, suburbs 1,500, arts 1,600, quarry 120 |
-| landmarkParts | 700 |
-| featureParts | 200 |
-| groundParts | 700 |
-| nightLightParts | 1,400 |
-| **inViewParts** | **20,000** |
+| Key | Value | Where |
+|---|---|---|
+| mapParts | 30,000 | Environment.budget |
+| **inViewParts** | **20,000** | Environment.budget |
+| buildingParts | 15,000 (city sites and old-look fallbacks) | Environment.budget |
+| treeParts, featureParts, groundParts | unchanged (the scenery step tunes them) | Environment.budget |
+| districts | downtown 8,800, beach 2,100, suburbs 1,500, arts 1,600, quarry 120: each district's share of buildingParts (printed, not a gate) | City.budgets |
+| skyline | 200 | City.budgets |
+| nightLights | 1,400 (building night-light parts) | City.budgets |
+
+The streetscape and restyled-landmark budgets are the scenery and landmark steps' to add.
 
 **inViewParts** is the phone gate: the most parts a player can have streamed in at once. It is the parts within
-`Perf.streaming.targetRadius` (2,048) of any road node, plus every Persistent part. The worst place is downtown's
+`Perf.streaming.targetRadius` (2,048) of any road node, plus every Persistent part (`MapCheck.inView`, binned in
+128-stud cells; tests/MapBuilder.spec and Dev/MapCheck fail over it). The worst place is downtown's
 centre, where the whole of downtown and about 40 % of each neighbouring district are in range. The estimate is about
 19,500, against the 5,100..5,550 the phase 14 perf drive measured at a steady 60 fps on desktop. That is why the
 budget leans on four levers:
@@ -932,16 +888,18 @@ Davis's real-phone check after the downtown step decides whether 20,000 holds.
 
 ## 10. What the checks keep checking
 
-Dev/MapCheck is unchanged and must pass: two builds give the same count, no road overlaps, every location built with
-its tag and attributes within reach, every node reachable, routes under 5 ms, night-light kinds known, every feature
-built, the tree count noted, Ground and Roads Persistent. It also notes parts per district and the Skyline count.
+Dev/MapCheck must pass: two builds give the same count, no road overlaps, every location built with its tag and
+attributes within reach, every node reachable, routes under 5 ms, night-light kinds known, every feature built, the
+tree count noted, Ground and Roads Persistent. Step 7 (built 2026-10-25) adds the city: it notes the sites, core
+claims, old-look fallbacks and building parts by district, the Skyline count and the archetypes not written yet, and
+fails on a one-off that found no site, on more parts in view at once than `budget.inViewParts`, on a night light,
+sign, light or ad unit inside a SLIM model, and on a Skyline that isn't Persistent or is over budget.
 
 tests/MapBuilder.spec keeps:
 
 - road surfaces flush, no gaps or lips, no road overlaps
 - every part under the size limit and inside the map
-- buildings, lots and streetscape off roads, junction pads, sidewalks (streetscape excepted), locations, landmarks and
-  display pads
+- buildings and lots (claims included) off roads, junction pads, sidewalks, locations and landmarks
 - the auto mall block clear of buildings
 - every pad's way to its road with nothing a car can't drive over
 - no buildings or lots in parks (the beach park included)
@@ -950,45 +908,33 @@ tests/MapBuilder.spec keeps:
 - at most one emitting streetlight per 200 studs
 - night lights tagged with known kinds, built in their day look with their lights off
 
-Changed or new checks in tests/MapBuilder.spec:
+Changed or new in tests/MapBuilder.spec (built 2026-10-25):
 
-1. Budgets: every key of the new `Environment.budget`, including the inViewParts gate.
-2. Every building site is a known archetype with:
-   - at least one Glass part (warehouses and hangars may use window insets instead)
-   - a roof or crown part
-   - its parts inside its rects
-   - a height inside its band
-   - a part count within its archetype's budget
+1. Budgets: mapParts, buildingParts, the Skyline and the building night lights fail when over; each district's share
+   of buildingParts is printed, with any district past its share; and the inViewParts gate.
+2. Every city site re-checks clean (inside its footprint and height, within budget, named and filed as its), has
+   glass, reaches its roof, and has the band of its height; every archetype placement may draw stands at least once,
+   within its copies.
+3. Every one-off whose archetype is written stands once, near its anchor, and none is unplaced.
+4. No two neighbouring sites share an archetype (except the across-the-street last resort), no look is used twice
+   while its archetype has looks left, no two towers within 600 studs are within 24 of one height, and at least 40 % of
+   sites light up at night.
+5. No SLIM model holds a night light, a sign, a light or an ad unit; every site is an Atomic SLIM model; the Skyline is
+   Persistent.
+6. The old look's buildings (only where no archetype fits) still have glass and a roof edge; their count is printed
+   by district.
+7. Containers: Buildings/, BuildingLights/, Trees/ and Features/ are Atomic.
 
-   At least 40 % of sites have lit windows. This replaces "glass, floor bands or piers and a roof edge".
-3. Every `City.landmarks` one-off is built exactly once, and the plan leaves no notes.
-4. No two neighbouring sites share an archetype, and no look key is used twice.
-5. No SLIM container holds a NightLight-tagged part, a label, an ad unit or a Light.
-6. Skyline is Persistent and within its budget.
-7. Streetscape stays off carriageways, junction pads, driveway cuts and pad exits. Street-palm fronds over a road are
-   at least 20 studs above it. No streetscape item stands within 2 studs of a streetlight post.
-8. Trees: the new species. Trunks collide; fronds and leaves never collide, take a raycast or a touch.
-9. Containers: Buildings/, Trees/, Features/, Streetscape/, BuildingLights/ and LandmarkLights/ are Atomic.
+tests/City.spec (the kit and archetype step's) covers the pure planner with small fixtures: the same plan twice,
+site carving, the repeat and neighbour rules, the caps, and each archetype on sample sites.
 
-New tests/City.spec covers the pure planner with small fixtures:
-
-- the same plan twice
-- runs and site carving
-- core claims staying inside the core
-- one-off claims finding their runs
-- the repeat and neighbour rules
-- heights in band and the no-twin rule
-- each archetype built on a sample site within its budget and rects
-
-The name gate: append the inspiration names that are not everyday words to `scripts/banned-names.txt` under a new
-header. Candidates:
-
-> Fontainebleau, Eden Roc, Carlyle, Cardozo, Biltmore, Versace, Casa Casuarina, Freedom Tower, Brickell, Wynwood,
-> Coral Gables, Ocean Drive, South Beach, Opa-locka, Lummus, InterContinental, Four Seasons, Aston Martin, Hadid,
-> Arquitectonica, Bayside, Miracle Mile
-
-That way `scripts/check` refuses them in `src/` and `tests/`. Everyday-word names (Atlantis, Palace, Babylon, Colony,
-Tides, Avalon, Panorama) are kept out by using neutral ids, and by review.
+The name gate (decision L6, built): the inspiration names that are not everyday words are in
+`scripts/banned-city-names.txt`, which the brand-name step of `scripts/check.ps1` and `check.sh` reads with
+`scripts/banned-names.txt`, so the gate refuses them in `src/` and `tests/`. They are kept out of `banned-names.txt`
+itself because that list is also the AI Car Designer's brand check (Util/BrandNames must cover it, and the backend
+keeps a copy that `npm run sync-kit` syncs and production serves); a building or neighbourhood name in a player's car
+design is not a brand problem. Everyday-word names (Atlantis, Palace, Babylon, Colony, Tides, Avalon, Panorama) are kept
+out by neutral ids, and by review.
 
 ## 11. Work order for the build steps
 
@@ -997,7 +943,7 @@ Each step lands green on tests/MapBuilder.spec and Dev/MapCheck.
 | Step | Work |
 |---|---|
 | 1 | `City.luau`, `MapParts`, Planner, Kit and CityBuilder, with the `legacy` archetype. No visual change. Budgets and new checks wired. |
-| 2 | Downtown one-offs: spire, tiered_tower, exoskeleton and crown_tower first (the spawn view and the bridge view), then the rest of section 5.1. |
+| 2 | Downtown one-offs: T01, T03, T02 and T09 first (the spawn view and the bridge view), then the rest of section 5.1. |
 | 3 | Downtown repeatables, block caps, core claims, the Skyline model, street palms on Main and Commerce, Town Square, block-core decks, sidewalk colour. |
 | 4 | Beach: park split, sand, water colour, promenade, Ocean Drive paving and density, hotels and one-offs, lifeguard stands, causeway dressing, diner restyle. |
 | 5 | Suburbs: archetypes, one-offs, gateway, hedges and walls, River Avenue palms. |
@@ -1011,20 +957,25 @@ Each step lands green on tests/MapBuilder.spec and Dev/MapCheck.
 
 | | Decision | Recommendation |
 |---|---|---|
-| D1 | Turn on Team Create and publish the place. SLIM (distant buildings stay visible as cheap stand-ins) needs both. Without it, the plan still works: the tall towers' main shapes stay loaded, but distant details vanish. | Yes |
+| D1 | Turn on Team Create and publish the place. SLIM (distant buildings stay visible as cheap stand-ins) needs both. Without it, the plan still works: the tall towers' main shapes stay loaded, but distant details vanish. | Done (on and published, 2026-10-25) |
 | D2 | Keep the zone names (Cedar Bend, Riverside, The Plant, Lakefront, Mesa Test Site) or rename them to new Miami-flavoured ones. Renaming changes GPS and place names players see. | Keep for now |
 | D3 | Allow a handful of original images (window grids, real mural art) uploaded to his Roblox account, for sharper facades and real murals. | Not needed for this pass; parts only by default |
-| D4 | The tallest tower is 560 studs (about 46 floors). Taller is a number change. | 560 |
+| D4 | The tallest tower is 560 studs (about 46 floors). Taller is a number change. | 560 (note: ARCHETYPES.md compresses its inspiration to 700, and T01's config is 660..700 today) |
 | D5 | Hotel and sign names are invented EV puns (VOLTAMAR, THE AMPERE, SEAVOLT...). | Keep; veto any he dislikes |
 | D6 | Restyle the claimable houses (Mediterranean and modern tropical) in a later step. Their garage door and home charger stay where they are. | Yes, as a separate step after the buildings |
 
 ### For the lead (not Davis)
 
+All decided 2026-10-25:
+
 | | Decision |
 |---|---|
-| L1 | Towers merge neighbouring plots of one run and the tallest claim part of their block's empty core. No plot moves; every claim passes the same clear-checks. This is the only way to give Brickell towers real girth. |
-| L2 | `City.densityOverrides` raises occupancy on Ocean Drive's land side to 0.95, for a continuous hotel row. The same plots, just more of them built. |
-| L3 | MapLayout.parks: split Lakefront Park into a sand beach band and the rest of the ring. |
-| L4 | Environment budgets: mapParts goes from 16,000 to 30,000. Tree count goes from about 1,700 to about 1,350, with fewer in the open country and more palms in town. inViewParts 20,000 is the new phone gate. |
-| L5 | The optional canal along the south straight (a MapLayout lake) and the optional loop sign gantries. |
-| L6 | Extend `scripts/banned-names.txt` with the inspiration names (section 10). |
+| L1 | Towers merge neighbouring plots of one run and the tallest claim part of their block's empty core. No plot moves; every claim passes the same clear-checks. Built (section 4.4). |
+| L2 | Occupancy on the north shore road's land side (Ocean Drive) goes to 0.95, for a continuous hotel row: area `ocean_drive`'s `density`. Built; the beach side was also set to 0 (area `ocean_beach`), so the hotels see the water. |
+| L3 | MapLayout.parks: Lakefront Park split into `lakefront_beach` (sand, x -1050..1050, z 1650..1800) and `lakefront_park` (the rest of the ring). Built. |
+| L4 | mapParts 30,000 and the inViewParts phone gate at 20,000. Built. |
+| L5 | No canal and no sign gantries this round. |
+| L6 | The inspiration names go in the name gate. Built as `scripts/banned-city-names.txt`, read by the same gate step (section 10). |
+| L7 | Team Create is on and the place is published, so SLIM is used: night lights live in small separate models. Built (section 7.2). |
+| L8 | Terrain water is not used this round (it changes what happens when a car goes in the water; Davis decides): the bay stays parts. |
+| L9 | No decorative traffic signals. |

@@ -31,6 +31,7 @@ type Variant = Types.Variant
 
 local SEEDS = { 1, 77, 4242 }
 local SIDES: { Kit.Side } = { "front", "back", "left", "right" }
+local CORNERS: { Kit.PrismCorner } = { "fl", "fr", "bl", "br" }
 local DEPTH = 53 -- a full plot (MapBuilder TUNING.setbackMax + depthMax)
 local EPS = 0.01
 
@@ -249,6 +250,17 @@ return function(t: Harness.Api)
 			Kit.umbrella(m, "Market", -4, -15, 0.5, 6, Color3.new(1, 0.6, 0.7), true)
 			Kit.roofBox(m, "Roof", Vector3.new(-2, 30, -2), Vector3.new(2, 34, 2))
 			Kit.podium(m, "Podium", Vector3.new(-8, 0, -8), Vector3.new(8, 30, 8), 3, 3, 0.4, white, white)
+			for _, corner in CORNERS do
+				Kit.prism(m, `Prism{corner}`, Vector3.new(-6, 0, 10), Vector3.new(2, 9, 16), corner, white)
+				Kit.cornerWedge(m, `CornerWedge{corner}`, Vector3.new(-6, 0, 10), Vector3.new(2, 9, 16), corner, white)
+			end
+			for _, wall in SIDES do
+				Kit.corbel(m, `Corbel{wall}`, Vector3.new(-6, 0, 10), Vector3.new(2, 9, 16), wall, white)
+			end
+			Kit.hipRoof(m, "Hip", Vector3.new(-10, 20, -6), Vector3.new(10, 26, 6), 1.5, 0.5, white)
+			Kit.gableRoof(m, "Gable", Vector3.new(-10, 20, -6), Vector3.new(10, 26, 6), "x", 1.5, 0.5, white, white)
+			Kit.archHead(m, "Arch", -3, 3, 9, -6, -4.6, 2.4, white)
+			Kit.archWindow(m, "ArchWindow", -2, 2, 12, 16, -6, Color3.new(0.2, 0.3, 0.4), { lit = true })
 			return m.specs
 		end
 
@@ -303,6 +315,165 @@ return function(t: Harness.Api)
 				t.expect(lo.Z).toBeNear(-4, EPS)
 				t.expect(hi.Z).toBeNear(6, EPS)
 			end
+		end)
+
+		t.it("stands a prism in its box with its square corner where asked, mirrored with the site", function()
+			for _, mirror in { false, true } do
+				local m = model(mirror)
+				for _, corner in CORNERS do
+					local spec = Kit.prism(m, `P{corner}`, Vector3.new(-6, 0, 10), Vector3.new(2, 9, 16), corner, white)
+					local lo, hi = Kit.localBounds(m.frame, spec)
+					t.expect(lo.X).toBeNear(if mirror then -2 else -6, EPS)
+					t.expect(hi.X).toBeNear(if mirror then 6 else 2, EPS)
+					t.expect(lo.Y).toBeNear(0, EPS)
+					t.expect(hi.Y).toBeNear(9, EPS)
+					t.expect(lo.Z).toBeNear(10, EPS)
+					t.expect(hi.Z).toBeNear(16, EPS)
+					-- A WedgePart's square edge runs along its x at (y, z) = (-size.Y / 2, +size.Z / 2).
+					local square = m.frame:Inverse() * spec.cframe * Vector3.new(0, -spec.size.Y / 2, spec.size.Z / 2)
+					local cx = if string.sub(corner, 2, 2) == "l" then -6 else 2
+					t.expect(square.X).toBeNear(if mirror then -cx else cx, EPS)
+					t.expect(square.Z).toBeNear(if string.sub(corner, 1, 1) == "f" then 10 else 16, EPS)
+				end
+			end
+		end)
+
+		t.it("lays a triangle flat on a front face, its right angle where asked, tilted out or in", function()
+			local corners: { Kit.TriangleCorner } = { "x0y0", "x1y0", "x0y1", "x1y1" }
+			for _, mirror in { false, true } do
+				local m = model(mirror)
+				for _, corner in corners do
+					local spec = Kit.triangle(m, `Tri{corner}`, -6, 2, 4, 9, -8, 0.5, corner, white)
+					local lo, hi = Kit.localBounds(m.frame, spec)
+					t.expect(lo.X).toBeNear(if mirror then -4 else -6, EPS)
+					t.expect(hi.X).toBeNear(if mirror then 6 else 4, EPS)
+					t.expect(lo.Y).toBeNear(2, EPS)
+					t.expect(hi.Y).toBeNear(9, EPS)
+					t.expect(lo.Z).toBeNear(-8, EPS)
+					t.expect(hi.Z).toBeNear(-7.5, EPS)
+					-- The wedge's square edge (local x at y = -size.Y / 2, z = +size.Z / 2) is the right angle.
+					local square = m.frame:Inverse() * spec.cframe * Vector3.new(0, -spec.size.Y / 2, spec.size.Z / 2)
+					local cx = if string.sub(corner, 1, 2) == "x0" then -6 else 4
+					t.expect(square.X).toBeNear(if mirror then -cx else cx, EPS)
+					t.expect(square.Y).toBeNear(if string.sub(corner, 3, 4) == "y0" then 2 else 9, EPS)
+					t.expect(square.Z).toBeNear(-7.75, EPS)
+					for i, tilt in { 0.1, -0.1 } do
+						local tilted =
+							Kit.triangle(m, `Tilt{corner}{i}`, -6, 2, 4, 9, -8, 0.5, corner, white, "trim", tilt)
+						local at = m.frame:Inverse()
+							* tilted.cframe
+							* Vector3.new(0, -tilted.size.Y / 2, tilted.size.Z / 2)
+						t.expect(at.Z < -7.75).toBe(tilt > 0)
+					end
+				end
+			end
+		end)
+
+		t.it("stands a corner wedge's peak over the corner asked, mirrored with the site", function()
+			for _, mirror in { false, true } do
+				local m = model(mirror)
+				for _, corner in CORNERS do
+					local spec =
+						Kit.cornerWedge(m, `CW{corner}`, Vector3.new(-6, 0, 10), Vector3.new(2, 9, 16), corner, white)
+					local lo, hi = Kit.localBounds(m.frame, spec)
+					t.expect(lo.X).toBeNear(if mirror then -2 else -6, EPS)
+					t.expect(hi.X).toBeNear(if mirror then 6 else 2, EPS)
+					t.expect(hi.Y).toBeNear(9, EPS)
+					t.expect(lo.Z).toBeNear(10, EPS)
+					t.expect(hi.Z).toBeNear(16, EPS)
+					-- A CornerWedgePart's peak is its (+X, +Y, -Z) corner.
+					local peak = m.frame:Inverse() * spec.cframe * (spec.size * Vector3.new(0.5, 0.5, -0.5))
+					local cx = if string.sub(corner, 2, 2) == "l" then -6 else 2
+					t.expect(peak.X).toBeNear(if mirror then -cx else cx, EPS)
+					t.expect(peak.Y).toBeNear(9, EPS)
+					t.expect(peak.Z).toBeNear(if string.sub(corner, 1, 1) == "f" then 10 else 16, EPS)
+				end
+			end
+		end)
+
+		t.it("hangs a corbel with its flat face on top and its upright face on the wall side", function()
+			for _, mirror in { false, true } do
+				local m = model(mirror)
+				for _, wall in SIDES do
+					local spec = Kit.corbel(m, `C{wall}`, Vector3.new(-6, 0, 10), Vector3.new(2, 9, 16), wall, white)
+					local lo, hi = Kit.localBounds(m.frame, spec)
+					t.expect(lo.X).toBeNear(if mirror then -2 else -6, EPS)
+					t.expect(hi.X).toBeNear(if mirror then 6 else 2, EPS)
+					t.expect(lo.Y).toBeNear(0, EPS)
+					t.expect(hi.Y).toBeNear(9, EPS)
+					-- A WedgePart's square edge (local x at y = -size.Y / 2, z = +size.Z / 2) is the corbel's top
+					-- edge against the wall.
+					local square = m.frame:Inverse() * spec.cframe * Vector3.new(0, -spec.size.Y / 2, spec.size.Z / 2)
+					t.expect(square.Y).toBeNear(9, EPS)
+					if wall == "left" or wall == "right" then
+						local x = if wall == "left" then -6 else 2
+						t.expect(square.X).toBeNear(if mirror then -x else x, EPS)
+					else
+						t.expect(square.Z).toBeNear(if wall == "front" then 10 else 16, EPS)
+					end
+				end
+			end
+		end)
+
+		t.it("covers a hipped or gabled roof's outline past the eaves, up to its ridge", function()
+			for _, mirror in { false, true } do
+				local m = model(mirror)
+				for _, hx in { 10, 6 } do
+					local hip =
+						Kit.hipRoof(m, `Hip{hx}`, Vector3.new(-hx, 20, -6), Vector3.new(hx, 26, 6), 1.5, 0.5, white)
+					t.expect(#hip).toBe(if hx == 6 then 4 else 6)
+					local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+					for _, spec in hip do
+						local a, b = Kit.localBounds(m.frame, spec)
+						lo, hi = lo:Min(a), hi:Max(b)
+					end
+					t.expect(lo.X).toBeNear(-hx - 1.5, EPS)
+					t.expect(hi.X).toBeNear(hx + 1.5, EPS)
+					t.expect(lo.Z).toBeNear(-7.5, EPS)
+					t.expect(hi.Z).toBeNear(7.5, EPS)
+					t.expect(hi.Y).toBeNear(26, EPS)
+					-- The eaves: 0.5 over the wall top at the wall line, falling on at the same pitch past it.
+					t.expect(lo.Y).toBeNear(20.5 - 1.5 * (5.5 / 6), EPS)
+				end
+				local ridges: { "x" | "z" } = { "x", "z" }
+				for _, ridge in ridges do
+					local gable = Kit.gableRoof(
+						m,
+						`Gable{ridge}`,
+						Vector3.new(-10, 20, -6),
+						Vector3.new(10, 26, 6),
+						ridge,
+						1.5,
+						0.5,
+						white,
+						white
+					)
+					t.expect(#gable).toBe(4)
+					local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+					for _, spec in gable do
+						local a, b = Kit.localBounds(m.frame, spec)
+						lo, hi = lo:Min(a), hi:Max(b)
+					end
+					t.expect(hi.Y).toBeNear(26, EPS)
+					t.expect(hi.X).toBeNear(if ridge == "x" then 10 else 11.5, EPS)
+					t.expect(hi.Z).toBeNear(if ridge == "x" then 7.5 else 6, EPS)
+				end
+			end
+		end)
+
+		t.it("cuts an arch head's corners inside its opening and rounds an arched window's top", function()
+			local m = model(true)
+			for _, spec in Kit.archHead(m, "AH", -3, 3, 9, -6, -4.6, 2.4, white) do
+				local lo, hi = Kit.localBounds(m.frame, spec)
+				t.expect(lo.X >= -3 - EPS and hi.X <= 3 + EPS).toBe(true)
+				t.expect(lo.Y).toBeNear(6.6, EPS)
+				t.expect(hi.Y).toBeNear(9, EPS)
+			end
+			local window = Kit.archWindow(m, "AW", -2, 2, 12, 16, -6, Color3.new(0.2, 0.3, 0.4), { lit = true })
+			t.expect(#window).toBe(2)
+			local _, top = Kit.localBounds(m.frame, window[2])
+			t.expect(top.Y).toBeNear(18, EPS)
+			t.expect(window[2].tag).toBe(Environment.nightLights.tag)
 		end)
 
 		t.it("gives masses collisions and shadows, trim shadows only, and detail neither", function()

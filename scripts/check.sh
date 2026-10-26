@@ -19,11 +19,12 @@ while IFS= read -r -d '' file; do
 done < <(find src tests -name '*.luau' -not -path '*/Vendor/*' -print0)
 [ "$bad" -eq 0 ] || fail "strict mode"
 
-# No real carmaker or model names in game code (CLAUDE.md hard rule 4). List: scripts/banned-names.txt.
+# No real carmaker or model names in game code (CLAUDE.md hard rule 4), and no real building, architect, street or
+# neighbourhood the city takes after. Lists: scripts/banned-names.txt, scripts/banned-city-names.txt.
 echo "== brand names"
-pattern="$(grep -v '^#' scripts/banned-names.txt | grep -v '^[[:space:]]*$' | tr -d '\r' | paste -sd '|' -)"
+pattern="$(cat scripts/banned-names.txt scripts/banned-city-names.txt | grep -v '^#' | grep -v '^[[:space:]]*$' | tr -d '\r' | paste -sd '|' -)"
 if grep -rniE --exclude-dir=Vendor "\b(${pattern})\b" src tests; then
-	fail "brand names (real carmaker or model name in game code)"
+	fail "brand names (a real carmaker, model, building or place name in game code)"
 fi
 
 # Every remote in src/shared/Net.luau has its row in docs/SECURITY.md, and no row names a remote that isn't there.

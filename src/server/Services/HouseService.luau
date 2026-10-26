@@ -9,12 +9,12 @@
 --              Config/Houses claimReach of the sign). One plot per player per server (claimRefusal): a plot already
 --              theirs, a second plot or someone else's plot is refused with a plain reason, and so is a lot where a
 --              car's chassis or another player stands where a wall would appear (Config/Houses lotClear). The house
---              appears at
---              once (Config/Houses structure: walls, roof, windows, front door, the garage with its door and the
---              home charger's bay, the driveway, the mailbox and the owned upgrades), the sign shows the owner's
---              display name (Roblox display names need no filtering) and the prompt goes away. The windows and the
---              porch lights are night lights (Config/Houses Piece.night): Services/DayNightService lights them from
---              dusk to dawn.
+--              appears at once in the plot's style (Config/Houses styleOf: one of Config/Houses variants and one of
+--              its palettes, always the same for a plot): the shared garage (Config/Houses structure) with its door
+--              and the home charger's bay, the style's own house, the mailbox and the owned upgrades. The sign shows
+--              the owner's display name (Roblox display names need no filtering) and the prompt goes away. The
+--              windows and the porch lights are night lights (Config/Houses Piece.night):
+--              Services/DayNightService lights them from dusk to dawn.
 --   releasing  Net LeaveHouse, or the player leaving the server: the house is removed and the plot is free again.
 --   upgrades   Net BuyHouseUpgrade { upgrade }: Config/Houses upgrades, bought once with cash through
 --              EconomyService.trySpend (reason Config/Houses economyReason; refunded if the save can't be written)
@@ -40,7 +40,8 @@
 -- Server-authoritative (CLAUDE.md hard rule 1): the client only names a plot or an upgrade.
 --
 -- The decisions are pure helpers for tests/Houses.spec: claimRefusal, claim, release, ownerOf, plotOf, opensFor,
--- insideBox, overlapsBox, lotBoxes and lotBlocked (the upgrade and charger math is in Config/Houses).
+-- insideBox, overlapsBox, mustBeClear, lotBoxes and lotBlocked (the upgrade and charger math, the styles and the
+-- part geometry are in Config/Houses).
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -80,7 +81,8 @@ export type Box = { frame: CFrame, size: Vector3 }
 type Plot = {
 	location: MapLayout.Location,
 	frame: CFrame,
-	wallColor: Color3,
+	variant: Houses.Variant, -- the plot's style (Config/Houses styleOf)
+	colors: Houses.Palette, -- and its palette
 	model: Model,
 	prompt: ProximityPrompt,
 	topLabel: TextLabel,
@@ -103,6 +105,9 @@ local ROOT_PART = "HumanoidRootPart"
 local SIGN_NAME = "Sign"
 local HOUSE_NAME = "House"
 local EXTRAS_NAME = "Extras"
+local PANELS_NAME = "Panels" -- the garage door's Texture
+local FALLBACK_COLOR = Color3.fromRGB(150, 152, 156) -- a piece whose paint its palette lacks (never in tests)
+local NO_PALETTE: Houses.Palette = {} -- for parts that carry their own colour (the sign)
 
 local text = Houses.text
 local signConfig = Houses.sign
@@ -118,7 +123,7 @@ local plots: { [string]: Plot } = {}
 -- Roast fixes (2026-10-24): onClaimed listeners (Services/GoalsService's "claim a house" goal).
 local claimedListeners: { (player: Player, plotId: string) -> () } = {}
 
--- Every HousePlot location by id, and its place among them (it picks the wall colour).
+-- Every HousePlot location by id, and its place among them (it picks the style and palette).
 local plotLocations: { [string]: MapLayout.Location } = {}
 local plotOrder: { string } = {}
 for _, location in MapLayout.locations do
@@ -215,18 +220,28 @@ function HouseService.overlapsBox(frame: CFrame, size: Vector3, partFrame: CFram
 		and math.abs(centre.Z) < size.Z / 2 + reachZ
 end
 
--- Where a house piece stands on a plot whose frame is `frame` (as it is built).
-local function pieceFrame(piece: Houses.Piece, frame: CFrame): CFrame
-	return frame * CFrame.new(piece.offset) * CFrame.Angles(math.rad(piece.tilt or 0), math.rad(piece.turn or 0), 0)
+-- Whether a solid piece must be clear before the house is built (Config/Houses lotClear): it reaches from below
+-- maxBottom to above minTop over the plot's ground.
+function HouseService.mustBeClear(piece: Houses.Piece): boolean
+	if not piece.solid then
+		return false
+	end
+	local check = Houses.lotClear
+	local height = Houses.reach(piece).Y
+	return piece.offset.Y - height < check.maxBottom and piece.offset.Y + height > check.minTop
 end
 
--- The boxes of a house on the plot at `frame` that must be clear before it is built (Config/Houses lotClear).
-function HouseService.lotBoxes(frame: CFrame): { Box }
+-- The boxes of a house in `variant`'s style on the plot at `frame` that must be clear before it is built
+-- (Config/Houses lotClear): the solid walls, columns and masses of the shared garage and the style, and the shut
+-- garage door.
+function HouseService.lotBoxes(frame: CFrame, variant: Houses.Variant): { Box }
 	local check = Houses.lotClear
 	local boxes: { Box } = {}
-	for _, piece in Houses.structure do
-		if table.find(check.pieces, piece.name) ~= nil then
-			table.insert(boxes, { frame = pieceFrame(piece, frame), size = piece.size })
+	for _, pieces in { Houses.structure, variant.pieces } do
+		for _, piece in pieces do
+			if HouseService.mustBeClear(piece) then
+				table.insert(boxes, { frame = Houses.pieceFrame(piece, frame), size = piece.size })
+			end
 		end
 	end
 	if check.door then
@@ -297,19 +312,39 @@ end
 
 -- Building -----------------------------------------------------------------------------------------------------
 
-local function newPart(piece: Houses.Piece, frame: CFrame, color: Color3, parent: Instance): BasePart
-	local part: BasePart = if piece.shape == "wedge" then Instance.new("WedgePart") else Instance.new("Part")
+-- A part of `piece`'s shape, painted from `colors` (Config/Houses lookOf; a slot the palette lacks shows grey and
+-- warns, which tests/Houses.spec rules out).
+local function newPart(piece: Houses.Piece, frame: CFrame, colors: Houses.Palette, parent: Instance): BasePart
+	local part: BasePart
+	if piece.shape == "wedge" then
+		part = Instance.new("WedgePart")
+	else
+		local block = Instance.new("Part")
+		if piece.shape == "cylinder" then
+			block.Shape = Enum.PartType.Cylinder
+		elseif piece.shape == "ball" then
+			block.Shape = Enum.PartType.Ball
+		end
+		part = block
+	end
+	local paint = Houses.lookOf(piece, colors)
+	if paint == nil then
+		warn(`{LOG} {piece.name} has no colour in its palette (paint {tostring(piece.paint)})`)
+		paint = { color = FALLBACK_COLOR, material = Enum.Material.SmoothPlastic }
+	end
+	local finish = paint :: Houses.Look
 	part.Name = piece.name
 	part.Size = piece.size
-	part.CFrame = pieceFrame(piece, frame)
-	part.Color = piece.color or color
-	part.Material = piece.material
-	part.Transparency = piece.transparency or 0
+	part.CFrame = Houses.pieceFrame(piece, frame)
+	part.Color = finish.color
+	part.Material = finish.material
+	part.Reflectance = finish.reflectance or 0
+	part.Transparency = finish.transparency or 0
 	part.Anchored = true
 	part.CanCollide = piece.solid
 	part.CanQuery = piece.solid
 	part.CanTouch = false
-	part.CastShadow = piece.solid
+	part.CastShadow = Houses.castsShadow(piece)
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
 	if piece.glow == true then
@@ -335,7 +370,7 @@ end
 
 local function buildPieces(pieces: { Houses.Piece }, plot: Plot, parent: Instance)
 	for _, piece in pieces do
-		newPart(piece, plot.frame, plot.wallColor, parent)
+		newPart(piece, plot.frame, plot.colors, parent)
 	end
 end
 
@@ -376,7 +411,8 @@ local claimPlot: (player: Player, plotId: string, viaPrompt: boolean) -> Reply
 -- The plot's model and its sign (built once at Start for every HousePlot).
 local function buildPlot(parent: Instance, location: MapLayout.Location, index: number): Plot
 	local frame = Houses.plotFrame(location.position, location.yaw)
-	local colors = Houses.wallColors
+	local variantIndex, paletteIndex = Houses.styleOf(index)
+	local variant = Houses.variants[variantIndex]
 	local model = Instance.new("Model")
 	model.Name = location.id
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
@@ -400,8 +436,8 @@ local function buildPlot(parent: Instance, location: MapLayout.Location, index: 
 		material = Enum.Material.SmoothPlastic,
 		solid = true,
 	}
-	newPart(postPiece, frame, signConfig.postColor, sign)
-	local board = newPart(boardPiece, frame, signConfig.boardColor, sign)
+	newPart(postPiece, frame, NO_PALETTE, sign)
+	local board = newPart(boardPiece, frame, NO_PALETTE, sign)
 
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = "Text"
@@ -438,7 +474,8 @@ local function buildPlot(parent: Instance, location: MapLayout.Location, index: 
 	local plot: Plot = {
 		location = location,
 		frame = frame,
-		wallColor = colors[(index - 1) % #colors + 1],
+		variant = variant,
+		colors = variant.palettes[paletteIndex],
 		model = model,
 		prompt = prompt,
 		topLabel = topLabel,
@@ -473,7 +510,8 @@ local function decorate(plot: Plot, owned: { [string]: boolean })
 		buildPieces(Houses.plainMailbox, plot, extras)
 	end
 	for _, upgrade in Houses.upgrades do
-		local pieces = Houses.extras[upgrade.id]
+		-- The style's own parts for this upgrade (where its door, beds and roof are), else the shared ones.
+		local pieces = plot.variant.extras[upgrade.id] or Houses.extras[upgrade.id]
 		if owned[upgrade.id] == true and pieces ~= nil then
 			buildPieces(pieces, plot, extras)
 		end
@@ -682,7 +720,9 @@ end
 local function buildHouse(plot: Plot, owner: Player, owned: { [string]: boolean })
 	local house = Instance.new("Model")
 	house.Name = HOUSE_NAME
+	house:SetAttribute(Houses.plotAttributes.style, plot.variant.id)
 	buildPieces(Houses.structure, plot, house)
+	buildPieces(plot.variant.pieces, plot, house)
 
 	local padConfig = Houses.chargerPad
 	local pad = newPart({
@@ -693,7 +733,8 @@ local function buildHouse(plot: Plot, owner: Player, owned: { [string]: boolean 
 		material = Enum.Material.SmoothPlastic,
 		solid = false,
 		transparency = padConfig.transparency,
-	}, plot.frame, padConfig.color, house)
+		shadow = false,
+	}, plot.frame, NO_PALETTE, house)
 	pad:SetAttribute(chargerConfig.ownerAttribute, owner.UserId)
 	pad:SetAttribute(chargerConfig.plotAttribute, plot.location.id)
 
@@ -701,10 +742,19 @@ local function buildHouse(plot: Plot, owner: Player, owned: { [string]: boolean 
 		name = doorConfig.name,
 		offset = doorConfig.offset,
 		size = doorConfig.size,
-		color = doorConfig.color,
-		material = doorConfig.material,
+		paint = doorConfig.paint,
 		solid = true,
-	}, plot.frame, doorConfig.color, house)
+	}, plot.frame, plot.colors, house)
+	-- A sectional door's joints on its road face (they swing up with it).
+	local panelConfig = doorConfig.panels
+	local panels = Instance.new("Texture")
+	panels.Name = PANELS_NAME
+	panels.Texture = panelConfig.texture
+	panels.Face = Enum.NormalId.Front
+	panels.StudsPerTileU = panelConfig.studsU
+	panels.StudsPerTileV = panelConfig.studsV
+	panels.Color3 = door.Color:Lerp(Color3.new(0, 0, 0), 1 - panelConfig.shade)
+	panels.Parent = door
 
 	local sensor = Instance.new("Part")
 	sensor.Name = doorConfig.sensorName
@@ -788,7 +838,7 @@ local function lotTaken(plot: Plot, claimer: Player): boolean
 			table.insert(parts, { frame = root.CFrame, size = root.Size })
 		end
 	end
-	return HouseService.lotBlocked(HouseService.lotBoxes(plot.frame), parts)
+	return HouseService.lotBlocked(HouseService.lotBoxes(plot.frame, plot.variant), parts)
 end
 
 claimPlot = function(player: Player, plotId: string, viaPrompt: boolean): Reply

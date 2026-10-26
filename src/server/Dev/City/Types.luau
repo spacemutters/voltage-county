@@ -1,6 +1,7 @@
 --!strict
 -- The city builder's data shapes (docs/city/ARCHETYPE_GUIDE.md): a plot from MapBuilder's plot pass, a site the
--- placement makes of one or more plots, the model an archetype writes its parts into, and an archetype module.
+-- placement makes of one or more plots (and maybe a core claim behind them), the model an archetype writes its parts
+-- into, an archetype module, and the clear checks MapBuilder lends the placement for core claims.
 
 local MapTypes = require(script.Parent.Parent.MapTypes)
 
@@ -16,8 +17,9 @@ export type Variant = {
 }
 
 -- One building site. Its frame sits on the ground at the centre of its footprint, local X along the road, local -Z
--- toward the road: the front line is z = -depth/2 and the back z = +depth/2, the sides x = ±width/2. Every part
--- must stay inside that footprint, between y = -kit.bury and y = maxHeight.
+-- toward its front: the front line is z = -depth/2 and the back z = +depth/2, the sides x = ±width/2. The front
+-- looks at the site's road unless `face` is "back" (a bay-row one-off turned to the lake). Every part must stay
+-- inside that footprint, between y = -kit.bury and y = maxHeight.
 export type Site = {
 	id: string, -- "B<index>" of its first plot: every part's name starts with it
 	archetype: string,
@@ -25,14 +27,23 @@ export type Site = {
 	zone: string,
 	frame: CFrame,
 	width: number,
-	depth: number,
+	depth: number, -- its plots' depth, plus its core claim's
 	height: number, -- the main roof
 	maxHeight: number, -- crowns, spires, signs and flagpoles included
 	seed: number, -- its own random stream (Kit.rng)
 	variant: Variant,
-	folder: string, -- the container its parts go in (below Workspace.Map.Generated)
+	folder: string, -- the Atomic model its parts go in (below Workspace.Map.Generated): SLIM, still parts only
+	lightsFolder: string, -- the Atomic model its night lights, signs and lights go in (not SLIM; CityBuilder.file)
 	plots: { number }, -- the plots it stands on (MapBuilder's building numbers)
 	block: number, -- the city block (MapBuilder's findBlocks face) it stands in
+	band: string, -- "L", "M", "H", "T" or "S" (Config/City bands)
+	face: "road" | "back",
+	claim: number, -- studs of its depth that are a core claim behind its plots (0 for none)
+	-- Open to a cross street at that end, as the archetype draws it (after the mirror): corner archetypes put their
+	-- corner feature at the right (+x) end, and placement mirrors them to the street corner.
+	corner: { left: boolean, right: boolean },
+	landmark: boolean, -- a one-off (Config/City landmarks)
+	skyline: boolean, -- its main masses and crown light go in the always-loaded Skyline model (Config/City skyline)
 }
 
 -- One plot of MapBuilder's plot pass (addBuildings), with everything both the city and the old look need.
@@ -51,12 +62,24 @@ export type Plot = {
 	nearSpot: boolean, -- within Config/City nearSpotRange of a gameplay location (its height is capped)
 	shade: number, -- the plot's integer roll (its random stream)
 	folder: string, -- the block tile model the old look puts it in ("Buildings/Block3")
+	cornerStart: boolean?, -- within Config/City rules.cornerReach of its frontage's cut end at its road's start...
+	cornerEnd: boolean?, -- ...or at its end (a block corner)
 	-- The old look's building (MapBuilder addBuilding): footprint centre, size, height, colour.
 	center: Vector2,
 	buildingDepth: number,
 	buildingWidth: number,
 	height: number,
 	color: Color3,
+}
+
+-- What MapBuilder lends the placement for core claims: a plan rectangle (its centre, the way its road runs, half its
+-- length along the road and half its depth across it).
+export type Env = {
+	-- Whether the rectangle is clear for a claim behind `frontage`'s plots: flat open ground in the map, clear of
+	-- everything a plot keeps off (the frontage's own plots excepted) by the plots' clearance.
+	clear: (center: Vector2, u: Vector2, halfAlong: number, halfAcross: number, frontage: string) -> boolean,
+	-- Takes it for site `owner`: it is paved, and later claims and trees keep off it.
+	claim: (center: Vector2, u: Vector2, halfAlong: number, halfAcross: number, owner: string) -> (),
 }
 
 -- What an archetype's build() writes into (Dev/City/Kit makes it and adds parts to it).

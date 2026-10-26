@@ -25,6 +25,19 @@ export type Role =
 	| "billboard" -- a billboard's panel or one of its posts (Phase 12)
 	| "tree" -- a tree's trunk or one of its leaf blocks
 	| "feature" -- a part of a MapLayout feature (water tower, diner, bridge arches)
+	| "scenery" -- the city's street furniture, street palms, beach dressing and lifeguard stands (Dev/City/Scenery)
+
+-- A part the build fills from a template in ServerStorage (Dev/City/Scenery: the palm meshes). The spec itself
+-- stands for the space the template fills (its box, for the plan's checks); the build clones the template at `pivot`
+-- (the trunk's foot on the ground), turned and scaled so it stands `height` studs tall, and builds the parts-only
+-- stand-in `fallback` names instead when the template is missing.
+export type TemplateSpec = {
+	path: { string }, -- below ServerStorage: { "CityAssets", "Palms", "royal" }
+	pivot: CFrame,
+	height: number,
+	variant: number, -- 1..n: which child when the template is a folder of variants
+	fallback: string, -- the stand-in's shape (Dev/City/Scenery Palms species)
+}
 
 -- Text painted on one face of a part (a SurfaceGui with one TextLabel). `center` and `size` are fractions of the
 -- face (defaults: centred, MapBuilder TUNING.labelSize); `pixelsPerStud` defaults to TUNING.labelPixelsPerStud (big
@@ -72,7 +85,9 @@ export type TextureSpec = {
 -- One part of the build. `folder` is the container path below Generated ("Roads/Segments"); every container on
 -- it is listed in Plan.containers. A part with `parent` set is parented to the part of that name in `folder`
 -- (location props hang under their location part). `reflectance` (0 when nil) and `textures` are for the city's
--- glass; a "ball" is a Part with Shape Ball (its three sizes equal).
+-- glass; a "ball" is a Part with Shape Ball (its three sizes equal). `materialVariant` names a MaterialVariant on the
+-- part's material (a part whose variant isn't in MaterialService shows its plain material). With `template` the build
+-- clones a template in its place (TemplateSpec above).
 export type PartSpec = {
 	folder: string,
 	parent: string?,
@@ -96,8 +111,18 @@ export type PartSpec = {
 	labels: { LabelSpec }?,
 	adUnit: AdUnitSpec?,
 	textures: { TextureSpec }?,
+	materialVariant: string?,
+	template: TemplateSpec?,
 }
 
-export type Container = { path: string, class: "Folder" | "Model", streaming: Enum.ModelStreamingMode? }
+-- A folder or model below Generated. `lod` names the Model's LevelOfDetail (an Enum.ModelLevelOfDetail item: "SLIM"
+-- for a city site's still parts, "Disabled" for its lights model; docs/city/TECH.md §6), set by MapBuilder.build when
+-- this Studio knows it.
+export type Container = {
+	path: string,
+	class: "Folder" | "Model",
+	streaming: Enum.ModelStreamingMode?,
+	lod: string?,
+}
 
 return {}

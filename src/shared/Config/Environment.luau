@@ -1,7 +1,9 @@
 --!strict
 -- How the county looks beyond its roads (docs/roast-2026-10-24.md, point 3: "the county is still a grey block-out"):
 --   dayNight     the day/night cycle Services/DayNightService runs: how long a day lasts, how much of it is night,
---                when a new server starts, and the sky's colours through the day (Lighting and its Atmosphere)
+--                when a new server starts, the sky's colours through the day (Lighting, its Atmosphere and its bloom),
+--                and the scene switches set once at server start (lighting style, tone mapper, shadows, latitude: the
+--                subtropical beach-city look of docs/city/TECH.md §1 and docs/city/SCENERY.md §9)
 --   nightLights  the lamps the server switches at dusk and dawn: parts tagged `tag` (Dev/MapBuilder tags the
 --                streetlight heads, lit windows, the diner's neon, the water tower's beacon, the bridge arches and
 --                the Ohm sign's light bar), each with its kind and its day colour as attributes; the looks per kind
@@ -22,6 +24,14 @@ export type Keyframe = {
 	atmosphereColor: Color3, -- Atmosphere.Color
 	atmosphereDecay: Color3, -- Atmosphere.Decay
 	brightness: number, -- Lighting.Brightness
+	-- Lighting.ColorShift_Top: a tint added to the light on faces turned to the sun or moon (black = none). Kept small:
+	-- it adds to the sun, so a strong one washes white walls out.
+	colorShiftTop: Color3,
+	exposure: number, -- Lighting.ExposureCompensation (-5..5, 0 = none), before the tone mapper
+	-- The bloom effect (dayNight.scene.bloom): how strongly bright colours glow, and how bright a colour must be to glow.
+	-- A high threshold by day keeps white stucco from glowing; a lower one at night lets neon and crowns halo.
+	bloomIntensity: number,
+	bloomThreshold: number,
 }
 
 -- The shape of a day: what DayNightService's clock maths reads (tests/DayNight.spec also passes its own).
@@ -33,8 +43,22 @@ export type Cycle = {
 }
 
 -- How one kind of night light looks: by day its own colour (the part's DayColor attribute) in dayMaterial; at night
--- nightColor in nightMaterial, with any Light inside it switched on.
-export type NightLook = { dayMaterial: Enum.Material, nightMaterial: Enum.Material, nightColor: Color3 }
+-- nightColor in nightMaterial, with any Light inside it switched on. A part's own NightColor attribute
+-- (nightLights.nightColorAttribute) beats the kind's colour, so one kind can run a gradient (a bridge's ribs).
+--   keepDayColor  at night the part glows in its own day colour (stained glass); nightColor is only a fallback
+--   showColors    a light show: on showShare of the game's nights the kind glows in one of these, picked per night
+--                 (the same colour for every part of the kind that night); on the other nights in nightColor
+--   guiBrightness SurfaceGui.Brightness of the part's sign text at night (dayGuiBrightness by day), so lettering on a
+--                 neon board glows with it; nil leaves its text alone
+export type NightLook = {
+	dayMaterial: Enum.Material,
+	nightMaterial: Enum.Material,
+	nightColor: Color3,
+	keepDayColor: boolean?,
+	showColors: { Color3 }?,
+	showShare: number?,
+	guiBrightness: number?,
+}
 
 -- One zone's facades (Dev/MapBuilder): glass ribbons per floor under floor bands and a roof edge, or from towerFrom
 -- studs up a glass tower with corner piers. floorHeight studs per floor (fewer, taller floors past maxFloors);
@@ -75,27 +99,38 @@ local function mix(species: string, weight: number): Mix
 	return { species = species, weight = weight }
 end
 
--- The sky by day, the same from mid-morning to late afternoon. The fill light is kept low so the sun, the shadows and
--- the sky's reflections give the shapes their edges (2026-10-25: a brighter fill washed every model flat).
+-- The sky by day, the same from mid-morning to late afternoon: a high, hard subtropical sun, a saturated cyan sky and a
+-- slightly warm sun tint (docs/city/SCENERY.md §9). The fill light is kept low so the sun, the shadows and the sky's
+-- reflections give the shapes their edges (2026-10-25: a brighter fill washed every model flat). The bloom threshold
+-- stays above sunlit white stucco, so by day only glints and the sun glow.
 local DAY: Keyframe = {
 	clock = 0,
-	ambient = rgb(56, 60, 70),
-	outdoorAmbient = rgb(112, 116, 126),
-	fogColor = rgb(192, 208, 224),
-	atmosphereColor = rgb(199, 210, 224),
-	atmosphereDecay = rgb(106, 112, 125),
-	brightness = 2.6,
+	ambient = rgb(58, 60, 68),
+	outdoorAmbient = rgb(116, 118, 126),
+	fogColor = rgb(190, 212, 232),
+	atmosphereColor = rgb(192, 212, 232),
+	atmosphereDecay = rgb(98, 118, 142),
+	brightness = 2.8,
+	colorShiftTop = rgb(24, 18, 8),
+	exposure = 0,
+	bloomIntensity = 0.6,
+	bloomThreshold = 2.2,
 }
 
--- The sky by night: dark blue, but enough light that a road and a car still read on a phone.
+-- The sky by night: a deep electric blue (never black), with as much fill light as before so a road and a car still
+-- read on a phone, a touch of exposure, and a lower bloom threshold so neon signs and tower crowns halo.
 local NIGHT: Keyframe = {
 	clock = 0,
-	ambient = rgb(30, 34, 52),
-	outdoorAmbient = rgb(58, 66, 96),
-	fogColor = rgb(22, 26, 42),
-	atmosphereColor = rgb(54, 62, 90),
-	atmosphereDecay = rgb(32, 38, 62),
+	ambient = rgb(28, 34, 62),
+	outdoorAmbient = rgb(56, 66, 112),
+	fogColor = rgb(20, 24, 48),
+	atmosphereColor = rgb(48, 58, 110),
+	atmosphereDecay = rgb(28, 34, 84),
 	brightness = 1.4,
+	colorShiftTop = rgb(0, 6, 18),
+	exposure = 0.2,
+	bloomIntensity = 1,
+	bloomThreshold = 1.8,
 }
 
 local function at(clock: number, look: Keyframe): Keyframe
@@ -125,75 +160,117 @@ local Environment = {
 			at(0, NIGHT),
 			at(4.75, NIGHT),
 			{
+				-- Before dawn: the blue night turning violet.
 				clock = 5.75,
-				ambient = rgb(58, 54, 76),
-				outdoorAmbient = rgb(92, 86, 112),
-				fogColor = rgb(96, 88, 116),
-				atmosphereColor = rgb(126, 114, 142),
-				atmosphereDecay = rgb(74, 66, 100),
+				ambient = rgb(50, 48, 80),
+				outdoorAmbient = rgb(88, 84, 124),
+				fogColor = rgb(80, 76, 118),
+				atmosphereColor = rgb(112, 100, 150),
+				atmosphereDecay = rgb(66, 58, 110),
 				brightness = 1.6,
+				colorShiftTop = rgb(8, 4, 16),
+				exposure = 0.15,
+				bloomIntensity = 0.95,
+				bloomThreshold = 1.85,
 			},
 			{
-				-- Dawn: warm and low.
+				-- Dawn: low pink-orange light.
 				clock = 6.75,
-				ambient = rgb(76, 66, 64),
-				outdoorAmbient = rgb(140, 116, 104),
-				fogColor = rgb(216, 170, 142),
-				atmosphereColor = rgb(228, 184, 156),
-				atmosphereDecay = rgb(196, 128, 104),
+				ambient = rgb(78, 66, 66),
+				outdoorAmbient = rgb(146, 118, 108),
+				fogColor = rgb(226, 168, 146),
+				atmosphereColor = rgb(240, 180, 160),
+				atmosphereDecay = rgb(204, 120, 116),
 				brightness = 2.1,
-			},
-			at(8.5, DAY),
-			at(16.25, DAY),
-			{
-				-- Golden hour.
-				clock = 17.5,
-				ambient = rgb(78, 66, 62),
-				outdoorAmbient = rgb(150, 120, 102),
-				fogColor = rgb(228, 172, 134),
-				atmosphereColor = rgb(236, 182, 148),
-				atmosphereDecay = rgb(204, 122, 98),
-				brightness = 2.3,
+				colorShiftTop = rgb(60, 30, 14),
+				exposure = 0.05,
+				bloomIntensity = 0.8,
+				bloomThreshold = 2,
 			},
 			{
-				-- Dusk.
+				-- The morning golden hour, warming into day.
+				clock = 7.75,
+				ambient = rgb(66, 62, 66),
+				outdoorAmbient = rgb(130, 120, 116),
+				fogColor = rgb(216, 200, 186),
+				atmosphereColor = rgb(222, 206, 194),
+				atmosphereDecay = rgb(150, 128, 124),
+				brightness = 2.5,
+				colorShiftTop = rgb(40, 26, 10),
+				exposure = 0,
+				bloomIntensity = 0.7,
+				bloomThreshold = 2.1,
+			},
+			at(9, DAY),
+			at(16, DAY),
+			{
+				-- The evening golden hour: pink-orange light on the white towers.
+				clock = 17.25,
+				ambient = rgb(80, 66, 64),
+				outdoorAmbient = rgb(156, 120, 106),
+				fogColor = rgb(236, 170, 142),
+				atmosphereColor = rgb(240, 170, 150),
+				atmosphereDecay = rgb(210, 110, 120),
+				brightness = 2.4,
+				colorShiftTop = rgb(72, 34, 18),
+				exposure = 0,
+				bloomIntensity = 0.8,
+				bloomThreshold = 2,
+			},
+			{
+				-- Dusk: violet, the neon just on (duskClock 18).
 				clock = 18.75,
-				ambient = rgb(64, 56, 82),
-				outdoorAmbient = rgb(98, 84, 118),
-				fogColor = rgb(92, 72, 106),
-				atmosphereColor = rgb(132, 102, 140),
-				atmosphereDecay = rgb(82, 60, 104),
+				ambient = rgb(64, 56, 86),
+				outdoorAmbient = rgb(100, 86, 124),
+				fogColor = rgb(90, 70, 112),
+				atmosphereColor = rgb(132, 102, 150),
+				atmosphereDecay = rgb(90, 60, 120),
 				brightness = 1.7,
+				colorShiftTop = rgb(20, 8, 24),
+				exposure = 0.1,
+				bloomIntensity = 0.95,
+				bloomThreshold = 1.85,
 			},
-			at(20, NIGHT),
+			at(19.75, NIGHT),
 		} :: { Keyframe },
-		-- Lighting gets an Atmosphere named `name` with these values when it has none (one already there is driven as
-		-- it is: only its Color and Decay follow the clock).
+		-- Lighting's Atmosphere: the one already there, or one named `name`, given these values at server start (only
+		-- its Color and Decay then follow the clock). A thinner haze than before keeps the far skyline across the bay in
+		-- view; a little glare gives the sun a hot halo (glare needs haze above 0).
 		atmosphere = {
 			name = "DayNightAtmosphere",
-			density = 0.3,
+			density = 0.26,
 			offset = 0.25,
-			glare = 0,
-			haze = 1,
+			glare = 0.25,
+			haze = 0.8,
 		},
-		-- Set once when the server starts (DayNightService). The place had shadows off and no sky reflections, which
-		-- made every model read flat and soft (2026-10-25). Lighting.Technology isn't scriptable: it is set to Future
-		-- by hand in Studio (docs/LAUNCH.md step 10).
+		-- Set once when the server starts (DayNightService). The place ran the flat retro look: Soft lighting style, the
+		-- Retro tone mapper, bloom at 0 (so Neon never glowed), shadows off and no sky reflections (docs/city/TECH.md
+		-- §1, 2026-10-25). Lighting.Technology isn't scriptable, but the engine's docs say LightingStyle and
+		-- PrioritizeLightingQuality supersede it, and both are.
 		scene = {
+			lightingStyle = Enum.LightingStyle.Realistic, -- the naturalistic look (Soft is the stylized, flat one)
+			-- When a phone has to drop quality, keep shadows and good shaders close by and give up view distance first.
+			prioritizeLightingQuality = true,
+			geographicLatitude = 25.8, -- degrees north: a high sun with short, crisp shadows
 			globalShadows = true,
-			shadowSoftness = 0.15, -- 0 = razor-sharp, 1 = blurry
+			shadowSoftness = 0.1, -- 0 = razor-sharp, 1 = blurry
 			environmentSpecularScale = 1, -- sky reflections on paint, glass and metal
 			environmentDiffuseScale = 1, -- light from the sky itself
-			exposureCompensation = 0,
+			-- The tone mapper on every ColorGradingEffect under Lighting (one named `name` is made when there is none).
+			-- Default, not Retro: Retro imitates pre-2019 lighting, less saturated and less contrast (TECH §1, tested).
+			toneMapper = { name = "SceneGrading", preset = Enum.TonemapperPreset.Default },
+			-- Lighting's BloomEffect (the one already there, or one named `name`). Its intensity and threshold follow the
+			-- clock (the keyframes' bloomIntensity and bloomThreshold); size is the glow's radius in pixels.
+			bloom = { name = "SceneBloom", size = 24 },
 			-- Effects made under Lighting when missing (one already there with the same name is set to these values).
 			colorCorrection = {
 				name = "SceneColor",
 				contrast = 0.1,
-				saturation = 0.12,
+				saturation = 0.15, -- pastel colour without grey, now that the Default tone mapper is on
 				brightness = 0,
 				tintColor = rgb(255, 250, 244),
 			},
-			sunRays = { name = "SceneSunRays", intensity = 0.04, spread = 0.8 },
+			sunRays = { name = "SceneSunRays", intensity = 0.05, spread = 0.8 },
 		},
 	},
 
@@ -205,6 +282,13 @@ local Environment = {
 		nightAttribute = "IsNight",
 		-- Studio only: set this number attribute on Lighting (hours, 0..24) to jump the clock there.
 		devClockAttribute = "DevClockTime",
+		-- Color3, optional, on a night light: its own night colour, beating its kind's (a gradient along a bridge, one
+		-- building's neon in another shade).
+		nightColorAttribute = "NightColor",
+		-- SurfaceGui.Brightness of sign text by day (Roblox's default) on kinds that brighten it at night.
+		dayGuiBrightness = 1,
+		-- Salt for a light show's pick of the night's colour (NightLook.showColors); change it to reshuffle the shows.
+		showSeed = 7919,
 		-- Parts switched per frame at dusk and dawn, so the lights come on across the county over a few frames.
 		flipPerStep = 200,
 		kinds = {
@@ -216,14 +300,17 @@ local Environment = {
 			window = {
 				dayMaterial = Enum.Material.Glass,
 				nightMaterial = Enum.Material.Neon,
-				-- A dim warm glow: Neon's brightness follows its colour, and a brighter colour turned whole floors into
-				-- flat yellow slabs (seen 2026-10-24).
-				nightColor = rgb(118, 90, 54),
+				-- A soft, lived-in glow: Neon's brightness follows its colour. rgb(118, 90, 54) read as strong amber over
+				-- whole towers, rgb(70, 54, 34) as dim brown (docs/city/TECH.md §4); this sits between, less saturated,
+				-- and is meant to stay under the night bloom threshold, so lit floors glow without haloing into slabs
+				-- (TECH's proposal: not yet seen in a playtest).
+				nightColor = rgb(100, 88, 68),
 			},
 			sign = {
 				dayMaterial = Enum.Material.SmoothPlastic,
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(96, 226, 236),
+				guiBrightness = 2.5,
 			},
 			floodlight = {
 				dayMaterial = Enum.Material.SmoothPlastic,
@@ -240,40 +327,80 @@ local Environment = {
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(196, 222, 255),
 			},
-			-- The Miami city's neon (docs/city/CITY_PLAN.md §7.1, colours tested in docs/city/SCENERY.md §8). By day
-			-- each is its part's own colour in SmoothPlastic, a pastel moulding; at night a saturated tube. Never white
-			-- Neon: it blows out.
+			-- The beach city's neon (docs/city/ARCHETYPES.md §11, colours tested in docs/city/SCENERY.md §8; the
+			-- archetype docs spell these neon_pink, led_edge and so on). By day each is its part's own colour in
+			-- SmoothPlastic, a pastel moulding; at night a saturated tube, and lettering on it glows too. Never white
+			-- Neon: it blows out under the bloom.
 			neonPink = {
 				dayMaterial = Enum.Material.SmoothPlastic,
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(255, 90, 170),
+				guiBrightness = 2.5,
 			},
 			neonViolet = {
 				dayMaterial = Enum.Material.SmoothPlastic,
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(170, 90, 255),
+				guiBrightness = 2.5,
 			},
 			neonAmber = {
 				dayMaterial = Enum.Material.SmoothPlastic,
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(255, 170, 60),
+				guiBrightness = 2.5,
 			},
 			neonBlue = {
 				dayMaterial = Enum.Material.SmoothPlastic,
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(61, 123, 255),
+				guiBrightness = 2.5,
 			},
-			-- Tower crowns and lanterns: a cool white that stays under the blow-out.
+			neonCyan = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(70, 230, 255),
+				guiBrightness = 2.5,
+			},
+			-- Tower crowns, fins and lanterns: a cool white that stays under the blow-out.
 			crown = {
 				dayMaterial = Enum.Material.SmoothPlastic,
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(170, 200, 236),
 			},
-			-- LED strips on balcony and podium edges.
+			-- A crown that puts on a show: the crown's cool white most nights; on showShare of them one colour from the
+			-- list for the whole night (red, green, blue, pink, amber), the same on every tier.
+			crownShow = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(170, 200, 236),
+				showColors = {
+					rgb(224, 69, 75),
+					rgb(63, 163, 107),
+					rgb(61, 123, 255),
+					rgb(236, 150, 180),
+					rgb(255, 180, 74),
+				},
+				showShare = 0.4,
+			},
+			-- LED strips on balcony and podium edges: a saturated blue.
 			ledBlue = {
 				dayMaterial = Enum.Material.SmoothPlastic,
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(60, 130, 255),
+			},
+			-- LED strips on slab edges, soffits, garage strips and roof edges: a pale ice blue.
+			ledEdge = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(143, 205, 230),
+			},
+			-- Coloured glass that glows in its own colour at night (a glass annex's panels): give it saturated, mid-bright
+			-- colours, since a pale one turns white-hot Neon. nightColor is only a fallback.
+			stained = {
+				dayMaterial = Enum.Material.Glass,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(120, 150, 200),
+				keepDayColor = true,
 			},
 			-- A facade wash: a small fixture part whose SurfaceLight lights the wall above it at night.
 			uplight = {
@@ -288,20 +415,27 @@ local Environment = {
 	-- server parts (the map, houses, cars and traffic) at a steady 60 fps on desktop (client mean 16.67 ms, p95 18.27 ms)
 	-- with 5,100 to 5,550 of them streamed in on the client. Everything this pass adds is anchored and still: no physics
 	-- body, and leaves, glass bands, trim and the features never collide, take a raycast or a touch (tree trunks and
-	-- building shells do, like any wall). Trees, buildings and features sit in Atomic tiles that stream (only Ground
-	-- and Roads are Persistent), so a phone holds what lies inside the 2,048-stud streaming target radius (about 13 % of
-	-- the map) and drops the far tiles first when short of memory. Leaves and trunks are plain blocks (12 triangles),
-	-- not balls. mapParts is about twice the measured count; the perf drive and Davis's real-phone check decide
-	-- whether it holds (Config/Perf), and these numbers are the lever if it doesn't.
+	-- building shells do, like any wall). Trees, buildings and features sit in Atomic models that stream (only Ground,
+	-- Roads and the city's small Skyline model are Persistent; city buildings are SLIM, so far ones stay as cheap
+	-- stand-ins), so a phone holds what lies inside the 2,048-stud streaming target radius (about 13 % of the map) and
+	-- drops the far models first when short of memory. Leaves and trunks are plain blocks (12 triangles), not balls.
+	-- The perf drive and Davis's real-phone check decide whether these hold (Config/Perf); inViewParts is the gate a
+	-- phone meets first, and these numbers are the lever if it doesn't.
 	budget = {
-		mapParts = 16000, -- the whole of Workspace.Map.Generated
-		treeParts = 4800, -- trunks and leaves: about 1,750 trees at 2 or 3 parts each
-		-- glass, floor bands, roof edges, corner piers and roof boxes of about 620 buildings: measured 5,496 on
-		-- 2026-10-24 after capping downtown at 4 floor bands (the whole map stays under mapParts). 2026-10-25: the Miami
-		-- city's first two archetypes (Dev/City: standard glass towers and Deco hotels, 45 to 66 parts each, budgets in
-		-- Config/City) stand on about 15 of those plots: measured 5,782. Room is left for a little more; the full city
-		-- needs the bigger budgets docs/city/CITY_PLAN.md §9 proposes (the lead's decision L4, after a perf drive).
-		buildingParts = 6400,
+		-- The whole of Workspace.Map.Generated. 2026-10-25, the lead's decision L4 (docs/city/CITY_PLAN.md §9): up from
+		-- 16,000 for the hand-modelled city, about 27,400 planned.
+		mapParts = 30000,
+		-- The phone gate (CITY_PLAN §9): the most parts a player can have streamed in at once, every Persistent part
+		-- (the ground, the roads, the Skyline) plus every part within Perf.streaming.targetRadius of the worst road
+		-- node (downtown's centre). tests/MapBuilder.spec and Dev/MapCheck hold the county to it; Davis's phone check
+		-- after the downtown step decides whether it holds.
+		inViewParts = 20000,
+		-- Trunks and leaves: about 1,400 trees at 2 or 3 parts each (a palm is 2: its trunk and its crown, whose mesh the
+		-- build clones; Dev/City/Scenery Palms). The street and beach palms are scenery (Config/CityScenery budget).
+		treeParts = 4400,
+		-- Every building part: the city's sites (Dev/City, about 40..150 parts each) and the old facade on the plots no
+		-- archetype fits. Per district in Config/City budgets (14,120 together).
+		buildingParts = 15000,
 		featureParts = 200, -- the water tower, the diner and the bridge arches
 		groundParts = 700, -- the ground patchwork, lake beds and banks, mesas and hills
 	},
@@ -322,8 +456,8 @@ local Environment = {
 		-- How many trees, at most and at least (tests/MapBuilder.spec). Past maxTrees or budget.treeParts the builder
 		-- stops planting, so a denser setting never breaks the budget: it fills the parks and towns first and the open
 		-- country last.
-		maxTrees = 1800,
-		minTrees = 1200,
+		maxTrees = 1600,
+		minTrees = 1100,
 		-- Groves keyed by this zone also cover the open land outside every zone.
 		countryZone = "county_loop",
 		-- Past this many studs from the centre on either axis (outside the County Loop) a grove is an outskirts grove.
@@ -341,7 +475,13 @@ local Environment = {
 		-- Parks (Config/MapLayout parks): each `cell`-stud square holds a tree with this chance.
 		parks = {
 			default = { cell = 26, chance = 0.55 },
-			lakefront_park = { cell = 30, chance = 0.22 },
+			-- The lake ring: palms and sea grape round the bay (the "park" mix below).
+			lakefront_park = { cell = 30, chance = 0.3 },
+			-- The sand band split from Lakefront Park (CITY_PLAN §6): none at random. Dev/City/Scenery Beach plants its
+			-- coconut palms by hand, in clumps behind the dunes, leaning out to sea, clear of the stands and boardwalks.
+			lakefront_beach = { cell = 30, chance = 0 },
+			-- Town Square: shade trees between its palm allée and fountain (Dev/City/Scenery Square).
+			town_square = { cell = 30, chance = 0.25 },
 		} :: { [string]: { cell: number, chance: number } },
 		-- Groves, planted in this order (the outskirts last, so a cap trims them first).
 		groves = {
@@ -351,7 +491,7 @@ local Environment = {
 				chance = 0.55,
 				trees = { 2, 6 },
 				radius = { 25, 55 },
-				species = "town",
+				species = "suburbs",
 			},
 			{
 				zone = "lakefront",
@@ -359,7 +499,7 @@ local Environment = {
 				chance = 0.45,
 				trees = { 3, 7 },
 				radius = { 30, 70 },
-				species = "town",
+				species = "beach",
 			},
 			{
 				zone = "the_plant",
@@ -367,24 +507,41 @@ local Environment = {
 				chance = 0.3,
 				trees = { 2, 5 },
 				radius = { 25, 50 },
-				species = "town",
+				species = "arts",
 			},
 			{
+				-- The open country keeps its broadleaf woods, a little thinner than before.
 				zone = "county_loop",
 				cell = 420,
-				chance = 0.5,
-				outskirtsChance = 0.68,
+				chance = 0.46,
+				outskirtsChance = 0.62,
 				trees = { 4, 9 },
 				radius = { 50, 120 },
 				species = "country",
 			},
 		} :: { Grove },
-		-- Species mixes (Dev/MapBuilder TUNING.treeSpecies names) in a fixed order; weights add up to 1. The outskirts
-		-- lean to pines.
+		-- Species mixes in a fixed order; weights add up to 1. A species is a palm (Config/CityScenery palms: royal,
+		-- coconut, sabal) or a block tree (Dev/MapBuilder TUNING.treeSpecies). The towns are mostly palms
+		-- (docs/city/SCENERY.md §1, CITY_PLAN §6); the country keeps its broadleaf woods, and the outskirts lean to pines.
 		mixes = {
-			park = { mix("broadleaf", 0.5), mix("round", 0.3), mix("poplar", 0.2) },
-			town = { mix("broadleaf", 0.4), mix("round", 0.3), mix("poplar", 0.2), mix("pine", 0.1) },
-			country = { mix("broadleaf", 0.45), mix("round", 0.2), mix("pine", 0.25), mix("poplar", 0.1) },
+			park = {
+				mix("coconut", 0.3),
+				mix("sabal", 0.25),
+				mix("royal", 0.1),
+				mix("sea_grape", 0.15),
+				mix("broadleaf", 0.2),
+			},
+			suburbs = { mix("live_oak", 0.35), mix("sabal", 0.25), mix("royal", 0.2), mix("broadleaf", 0.2) },
+			beach = { mix("coconut", 0.45), mix("sabal", 0.25), mix("sea_grape", 0.3) },
+			arts = { mix("sabal", 0.4), mix("royal", 0.3), mix("live_oak", 0.3) },
+			country = {
+				mix("broadleaf", 0.35),
+				mix("live_oak", 0.15),
+				mix("round", 0.15),
+				mix("pine", 0.25),
+				mix("poplar", 0.05),
+				mix("sabal", 0.05),
+			},
 			outskirts = { mix("broadleaf", 0.3), mix("round", 0.1), mix("pine", 0.5), mix("poplar", 0.1) },
 		} :: { [string]: { Mix } },
 		-- Each tree is drawn between these sizes (1 = the TUNING shape).

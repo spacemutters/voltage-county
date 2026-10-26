@@ -1,0 +1,97 @@
+# The real buildings, architects, developers, streets and neighbourhoods the city takes after (docs/city/ARCHETYPES.md,
+# docs/city/CITY_PLAN.md; decision L6). Inspiration only: their names stay in docs/ and never appear in src/ or tests/
+# (code, comments, instance names, signs). One regular expression per line, matched case-insensitively as whole
+# words, by the same gate step as scripts/banned-names.txt (scripts/check.ps1 and check.sh). Kept apart from that
+# list so the AI Car Designer's own brand check (Util/BrandNames and the backend's copy) doesn't change with it.
+# Everyday words among the inspirations (Atlantis, Palace, Babylon, Colony, Tides, Avalon, Panorama, Marquis,
+# Breakwater, Barnacle, Spear, Alhambra) are kept out by neutral archetype ids and by review instead.
+Miami Beach
+Miami-?Dade
+South Beach
+Ocean Drive
+Collins Avenue
+Lincoln Road
+Brickell
+Wynwood
+Edgewater
+Biscayne
+Coral Gables
+Coconut Grove
+Little Havana
+Little Haiti
+Calle Ocho
+Sunny Isles
+Key Biscayne
+Virginia Key
+Star Island
+Fisher Island
+Allison Island
+Normandy Isles
+Overtown
+Allapattah
+Design District
+Opa-?locka
+Lummus
+Miracle Mile
+Espa.{1,2}ola Way
+Fontainebleau
+Eden Roc
+Carlyle
+Cardozo
+Biltmore
+Versace
+Casuarina
+Freedom Tower
+Waldorf
+Delano
+Bayside Marketplace
+Kaseya
+InterContinental
+Four Seasons
+Bacardi
+Missoni
+Jade Signature
+Southeast Financial
+CenTrust
+Metromover
+PortMiami
+Venetian Causeway
+Museum Garage
+Emanu-?El
+Arquitectonica
+Hadid
+Herzog
+de Meuron
+Lapidus
+Hohauser
+Kiehnel
+Skislewicz
+Swartburg
+Sieger Suarez
+Kobi Karp
+Bjarke Ingels
+Zyscovich
+Brennand
+Merrick
+One Thousand Museum
+Miami Tower
+Knight Center
+Carlos Ott
+Pei Cobb
+Bodas Miani
+Revuelta
+# The civic landmarks (ARCHETYPES §9, C01 to C07): their builders, architects and names not listed above.
+Giralda
+Schultze
+Miami News
+Ten Eyck
+August Geiger
+Skyviews
+American Airlines
+Marine Stadium
+Hilario Candela
+Spillis Candela
+Pancoast
+Charles Greco
+Alhambra Water Tower
+Denman Fink

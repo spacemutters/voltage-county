@@ -795,7 +795,8 @@ local hills: { Mesa } = {
 
 -- Parks. Town Square fills the downtown block north-west of Main Avenue and Commerce Avenue (cb_c3..cb_d4) out to the
 -- sidewalks (a street's reaches 23 studs from its centre line, an arterial's 38); Lakefront Park rings Cedar Lake,
--- clear of Lakeshore Drive's lots.
+-- clear of Lakeshore Drive's lots, and its north band between the lake and the north shore road is a sand beach
+-- (decision L3 of docs/city/CITY_PLAN.md: the same ground as before, split in two; every location stays put).
 local parks: { Park } = {
 	{
 		id = "town_square",
@@ -810,9 +811,18 @@ local parks: { Park } = {
 		id = "lakefront_park",
 		displayName = "Lakefront Park",
 		zone = "lakefront",
-		min = Vector2.new(-1050, 1650),
+		min = Vector2.new(-1050, 1800),
 		max = Vector2.new(1050, 2700),
 		hole = { min = lakes[1].min, max = lakes[1].max },
+	},
+	{
+		id = "lakefront_beach",
+		displayName = "Lakefront Beach",
+		zone = "lakefront",
+		min = Vector2.new(-1050, 1650),
+		max = Vector2.new(1050, 1800),
+		groundColor = Color3.fromRGB(232, 216, 178),
+		groundMaterial = Enum.Material.Sand,
 	},
 }
 

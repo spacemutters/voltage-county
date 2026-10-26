@@ -273,6 +273,151 @@ function Kit.wedge(m: Model, name: string, min: Vector3, max: Vector3, rise: Sid
 	return Kit.part(m, name, "wedge", cf, size, look, kind or "box")
 end
 
+-- A part turned any way: `cf` is in the site's own (unmirrored) coordinates and the kit mirrors it when the site is
+-- mirrored. For shapes the axis-aligned helpers can't make: a box turned in plan (an octagon's bands, an oval's facets,
+-- a lightning bolt on a roof), a slab tilted both ways (folded roof plates), a ring of segments standing up (a wheel's
+-- rim). Blocks, wedges, cylinders and balls only: each is its own mirror image across its local x, so the mirrored
+-- part is the same shape.
+function Kit.oriented(
+	m: Model,
+	name: string,
+	shape: "block" | "wedge" | "cylinder" | "ball",
+	cf: CFrame,
+	size: Vector3,
+	look: Look,
+	kind: Kind?
+): PartSpec
+	local placed = cf
+	if m.mirror then
+		local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
+		placed = CFrame.new(-x, y, z, r00, -r01, -r02, -r10, r11, r12, -r20, r21, r22)
+	end
+	return Kit.part(m, name, shape, placed, size, look, kind or "box")
+end
+
+-- A square bar from a to b, `thick` across (`wide` across its local x when given): slanted columns, legs, struts,
+-- spokes, a stair's stringer. 1 part.
+function Kit.strut(
+	m: Model,
+	name: string,
+	a: Vector3,
+	b: Vector3,
+	thick: number,
+	look: Look,
+	kind: Kind?,
+	wide: number?
+): PartSpec
+	local d = b - a
+	local along = d.Unit
+	local right = along:Cross(if math.abs(along.Y) > 0.98 then Vector3.zAxis else Vector3.yAxis).Unit
+	local cf = CFrame.fromMatrix((a + b) / 2, right, right:Cross(along), -along)
+	return Kit.oriented(m, name, "block", cf, Vector3.new(wide or thick, thick, d.Magnitude), look, kind)
+end
+
+-- A regular octagonal prism standing at (x, z) from y0 to y1, `across` its flats (cupolas, lighthouse stages, drums,
+-- string courses round them). Four boxes as wide as one side, turned 0, 45, 90 and 135 degrees: together they fill
+-- the octagon exactly. Their tops and bottoms are set a hair apart so no two faces are coplanar. 4 parts.
+function Kit.octagon(
+	m: Model,
+	name: string,
+	x: number,
+	z: number,
+	y0: number,
+	y1: number,
+	across: number,
+	look: Look,
+	kind: Kind?
+): { PartSpec }
+	local side = across * math.tan(math.pi / 8)
+	local hair = 0.02
+	local out: { PartSpec } = {}
+	for k = 0, 3 do
+		local lo, hi = y0 + k * hair, y1 - k * hair
+		local cf = CFrame.new(x, (lo + hi) / 2, z) * CFrame.Angles(0, k * math.pi / 4, 0)
+		table.insert(out, Kit.oriented(m, `{name}{k + 1}`, "block", cf, Vector3.new(across, hi - lo, side), look, kind))
+	end
+	return out
+end
+
+-- The right-angle corner of a Kit.triangle: the corner of its rectangle (x0..x1, y0..y1) it sits in.
+export type TriangleCorner = "x0y0" | "x1y0" | "x0y1" | "x1y1"
+-- A WedgePart laid flat against a front face: its triangle faces the street, its right angle at x1y0.
+local FLAT = CFrame.Angles(0, QUARTER, 0)
+local TRIANGLE_TURN: { [TriangleCorner]: number } = { x1y0 = 0, x1y1 = QUARTER, x0y1 = math.pi, x0y0 = -QUARTER }
+
+-- A flat right-angled triangle on a front face: the half of the rectangle x0..x1, y0..y1 (x along the road, y up)
+-- with its right angle at `corner`, `thick` deep from the plane z back (its face toward the street is at z). Two of
+-- them make any triangle with a level base. `tilt` (radians) turns it about its long edge, so its right-angle corner
+-- stands out toward the street (positive) or sinks back (negative): faceted metal skins, folded panels. Mural
+-- triangles, chevrons and peaks. 1 part (a WedgePart).
+function Kit.triangle(
+	m: Model,
+	name: string,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+	z: number,
+	thick: number,
+	corner: TriangleCorner,
+	look: Look,
+	kind: Kind?,
+	tilt: number?
+): PartSpec
+	local lx, hx = math.min(x0, x1), math.max(x0, x1)
+	local ly, hy = math.min(y0, y1), math.max(y0, y1)
+	local w, h = hx - lx, hy - ly
+	local level = corner == "x1y0" or corner == "x0y1" -- turned 0 or 180: the wedge's own z runs along x
+	local size = if level then Vector3.new(thick, h, w) else Vector3.new(thick, w, h)
+	local centre = Vector3.new((lx + hx) / 2, (ly + hy) / 2, z + thick / 2)
+	local rotation = CFrame.Angles(0, 0, TRIANGLE_TURN[corner]) * FLAT
+	local t = tilt or 0
+	if t ~= 0 then
+		-- The long edge joins the two corners other than the right angle (cx, cy); the corner moves along z by
+		-- (axis x q).Z * sin(angle), so the angle's sign is picked to send it toward the street for a positive tilt.
+		local cx = if corner == "x0y0" or corner == "x0y1" then lx else hx
+		local cy = if corner == "x0y0" or corner == "x1y0" then ly else hy
+		local ox, oy = lx + hx - cx, ly + hy - cy
+		local axis = Vector3.new(ox - cx, cy - oy, 0).Unit
+		local q = Vector3.new(cx - centre.X, cy - centre.Y, 0)
+		local angle = if axis:Cross(q).Z > 0 then -t else t
+		rotation = CFrame.fromAxisAngle(axis, angle) * rotation
+	end
+	return Kit.oriented(m, name, "wedge", CFrame.new(centre) * rotation, size, look, kind or "detail")
+end
+
+-- The right-angle corner of a Kit.prism, in plan: front-left (-x, -z), front-right, back-left or back-right.
+export type PrismCorner = "fl" | "fr" | "bl" | "br"
+-- A WedgePart stood on its side (its own x turned up) has its square corner at the back-right; this turn about y takes
+-- that corner to each of the four, and says whether the plan's two extents swap.
+local PRISM_TURN: { [PrismCorner]: { angle: number, swap: boolean } } = {
+	br = { angle = 0, swap = false },
+	fr = { angle = QUARTER, swap = true },
+	fl = { angle = math.pi, swap = false },
+	bl = { angle = -QUARTER, swap = true },
+}
+
+-- A standing prism that is a right-angled triangle in plan: the half of the box min..max on one side of its plan
+-- diagonal, its right angle at `corner`, its sloped face looking toward the opposite corner, from min.Y up to max.Y.
+-- Three-cornered towers (two of them back to back), V-notches, raked corners, triangular balconies (a thin one).
+-- 1 part (a WedgePart).
+function Kit.prism(
+	m: Model,
+	name: string,
+	min: Vector3,
+	max: Vector3,
+	corner: PrismCorner,
+	look: Look,
+	kind: Kind?
+): PartSpec
+	local lo, hi = min:Min(max), min:Max(max)
+	local s = hi - lo
+	local turn = PRISM_TURN[corner]
+	local size = if turn.swap then Vector3.new(s.Y, s.Z, s.X) else Vector3.new(s.Y, s.X, s.Z)
+	local cf = CFrame.new((lo + hi) / 2) * CFrame.Angles(0, turn.angle, 0) * CFrame.Angles(0, 0, QUARTER)
+	return Kit.oriented(m, name, "wedge", cf, size, look, kind)
+end
+
 ---------------------------------------------------------------------------------------------------------------
 -- Night lights
 ---------------------------------------------------------------------------------------------------------------
@@ -892,6 +1037,252 @@ function Kit.podium(
 		table.insert(out, Kit.trim(m, `{name}Band{i}`, a, b, band))
 	end
 	return out
+end
+
+---------------------------------------------------------------------------------------------------------------
+-- Roofs and arches (docs/city/ARCHETYPES.md §2 K7; the houses of §7)
+---------------------------------------------------------------------------------------------------------------
+
+-- A corner of a box in plan: front-left (-x, -z), front-right (+x, -z), back-left, back-right.
+export type Corner = "fl" | "fr" | "bl" | "br"
+
+-- A CornerWedgePart's peak stands over its (+X, -Z) bottom corner ("fr" here; as Dev/MapBuilder's mesas),
+-- and each quarter turn about y moves it on round the box: fr, fl, bl, br.
+local CORNER_TURNS: { [Corner]: number } = { fr = 0, fl = 1, bl = 2, br = 3 }
+local CORNER_MIRROR: { [Corner]: Corner } = { fl = "fr", fr = "fl", bl = "br", br = "bl" }
+
+-- A corner wedge filling the box min..max: its peak stands over the `peak` corner, its two faces on that corner's sides
+-- are upright and its two slopes fall to the far sides (the corners of a hip roof, a lean-to's hipped end). 1 part.
+function Kit.cornerWedge(
+	m: Model,
+	name: string,
+	min: Vector3,
+	max: Vector3,
+	peak: Corner,
+	look: Look,
+	kind: Kind?
+): PartSpec
+	local lo, hi = min:Min(max), min:Max(max)
+	local c = (lo + hi) / 2
+	local s = hi - lo
+	local turns = CORNER_TURNS[if m.mirror then CORNER_MIRROR[peak] else peak]
+	local size = if turns % 2 == 1 then Vector3.new(s.Z, s.Y, s.X) else s
+	local cf = CFrame.new(mx(m, c.X), c.Y, c.Z) * CFrame.Angles(0, turns * QUARTER, 0)
+	return Kit.part(m, name, "cornerWedge", cf, size, look, kind or "box")
+end
+
+-- A wedge hung upside down, filling the box min..max: its flat face on top, its upright face on the `wall` side, its
+-- slope running from the foot of that face up to the top of the far side. Corbels and brackets under a balcony or an
+-- eave (`wall` the side against the wall), and the haunches of an arch (Kit.archHead). 1 part, trim unless `kind`.
+function Kit.corbel(m: Model, name: string, min: Vector3, max: Vector3, wall: Side, look: Look, kind: Kind?): PartSpec
+	local lo, hi = min:Min(max), min:Max(max)
+	local c = (lo + hi) / 2
+	local s = hi - lo
+	local side: Side = wall
+	if m.mirror and wall == "left" then
+		side = "right"
+	elseif m.mirror and wall == "right" then
+		side = "left"
+	end
+	local across = side == "left" or side == "right"
+	local size = if across then Vector3.new(s.Z, s.Y, s.X) else s
+	-- Kit.wedge's turn puts the upright face on `side`; half a roll about that axis turns the wedge over.
+	local cf = CFrame.new(mx(m, c.X), c.Y, c.Z) * CFrame.Angles(0, RISE_TURN[side], 0) * CFrame.Angles(0, 0, math.pi)
+	return Kit.part(m, name, "wedge", cf, size, look, kind or "trim")
+end
+
+-- A hipped roof on walls whose outline is min..max (x and z), min.Y the top of the walls and max.Y the ridge. Every
+-- slope has the same pitch; the eaves reach `overhang` past the walls and the roof stands `thick` over the top of the
+-- walls at the wall line (so its soffit hides the wall tops). A ridge along the longer side between two wedges, and a
+-- corner wedge at each corner: a pyramid when the outline is square. 4 or 6 parts.
+function Kit.hipRoof(
+	m: Model,
+	name: string,
+	min: Vector3,
+	max: Vector3,
+	overhang: number,
+	thick: number,
+	look: Look,
+	kind: Kind?
+): { PartSpec }
+	local lo, hi = min:Min(max), min:Max(max)
+	local k: Kind = kind or "box"
+	local half = math.min(hi.X - lo.X, hi.Z - lo.Z) / 2
+	local pitch = math.max(0.05, hi.Y - lo.Y - thick) / half
+	local x0, x1 = lo.X - overhang, hi.X + overhang
+	local z0, z1 = lo.Z - overhang, hi.Z + overhang
+	local y0, y1 = hi.Y - pitch * (half + overhang), hi.Y
+	local h = half + overhang -- each corner wedge is h square: the ridge's ends stand over their inner corners
+	local xc, zc = (x0 + x1) / 2, (z0 + z1) / 2
+	local long = (x1 - x0) - (z1 - z0)
+	local out: { PartSpec } = {}
+	if long > 0.05 then
+		table.insert(
+			out,
+			Kit.wedge(m, name .. "F", Vector3.new(x0 + h, y0, z0), Vector3.new(x1 - h, y1, zc), "back", look, k)
+		)
+		table.insert(
+			out,
+			Kit.wedge(m, name .. "B", Vector3.new(x0 + h, y0, zc), Vector3.new(x1 - h, y1, z1), "front", look, k)
+		)
+	elseif long < -0.05 then
+		table.insert(
+			out,
+			Kit.wedge(m, name .. "L", Vector3.new(x0, y0, z0 + h), Vector3.new(xc, y1, z1 - h), "right", look, k)
+		)
+		table.insert(
+			out,
+			Kit.wedge(m, name .. "R", Vector3.new(xc, y0, z0 + h), Vector3.new(x1, y1, z1 - h), "left", look, k)
+		)
+	end
+	table.insert(
+		out,
+		Kit.cornerWedge(m, name .. "FL", Vector3.new(x0, y0, z0), Vector3.new(x0 + h, y1, z0 + h), "br", look, k)
+	)
+	table.insert(
+		out,
+		Kit.cornerWedge(m, name .. "FR", Vector3.new(x1 - h, y0, z0), Vector3.new(x1, y1, z0 + h), "bl", look, k)
+	)
+	table.insert(
+		out,
+		Kit.cornerWedge(m, name .. "BL", Vector3.new(x0, y0, z1 - h), Vector3.new(x0 + h, y1, z1), "fr", look, k)
+	)
+	table.insert(
+		out,
+		Kit.cornerWedge(m, name .. "BR", Vector3.new(x1 - h, y0, z1 - h), Vector3.new(x1, y1, z1), "fl", look, k)
+	)
+	return out
+end
+
+-- A gabled roof on walls whose outline is min..max (x and z), min.Y the top of the walls and max.Y the ridge, which runs
+-- along `ridge` ("x": the gables face the sides; "z": they face front and back). The two slopes reach `overhang` past
+-- the eaves and stand `thick` over the top of the walls at the wall line. With `gable`, the gable triangles are wedges
+-- of that look flush with the end walls, and the slopes stop just behind them, so each rake shows only a thin edge of
+-- tile, as on Mediterranean and coral-rock houses (a solid tile wedge's own end would show a whole triangle of tile).
+-- 2 parts, or 4 with gables.
+function Kit.gableRoof(
+	m: Model,
+	name: string,
+	min: Vector3,
+	max: Vector3,
+	ridge: "x" | "z",
+	overhang: number,
+	thick: number,
+	roof: Look,
+	gable: Look?,
+	kind: Kind?
+): { PartSpec }
+	local lo, hi = min:Min(max), min:Max(max)
+	local k: Kind = kind or "box"
+	local inset = if gable then 0.12 else 0
+	local out: { PartSpec } = {}
+	local top = hi.Y - thick -- the gable triangles' peak
+	if ridge == "x" then
+		local zc = (lo.Z + hi.Z) / 2
+		local half = zc - lo.Z
+		local pitch = math.max(0.05, top - lo.Y) / half
+		local y0 = hi.Y - pitch * (half + overhang)
+		local a0, a1 = lo.X + inset, hi.X - inset
+		table.insert(
+			out,
+			Kit.wedge(m, name .. "F", Vector3.new(a0, y0, lo.Z - overhang), Vector3.new(a1, hi.Y, zc), "back", roof, k)
+		)
+		table.insert(
+			out,
+			Kit.wedge(m, name .. "B", Vector3.new(a0, y0, zc), Vector3.new(a1, hi.Y, hi.Z + overhang), "front", roof, k)
+		)
+		if gable then
+			table.insert(
+				out,
+				Kit.wedge(m, name .. "GF", Vector3.new(lo.X, lo.Y, lo.Z), Vector3.new(hi.X, top, zc), "back", gable, k)
+			)
+			table.insert(
+				out,
+				Kit.wedge(m, name .. "GB", Vector3.new(lo.X, lo.Y, zc), Vector3.new(hi.X, top, hi.Z), "front", gable, k)
+			)
+		end
+	else
+		local xc = (lo.X + hi.X) / 2
+		local half = xc - lo.X
+		local pitch = math.max(0.05, top - lo.Y) / half
+		local y0 = hi.Y - pitch * (half + overhang)
+		local a0, a1 = lo.Z + inset, hi.Z - inset
+		table.insert(
+			out,
+			Kit.wedge(m, name .. "L", Vector3.new(lo.X - overhang, y0, a0), Vector3.new(xc, hi.Y, a1), "right", roof, k)
+		)
+		table.insert(
+			out,
+			Kit.wedge(m, name .. "R", Vector3.new(xc, y0, a0), Vector3.new(hi.X + overhang, hi.Y, a1), "left", roof, k)
+		)
+		if gable then
+			table.insert(
+				out,
+				Kit.wedge(m, name .. "GL", Vector3.new(lo.X, lo.Y, lo.Z), Vector3.new(xc, top, hi.Z), "right", gable, k)
+			)
+			table.insert(
+				out,
+				Kit.wedge(m, name .. "GR", Vector3.new(xc, lo.Y, lo.Z), Vector3.new(hi.X, top, hi.Z), "left", gable, k)
+			)
+		end
+	end
+	return out
+end
+
+-- The head of an arched opening between x0 and x1 whose top is `crown` (the underside of the wall over it), through
+-- the wall from z0 to z1: a haunch in each top corner, `rise` tall and reaching `rise` in from its jamb, so the corners
+-- are cut back at 45 degrees and the opening reads as an arch from the street (a true curve needs CSG). Loggias,
+-- arcades, carriage gates. 2 parts.
+function Kit.archHead(
+	m: Model,
+	name: string,
+	x0: number,
+	x1: number,
+	crown: number,
+	z0: number,
+	z1: number,
+	rise: number,
+	look: Look
+): { PartSpec }
+	local r = math.min(rise, (x1 - x0) / 2 - 0.05)
+	return {
+		Kit.corbel(m, name .. "L", Vector3.new(x0, crown - r, z0), Vector3.new(x0 + r, crown, z1), "left", look),
+		Kit.corbel(m, name .. "R", Vector3.new(x1 - r, crown - r, z0), Vector3.new(x1, crown, z1), "right", look),
+	}
+end
+
+-- A round-headed window or door on a front face at z: glass from x0 to x1 and from y0 up to `spring`, under a half
+-- disc as wide (a glass cylinder whose lower half sinks into the pane). The pane stands 0.2 proud of the face and
+-- reaches 0.3 into it; `spring - y0` must be at least half the width. Options as Kit.glass (the overlay goes on the
+-- pane; `lit` lights both). 2 parts.
+function Kit.archWindow(
+	m: Model,
+	name: string,
+	x0: number,
+	x1: number,
+	y0: number,
+	spring: number,
+	z: number,
+	color: Color3,
+	options: GlassOptions?
+): { PartSpec }
+	local o: GlassOptions = options or {}
+	local cx, w = (x0 + x1) / 2, math.abs(x1 - x0)
+	local pane = Kit.glass(m, name, Vector3.new(x0, y0, z - 0.2), Vector3.new(x1, spring, z + 0.3), color, options)
+	-- The head stands 0.02 behind the pane's face, so the pane covers its lower half without sharing a plane.
+	local head = Kit.tube(
+		m,
+		name .. "Head",
+		Vector3.new(cx, spring, z - 0.18),
+		Vector3.new(cx, spring, z + 0.3),
+		w,
+		Kit.glassLook(color, o.reflectance),
+		"detail"
+	)
+	if o.lit then
+		Kit.lit(head, "window")
+	end
+	return { pane, head }
 end
 
 ---------------------------------------------------------------------------------------------------------------
