@@ -37,6 +37,15 @@ export type TemplateSpec = {
 	height: number,
 	variant: number, -- 1..n: which child when the template is a folder of variants
 	fallback: string, -- the stand-in's shape (Dev/City/Scenery Palms species)
+	-- Optional, for props (Dev/City/Street): the parts the build puts up while the template is missing, instead of a
+	-- palm species' stand-in (still marked a stand-in, so Dev/MapCheck fails until the template is back).
+	standIn: { PartSpec }?,
+	-- Optional: stand the clone by its box, the bottom centre of its bounding box on `pivot`, whatever pivot the template
+	-- was saved with (a generated prop's pivot is often its middle).
+	seat: boolean?,
+	-- Optional, with `seat`: never wider or deeper than the spec's box either (scaled down to fit it, keeping its
+	-- proportions), for a prop whose mesh could reach past the space the plan checked (Config/CityProps contain).
+	contain: boolean?,
 }
 
 -- Text painted on one face of a part (a SurfaceGui with one TextLabel). `center` and `size` are fractions of the

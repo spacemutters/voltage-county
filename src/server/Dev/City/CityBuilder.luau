@@ -15,6 +15,12 @@
 --   3. the rest, run by run: each plot's own random stream draws among the archetypes its area mixes in (Config/City
 --      areas; its own district's at weight 1 without one) that fit the free plots from it on, taking the widest fit
 --      most of the time (rules.wideShare) so the city is fewer, bigger buildings
+--   4. the open plots (Config/CityLots): every run of plots no building took in a city district gets a use of its own
+--      (car parks, plazas, food-truck courts, sports courts, construction sites, parks, markets: the lot types, weight 0
+--      in Config/CityArchetypes so passes 1..3 never draw them), cut into lots no wider than CityLots.maxWidth. Each
+--      lot draws its type by its district's mix among those that fit and stand by no neighbour of their own type, and
+--      is built on trial to count its parts against the district's lot budget; a lot nothing fits is tried as two
+--      halves, and a plot no lot takes stays open (Config/City openFallback)
 -- On every pass: a repeatable's cap is its block's (heightCaps), its area's, nearSpotCap beside a gameplay spot, band
 -- H below the T slot once it is taken (and band M once a downtown block's two H slots are), and stepDown of its run's
 -- tower. Neighbours (footprints within rules.neighbourGap: beside it, across the street, round the corner) never share
@@ -35,7 +41,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local City = require(ReplicatedStorage.Shared.Config.City)
+local CityLots = require(ReplicatedStorage.Shared.Config.CityLots)
 local Environment = require(ReplicatedStorage.Shared.Config.Environment)
+local Frontage = require(script.Parent.Street.Frontage)
 local Index = require(script.Parent.Archetypes.Index)
 local Kit = require(script.Parent.Kit)
 local Types = require(script.Parent.Types)
@@ -50,7 +58,7 @@ export type Env = Types.Env
 
 export type Placement = {
 	sites: { Site }, -- in the order of their first plots
-	legacy: { Plot }, -- plots no archetype fits: the old look builds them
+	legacy: { Plot }, -- plots no archetype or lot fits: open (Config/City openFallback), or the old look
 	unplaced: { string }, -- one-offs whose archetype exists but that found no site near their anchor
 	missing: { string }, -- one-offs (and configs) whose archetype module or Config/City entry isn't ready yet
 }
@@ -1194,6 +1202,216 @@ local function skylines(s: State)
 	end
 end
 
+---------------------------------------------------------------------------------------------------------------
+-- Pass 4: the open plots (Config/CityLots)
+---------------------------------------------------------------------------------------------------------------
+
+-- The lot types the pass may draw, in Config/CityLots order: those written (a module in Archetypes/lots and a complete
+-- Config/CityArchetypes entry).
+local function lotIds(): { string }
+	local ids: { string } = {}
+	for _, id in CityLots.types do
+		if complete(City.archetypes[id]) and Index.byId[id] ~= nil then
+			table.insert(ids, id)
+		end
+	end
+	return ids
+end
+
+-- What the lot pass has spent: parts by district and night lights in all (Config/CityLots budget).
+type LotLedger = { parts: { [string]: number }, lights: number }
+
+-- The site makeSite will make of `spot`, made without booking it, so the pass can build it on trial and count it.
+local function trialSite(s: State, spot: Spot): Site
+	local first = spot.run.plots[spot.i]
+	local frame, width, depth = CityBuilder.footprint(spot.run.plots, spot.i, spot.j, spot.depth, spot.back)
+	local site = CityBuilder.sampleSite(
+		spot.id,
+		frame,
+		width,
+		depth,
+		spot.height,
+		table.clone(spot.variant),
+		mixSeed(s.seed, first.index, first.shade),
+		`Buildings/Site{first.index}`
+	)
+	site.id = `B{first.index}`
+	site.district = spot.district
+	site.zone = first.zone
+	site.block = first.block
+	return site
+end
+
+-- One lot on plots i..j of `run`: its type drawn by the district's mix (Config/CityLots mix) among the lot types that
+-- fit its width, plots and cap and stand by no neighbour of their own type, the first whose trial build fits the
+-- district's lot budget. Returns whether one was placed.
+local function placeLot(
+	s: State,
+	run: Run,
+	i: number,
+	j: number,
+	ids: { string },
+	ledger: LotLedger,
+	taken: { [number]: boolean }
+): boolean
+	local plots, district = run.plots, run.district :: string
+	local mix = CityLots.mix[district]
+	if mix == nil then
+		return false
+	end
+	local first = plots[i]
+	local width = spanWidth(plots, i, j)
+	local count = j - i + 1
+	local cap = windowCap(s, run, i, j, district)
+	local frame = CityBuilder.footprint(plots, i, j)
+	local at = Vector2.new(frame.X, frame.Z)
+	local same, across = neighbours(s, boxOf(frame, width, first.plotDepth), first.block)
+	local rng = Random.new(mixSeed(s.seed, first.shade, first.index + CityLots.salt))
+	local roll = rng:NextNumber()
+	local options: { Option } = {}
+	local total = 0
+	for _, id in ids do
+		local config = City.archetypes[id]
+		local weight = mix[id] or 0
+		if weight <= 0 or same[id] or across[id] then
+			continue
+		end
+		if width < config.minWidth - EPS or width > config.maxWidth + EPS or count > config.maxPlots then
+			continue
+		end
+		if first.plotDepth < config.minDepth - EPS then
+			continue
+		end
+		if blockFull(s, id, config, first.block) or crowded(s, id, config, at) then
+			continue
+		end
+		local top = math.min(config.heights.max, cap)
+		if top < config.heights.min - EPS then
+			continue
+		end
+		table.insert(options, {
+			id = id,
+			weight = weight,
+			j = j,
+			width = width,
+			depth = first.plotDepth,
+			low = config.heights.min,
+			top = top,
+		})
+		total += weight
+	end
+	if #options == 0 then
+		return false
+	end
+	local budget = CityLots.budget.parts[district] or 0
+	for _, option in drawOrder(options, roll * total) do
+		local config = City.archetypes[option.id]
+		local spot: Spot = {
+			run = run,
+			i = i,
+			j = j,
+			id = option.id,
+			config = config,
+			depth = option.depth,
+			height = option.low + first.tall * (option.top - option.low),
+			low = option.low,
+			top = option.top,
+			back = false,
+			landmark = false,
+			variant = drawVariant(s, option.id, config, rng),
+			district = district,
+		}
+		local specs = CityBuilder.build(trialSite(s, spot))
+		if specs == nil then
+			continue
+		end
+		-- Its own parts (a street dressing's, role "scenery", are its own ledger's) and every night light.
+		local parts, lights = 0, 0
+		for _, spec in specs do
+			if spec.role == "building" then
+				parts += 1
+			end
+			if spec.tag == NIGHT_TAG then
+				lights += 1
+			end
+		end
+		local spent = ledger.parts[district] or 0
+		if spent + parts <= budget and ledger.lights + lights <= CityLots.budget.lights then
+			ledger.parts[district] = spent + parts
+			ledger.lights += lights
+			makeSite(s, spot)
+			for k = i, j do
+				taken[plots[k].index] = true
+			end
+			return true
+		end
+	end
+	return false
+end
+
+-- Gives the open plots in `legacy` (in a city district) their uses, run by run, and takes the plots it fills out of
+-- `legacy`. Each gap between buildings is cut into lots of at most CityLots.maxPlots plots and maxWidth studs, as even
+-- as can be; a lot nothing fits is tried again as two halves.
+local function placeLots(s: State, runs: { Run }, legacy: { Plot })
+	local ids = lotIds()
+	if #ids == 0 then
+		return
+	end
+	local open: { [number]: boolean } = {}
+	for _, plot in legacy do
+		local district = City.districts[plot.zone]
+		if district ~= nil and City.districtLooks[district] ~= nil and CityLots.mix[district] ~= nil then
+			open[plot.index] = true
+		end
+	end
+	local ledger: LotLedger = { parts = {}, lights = 0 }
+	local taken: { [number]: boolean } = {}
+	local function piece(run: Run, i: number, j: number)
+		if placeLot(s, run, i, j, ids, ledger, taken) or j <= i then
+			return
+		end
+		local mid = (i + j) // 2
+		piece(run, i, mid)
+		piece(run, mid + 1, j)
+	end
+	for _, run in runs do
+		local plots = run.plots
+		local i = 1
+		while i <= #plots do
+			if not open[plots[i].index] then
+				i += 1
+				continue
+			end
+			local j = i
+			while j < #plots and open[plots[j + 1].index] do
+				j += 1
+			end
+			local n = j - i + 1
+			local pieces = math.max(
+				math.ceil(n / CityLots.maxPlots),
+				math.ceil((spanWidth(plots, i, j) + City.siteGap) / (CityLots.maxWidth + City.siteGap))
+			)
+			pieces = math.clamp(pieces, 1, n)
+			for p = 1, pieces do
+				local a = i + (n * (p - 1)) // pieces
+				local b = i + (n * p) // pieces - 1
+				if b >= a then
+					piece(run, a, b)
+				end
+			end
+			i = j + 1
+		end
+	end
+	local kept: { Plot } = {}
+	for _, plot in legacy do
+		if not taken[plot.index] then
+			table.insert(kept, plot)
+		end
+	end
+	table.clear(legacy)
+	table.move(kept, 1, #kept, 1, legacy)
+end
+
 -- Decides what stands on every plot (see the header). Pure and deterministic. Without an Env (spec fixtures) it
 -- places no one-offs and makes no core claims.
 function CityBuilder.place(plots: { Plot }, seed: number, env: Env?): Placement
@@ -1234,6 +1452,7 @@ function CityBuilder.place(plots: { Plot }, seed: number, env: Env?): Placement
 	fill(s, runs, legacy)
 	untwin(s)
 	skylines(s)
+	placeLots(s, runs, legacy)
 
 	table.sort(s.sites, function(a: Site, b: Site): boolean
 		return a.plots[1] < b.plots[1]
@@ -1325,7 +1544,8 @@ function CityBuilder.file(site: Site, specs: { PartSpec })
 	end
 end
 
--- Builds one site with its archetype. Returns its specs (filed), or nil and why not.
+-- Builds one site with its archetype. Returns its specs (filed, its street dressing after its own parts), or nil and
+-- why not.
 function CityBuilder.build(site: Site): ({ PartSpec }?, string?)
 	local archetype = Index.byId[site.archetype]
 	if archetype == nil then
@@ -1343,7 +1563,29 @@ function CityBuilder.build(site: Site): ({ PartSpec }?, string?)
 		return nil, `{site.id} {site.archetype}: {problems[1]} ({#problems} problems)`
 	end
 	CityBuilder.file(site, m.specs)
+	local dressed, why = CityBuilder.dress(site, m.specs)
+	if dressed == nil then
+		return nil, `{site.id} {site.archetype} street front: {why}`
+	end
 	return m.specs, nil
+end
+
+-- The hook for a built site's street level (Dev/City/Street/Frontage: shop fronts and a café terrace on its forecourt).
+-- Appends the pieces to `specs`, after the site's own parts: role "scenery", named <id>Street..., filed in the site's
+-- own model and lights model, so CityBuilder.check and the archetype's budget never count them. Returns how many, or
+-- nil and the error.
+function CityBuilder.dress(site: Site, specs: { PartSpec }): (number?, string?)
+	local pieces: { PartSpec } = {}
+	local ok, err = pcall(function()
+		pieces = Frontage.dress(site, specs)
+	end)
+	if not ok then
+		return nil, tostring(err)
+	end
+	for _, piece in pieces do
+		table.insert(specs, piece)
+	end
+	return #pieces, nil
 end
 
 -- A stand-alone site for previews and specs: an archetype on a footprint `width` x `depth` at `frame`, with a variant

@@ -17,11 +17,13 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local BayfrontPark = require(script.BayfrontPark)
 local Beach = require(script.Beach)
 local Causeway = require(script.Causeway)
 local CityScenery = require(ReplicatedStorage.Shared.Config.CityScenery)
 local Lamps = require(script.Lamps)
 local Palms = require(script.Palms)
+local Parking = require(script.Parent.Street.Parking)
 local Piece = require(script.Piece)
 local Square = require(script.Square)
 local Streets = require(script.Streets)
@@ -40,6 +42,8 @@ Scenery.Lamps = Lamps
 Scenery.Causeway = Causeway
 Scenery.Water = Water
 Scenery.Piece = Piece
+Scenery.Parking = Parking -- the parked cars (Dev/City/Street/Parking): MapBuilder plans them after the scenery
+Scenery.BayfrontPark = BayfrontPark -- the lawn between downtown and the beach: planned right after Scenery.plan
 
 -- Plans every piece of street scenery into `host`. Returns the parts each group added (and `total`).
 function Scenery.plan(host: Host): Report
@@ -64,8 +68,12 @@ function Scenery.plan(host: Host): Report
 end
 
 -- What the build puts in place of a spec with a template: a clone of its template, or the parts-only stand-in made
--- with `makePart` (Dev/MapBuilder createPart).
+-- with `makePart` (Dev/MapBuilder createPart). A parked car's goes through Parking (its colour falls back to the
+-- paints that are there, and its nose is found from the template's shape); the rest through Palms.
 function Scenery.instantiate(spec: Types.PartSpec, makePart: (Types.PartSpec) -> BasePart): Instance
+	if Parking.owns(spec) then
+		return Parking.instantiate(spec, makePart)
+	end
 	return Palms.instantiate(spec, makePart)
 end
 

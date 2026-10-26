@@ -15,13 +15,18 @@
 --   Ground (Model, Persistent)   slabs with their top at y = 0 covering ±World.mapHalfExtent: each zone's ground
 --                                (MapLayout groundMaterial), the green zones and the open country a patchwork of
 --                                grass shades in tiles (groundShades, Config/Environment ground.tile), parks in their
---                                own grass; the lake beds with sloping banks in pale sand, the mesas
+--                                own grass; the lake beds with sloping banks in pale sand (only while Config/Water
+--                                .terrain is off), the mesas
 --                                (MapLayout.mesas), the grass hills at the edge of the map (MapLayout.hills) and the
 --                                jump ramps
---   Water                        the bay (Dev/City/Scenery Water; not solid): thin sheets in bands of colour from the
---                                shore out, a foam line where the bank meets the water, coping on the shores
+--   Water                        the bay (Dev/City/Scenery Water; not solid): coping on the shores with no beach. The
+--                                water itself is terrain (Dev/WaterBuilder, Workspace.Terrain); only while Config/Water
+--                                .terrain is off thin sheets in bands of colour from the shore out and a foam line
 --   Roads (Model, Persistent)    Segments: one slab per road edge. Intersections: a pad at every node where
---                                3+ roads meet or a road bends or changes grade. Lines: lane lines and medians
+--                                3+ roads meet or a road bends or changes grade
+--   RoadLines                    lane lines and medians: paint, so it streams with the area round it like any decor
+--                                (out of the Persistent Roads model since 2026-10-26: about 600 fewer parts in the
+--                                phone's worst view, Config/Environment budget.inViewParts)
 --   Sidewalks                    raised kerbed sidewalks on Cedar Bend and Riverside streets and arterials, cut
 --                                for a driveway flush with the road in front of every pad
 --   Bridges                      railings, supports under raised roads, fill under low raised roads; the lake bridge
@@ -101,6 +106,7 @@ local Dealership = require(Config.Dealership)
 local Environment = require(Config.Environment)
 local MapLayoutModule = require(Config.MapLayout)
 local RoadGraphModule = require(Config.RoadGraph)
+local WaterConfig = require(Config.Water)
 local World = require(Config.World)
 
 local CityBuilder = require(script.Parent.City.CityBuilder)
@@ -277,7 +283,7 @@ local TUNING = {
 	pointTolerance = 1e-3, -- studs; polygon points closer than this are one point
 	minSliver = 1e-3, -- twice the area (studs²) of the smallest pad triangle worth a part
 
-	-- Paint (Roads/Lines)
+	-- Paint (RoadLines)
 	lineThickness = 0.05,
 	lineLift = 0.02, -- gap between the road top and the bottom of its paint
 	laneLineWidth = 0.5,
@@ -330,10 +336,13 @@ local TUNING = {
 	-- The lake's bed, banks and water: Config/CityScenery water (Dev/City/Scenery Water).
 	rampColor = Color3.fromRGB(160, 120, 84),
 
-	-- Streetlights (contracts: posts along streets and arterials; at most one emitting light per 200 studs)
+	-- Streetlights (contracts: posts along streets and arterials). Every post's head casts its light since the
+	-- street-level roast (2026-10-26, point 9: the street was black at night, the lamps lit no ground; one light per
+	-- 200 studs left every other post dark): no two lit heads within lightEmitSpacing, less than the posts' interval,
+	-- so only posts crowded at a junction stay unlit. No shadows (MapBuilder createPart), so a light costs little.
 	lightKinds = { street = true, arterial = true } :: { [string]: boolean },
 	lightInterval = 110,
-	lightEmitSpacing = 200,
+	lightEmitSpacing = 90,
 	lightEndGap = 14, -- no post within this of a segment's ends (junction corners)
 	lightVerge = 3, -- without a sidewalk, posts stand this far outside the road edge...
 	lightSidewalkInset = 1.2, -- ...with one, this far inside the sidewalk's outer edge
@@ -341,8 +350,8 @@ local TUNING = {
 	postHeight = 16,
 	headSize = Vector3.new(1.4, 0.5, 3),
 	headReach = 1.6, -- the head hangs this far toward the road
-	lightRange = 48,
-	lightBrightness = 2,
+	lightRange = 56,
+	lightBrightness = 3,
 	lightAngle = 120,
 	lightColor = Color3.fromRGB(255, 222, 170),
 	postColor = Color3.fromRGB(70, 72, 76),
@@ -1631,7 +1640,7 @@ local function addLines(ctx: Ctx, edge: Edge)
 		local size = Vector3.new(line.width, TUNING.lineThickness, length)
 		add(
 			ctx,
-			decor(block("Roads/Lines", `{edge.name}:{i}`, "line", frame, size, line.color, Enum.Material.SmoothPlastic))
+			decor(block("RoadLines", `{edge.name}:{i}`, "line", frame, size, line.color, Enum.Material.SmoothPlastic))
 		)
 	end
 end
@@ -2561,49 +2570,64 @@ local function sceneryHost(ctx: Ctx): Scenery.Host
 	return host
 end
 
--- Each lake: its bed (ground under water, with banks sloping down from the shore so a car can climb out), in pale
--- sand so the shallows read turquoise, and its water (Dev/City/Scenery Water: bands of colour from the shore out, the
--- foam line, coping on the shores with no beach), which nothing collides with.
+-- One lake as parts (Config/Water.terrain off): its bed (ground under water, with banks sloping down from the shore
+-- so a car can climb out), in pale sand so the shallows read turquoise, and its water (Dev/City/Scenery Water: bands
+-- of colour from the shore out, the foam line, coping on the shores with no beach), which nothing collides with.
+local function addLakeParts(ctx: Ctx, lake: LakeData, host: Scenery.Host)
+	local width, depthZ = lake.max.X - lake.min.X, lake.max.Y - lake.min.Y
+	local cx, cz = (lake.min.X + lake.max.X) / 2, (lake.min.Y + lake.max.Y) / 2
+	local thickness = TUNING.groundThickness
+	local bed = Scenery.Water.bed
+	local bedColor = bed.color
+	addSlab(
+		ctx,
+		"Ground",
+		`{lake.id}Bed`,
+		lake.min.X,
+		lake.max.X,
+		lake.min.Y,
+		lake.max.Y,
+		lake.bedY,
+		thickness,
+		bedColor,
+		bed.material
+	)
+	local depth = -lake.bedY
+	if depth > 0 then
+		local run = math.min(depth * TUNING.bankRun, width / 2, depthZ / 2)
+		local banks = {
+			{ edge = Vector3.new(cx, 0, lake.min.Y), inward = Vector3.zAxis, length = width },
+			{ edge = Vector3.new(cx, 0, lake.max.Y), inward = -Vector3.zAxis, length = width },
+			{ edge = Vector3.new(lake.min.X, 0, cz), inward = Vector3.xAxis, length = depthZ },
+			{ edge = Vector3.new(lake.max.X, 0, cz), inward = -Vector3.xAxis, length = depthZ },
+		}
+		for i, bank in banks do
+			local r = bank.edge + UP * lake.bedY
+			local frame, sizeY, sizeZ = wedgeFrame(r, bank.edge, r + bank.inward * run)
+			local size = Vector3.new(bank.length, sizeY, sizeZ)
+			add(ctx, wedge("Ground", `{lake.id}Bank{i}`, "ground", frame, size, bedColor, bed.material))
+		end
+	end
+	for _, spec in Scenery.Water.plan(lake, host.streets, host.parks) do
+		add(ctx, spec)
+	end
+end
+
+-- Each lake. While Config/Water.terrain is on, the bay's water and the seabed under it are terrain (Dev/WaterBuilder
+-- owns Workspace.Terrain) and only the stone coping on the shores with no beach is parts; else addLakeParts. Either
+-- way the lake goes into the placement grid, so nothing is planted or placed on it.
 local function addLakes(ctx: Ctx)
 	local lakes: { LakeData } = ctx.layout.lakes or {}
 	local host = sceneryHost(ctx)
 	for _, lake in lakes do
 		local width, depthZ = lake.max.X - lake.min.X, lake.max.Y - lake.min.Y
 		local cx, cz = (lake.min.X + lake.max.X) / 2, (lake.min.Y + lake.max.Y) / 2
-		local thickness = TUNING.groundThickness
-		local bed = Scenery.Water.bed
-		local bedColor = bed.color
-		addSlab(
-			ctx,
-			"Ground",
-			`{lake.id}Bed`,
-			lake.min.X,
-			lake.max.X,
-			lake.min.Y,
-			lake.max.Y,
-			lake.bedY,
-			thickness,
-			bedColor,
-			bed.material
-		)
-		local depth = -lake.bedY
-		if depth > 0 then
-			local run = math.min(depth * TUNING.bankRun, width / 2, depthZ / 2)
-			local banks = {
-				{ edge = Vector3.new(cx, 0, lake.min.Y), inward = Vector3.zAxis, length = width },
-				{ edge = Vector3.new(cx, 0, lake.max.Y), inward = -Vector3.zAxis, length = width },
-				{ edge = Vector3.new(lake.min.X, 0, cz), inward = Vector3.xAxis, length = depthZ },
-				{ edge = Vector3.new(lake.max.X, 0, cz), inward = -Vector3.xAxis, length = depthZ },
-			}
-			for i, bank in banks do
-				local r = bank.edge + UP * lake.bedY
-				local frame, sizeY, sizeZ = wedgeFrame(r, bank.edge, r + bank.inward * run)
-				local size = Vector3.new(bank.length, sizeY, sizeZ)
-				add(ctx, wedge("Ground", `{lake.id}Bank{i}`, "ground", frame, size, bedColor, bed.material))
+		if WaterConfig.terrain then
+			for _, spec in Scenery.Water.coping(lake, host.streets, host.parks) do
+				add(ctx, spec)
 			end
-		end
-		for _, spec in Scenery.Water.plan(lake, host.streets, host.parks) do
-			add(ctx, spec)
+		else
+			addLakeParts(ctx, lake, host)
 		end
 		gridInsert(ctx.grid, { c = Vector2.new(cx, cz), u = Vector2.xAxis, ha = width / 2, hc = depthZ / 2 }, "lake")
 	end
@@ -3685,8 +3709,8 @@ local LIGHT_BLOCKERS: { [string]: boolean } = {
 }
 
 -- Posts at an even spacing along each street and arterial, alternating sides road by road. A post's light
--- only switches on when no other lit post is within TUNING.lightEmitSpacing, so at most one light per 200
--- studs of street actually emits. Every head is a night light (Config/Environment nightLights "streetlight"):
+-- only switches on when no other lit post is within TUNING.lightEmitSpacing (less than the posts' interval, so
+-- nearly every post emits; only those crowded at a junction stay dark). Every head is a night light (Config/Environment nightLights "streetlight"):
 -- built in its day look with its light off, lit from dusk to dawn by Services/DayNightService. Each post goes into
 -- the grid as "light", and its arm and head as "lamp", which trees and the scenery keep clear of. What a post looks
 -- like is Dev/City/Scenery Lamps' (Config/CityScenery lamps: by zone and kind); the causeway has acorn lamps along
@@ -4358,11 +4382,39 @@ local function square(c: Vector2, half: number): Rect
 	return { c = c, u = Vector2.xAxis, ha = half, hc = half }
 end
 
+-- The bayfront park on the lawn between downtown and the beach (Dev/City/Scenery BayfrontPark; Config/CityScenery
+-- bayfrontPark), in BayfrontPark/Tile<x>_<z>: after the street scenery (it keeps off the avenue's palms and lamps),
+-- before the parked cars and the trees (which keep off it). Its count goes in the scenery report (`bayfrontPark`). A
+-- planner error leaves a note (which fails tests/MapBuilder.spec) instead of stopping the plan.
+local function addBayfrontPark(ctx: Ctx)
+	local ok, added = pcall(Scenery.BayfrontPark.plan, sceneryHost(ctx))
+	if not ok then
+		note(ctx, `bayfront park: {tostring(added)}`)
+		return
+	end
+	ctx.scenery.bayfrontPark = added
+end
+
 -- The city's street scenery (Dev/City/Scenery; docs/city/SCENERY.md): the causeway's palms, the beach, Town Square,
 -- the avenues' and streets' palms, bus shelters and crossings, after the buildings (so it keeps off every lot) and
--- before the trees (which keep off it).
+-- before the trees (which keep off it); then the bayfront park.
 local function addScenery(ctx: Ctx)
 	ctx.scenery = Scenery.plan(sceneryHost(ctx))
+	addBayfrontPark(ctx)
+end
+
+-- Parked cars (Dev/City/Street/Parking; Config/CityStreet parking): on the sites' drives, in the beach hotels'
+-- drop-off bays, in the diner's car park and (where a road is wide enough) at the kerb, in ParkedCars/Tile<x>_<z>.
+-- After the scenery, so the cars keep off it; before the trees, which keep off the cars. Its count goes in the
+-- scenery report (`parkedCars`). A planner error leaves a note (which fails tests/MapBuilder.spec) instead of
+-- stopping the plan.
+local function addParking(ctx: Ctx)
+	local ok, report = pcall(Scenery.Parking.plan, sceneryHost(ctx), ctx.sites, ctx.specs)
+	if not ok then
+		note(ctx, `parking: {tostring(report)}`)
+		return
+	end
+	ctx.scenery.parkedCars = report.cars or 0
 end
 
 -- Trees (Config/Environment trees): first the parks, a tree per cell by chance; then the groves, zone by zone in
@@ -4620,7 +4672,8 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 	container(ctx, "Roads", "Model", persistent)
 	container(ctx, "Roads/Segments", "Folder")
 	container(ctx, "Roads/Intersections", "Folder")
-	container(ctx, "Roads/Lines", "Folder")
+	-- Paint streams like decor: not in the Persistent Roads model (budget.inViewParts).
+	container(ctx, "RoadLines", "Folder")
 	container(ctx, "Sidewalks", "Folder")
 	container(ctx, "Bridges", "Folder")
 	container(ctx, "Landmarks", "Folder")
@@ -4655,6 +4708,7 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 	addParks(ctx)
 	addBuildings(ctx, zones)
 	addScenery(ctx)
+	addParking(ctx)
 	addTrees(ctx, zones)
 
 	-- Notes once each, in order.

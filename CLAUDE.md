@@ -51,7 +51,7 @@ An original open-world driving + roleplay game for Roblox, in Greenville's genre
    - Never point players to buy anything outside Roblox.
 7. **Data safety.** A schema change means a `version` bump, a migration and a spec. Never drop player-owned fields without a migration.
 8. **Dev tools stay dev.** Cash and credit grants, teleports, AutoDriver and builders run only when `RunService:IsStudio()` is true, and are admin-gated where relevant.
-9. **Build scripts run in Edit mode** via `execute_luau`, never at runtime. MapBuilder owns only `Workspace.Map.Generated`.
+9. **Build scripts run in Edit mode** via `execute_luau`, never at runtime. MapBuilder owns only `Workspace.Map.Generated`; WaterBuilder owns only `Workspace.Terrain` (the bay's terrain water and seabed; run it after every MapBuilder.build, which no longer makes a lake bed).
 10. **Performance.**
     - No polling loops for gameplay; use RunService events, caches and CollectionService.
     - UI and controls are mobile-first.

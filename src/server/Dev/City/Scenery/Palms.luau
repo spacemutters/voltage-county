@@ -311,26 +311,66 @@ local function decorate(part: BasePart)
 	end
 end
 
--- Scales a template's clone to `t.height` and stands it at `t.pivot`.
-function Palms.fit(clone: Instance, t: TemplateSpec)
+-- The scale that brings a template of `native` size (x, y, z in its own frame) to `height` tall, or less when it would
+-- then be wider or deeper than `box` (the space the plan checked, in the same frame): it keeps its proportions and fits
+-- inside the box, as Dev/City/Street Parking.fitSize does for the cars.
+function Palms.fitScale(native: Vector3, height: number, box: Vector3?): number
+	if native.Y <= 0 then
+		return 1
+	end
+	local s = height / native.Y
+	if box then
+		if native.X > 0 then
+			s = math.min(s, box.X / native.X)
+		end
+		if native.Z > 0 then
+			s = math.min(s, box.Z / native.Z)
+		end
+	end
+	return s
+end
+
+-- The box `size` of a spec at `frame` measured along `pivot`'s axes (a prop's pivot may be turned from its box by a
+-- quarter: Config/CityProps turn).
+function Palms.boxAlong(frame: CFrame, size: Vector3, pivot: CFrame): Vector3
+	local rel = frame.Rotation:ToObjectSpace(pivot.Rotation)
+	local function along(axis: Vector3): number
+		return math.abs(axis.X) * size.X + math.abs(axis.Y) * size.Y + math.abs(axis.Z) * size.Z
+	end
+	return Vector3.new(along(rel.RightVector), along(rel.UpVector), along(rel.LookVector))
+end
+
+-- Scales a template's clone to `t.height` and stands it at `t.pivot`. With `box` (a seated prop's space, along the
+-- pivot's axes) it never grows wider or deeper than the box either.
+function Palms.fit(clone: Instance, t: TemplateSpec, box: Vector3?)
 	if clone:IsA("BasePart") then
 		local part = clone :: BasePart
 		local tall = part.Size.Y
 		if tall > 0 then
-			local s = t.height / tall
+			local s = Palms.fitScale(part.Size, t.height, box)
 			local offset = part.PivotOffset
 			part.Size = part.Size * s
 			part.PivotOffset = CFrame.new(offset.Position * s) * offset.Rotation
 		end
-		part:PivotTo(t.pivot)
+		if t.seat then
+			-- Stood by its box (a MeshPart's Size is its box): the bottom centre on the pivot, turned as the pivot.
+			part.CFrame = t.pivot * CFrame.new(0, part.Size.Y / 2, 0)
+		else
+			part:PivotTo(t.pivot)
+		end
 		decorate(part)
 	elseif clone:IsA("Model") then
 		local model = clone :: Model
-		local tall = model:GetExtentsSize().Y
-		if tall > 0 then
-			model:ScaleTo(model:GetScale() * t.height / tall)
+		local extents = model:GetExtentsSize()
+		if extents.Y > 0 then
+			model:ScaleTo(model:GetScale() * Palms.fitScale(extents, t.height, box))
 		end
-		model:PivotTo(t.pivot)
+		if t.seat then
+			local bounds, size = model:GetBoundingBox()
+			model:PivotTo(t.pivot * CFrame.new(0, size.Y / 2, 0) * bounds:Inverse() * model:GetPivot())
+		else
+			model:PivotTo(t.pivot)
+		end
 		for _, descendant in model:GetDescendants() do
 			if descendant:IsA("BasePart") then
 				decorate(descendant)
@@ -357,7 +397,9 @@ function Palms.instantiate(spec: PartSpec, makePart: (PartSpec) -> BasePart): In
 	local source = Palms.findTemplate(t.path, t.variant)
 	if source then
 		local clone = source:Clone()
-		Palms.fit(clone, t)
+		-- A contained prop (Config/CityProps contain) stays inside the box the plan checked against roads and
+		-- neighbours; other props and the palms are scaled by their height alone.
+		Palms.fit(clone, t, if t.seat and t.contain then Palms.boxAlong(spec.cframe, spec.size, t.pivot) else nil)
 		clone.Name = spec.name
 		return clone
 	end
@@ -371,7 +413,8 @@ function Palms.instantiate(spec: PartSpec, makePart: (PartSpec) -> BasePart): In
 	local model = Instance.new("Model")
 	model.Name = spec.name
 	model:SetAttribute(Palms.standInAttribute, true)
-	for _, part in Palms.fallback(t, spec.folder, spec.name) do
+	-- A prop brings its own few-part stand-in (MapTypes TemplateSpec.standIn); a palm's comes from its species.
+	for _, part in t.standIn or Palms.fallback(t, spec.folder, spec.name) do
 		makePart(part).Parent = model
 	end
 	return model

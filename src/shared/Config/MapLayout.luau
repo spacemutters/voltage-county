@@ -725,7 +725,9 @@ local lakes: { Lake } = {
 		min = Vector2.new(-900, 1800),
 		max = Vector2.new(900, 2550),
 		waterY = -2,
-		bedY = -12,
+		-- The deepest the bay gets: the terrain seabed (Config/Water, Dev/WaterBuilder) shelves down to it offshore, and
+		-- the bridge's piers stand on it.
+		bedY = -24,
 	},
 }
 

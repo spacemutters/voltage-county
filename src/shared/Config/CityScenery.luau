@@ -9,8 +9,8 @@
 --                coconut palms, dunes, lifeguard stands, boardwalks, umbrellas and loungers, showers, nets, benches and
 --                globe lamps
 --   lifeguard    the lifeguard stands (C08): sizes and colour schemes
---   water        the bay as parts (terrain water waits on Davis's call): a pale sandy bed, bands of colour from the
---                shore out, a foam line and a stone coping on the shores without a beach
+--   water        the stone coping on the shores without a beach; and the bay's old part look (a pale sandy bed, bands
+--                of colour from the shore out, a foam line), built only while Config/Water.terrain is off
 --   causeway     the lake bridge (C09): round white piers with caps, shallow arched spans, a white balustrade with a lit
 --                fascia, acorn lamps along it, the steel arches white by day and in a colour gradient at night
 --   lamps        streetlight styles by road
@@ -18,6 +18,8 @@
 --   crosswalks   zebra crossings at the junctions of the avenues
 --   townSquare   the downtown square's fountain, its palm allée and benches
 --   budget       how many parts the scenery may add, and the phone's in-view gate
+--   bayfrontPark the park on the lawn between downtown and the beach: promenade, fountain plaza, bandshell lawn,
+--                playground, sculpture garden, food trucks, curving paths, palm groves, lamps (its own budget)
 -- Real places are inspiration only: their names stay in docs/city.
 
 local rgb = Color3.fromRGB
@@ -86,6 +88,10 @@ export type LampStyle = {
 	reach: number, -- the head's centre stands this far out from the pole, toward the road
 	globe: boolean,
 }
+
+-- A clump of palms on the bayfront park's lawns: `count` palms tried within `radius` of `at`, and `shrubs` flowering
+-- shrubs at its foot.
+export type ParkGrove = { at: Vector2, count: number, radius: number, shrubs: number }
 
 local CityScenery = {
 	-- Colours shared by the pieces below (docs/city/SCENERY.md §8, pushed past the paint chip so the sky light
@@ -589,6 +595,270 @@ local CityScenery = {
 		bridgeParts = 420, -- Bridges (role support) on raised roads: the balustrade, piers, caps, arches, fills
 		waterParts = 40,
 		-- The phone's in-view gate covers the scenery too: Config/Environment budget.inViewParts.
+	},
+
+	-- The bayfront park on the lawn between downtown's bay row and the north shore's hotel row (Dev/City/Scenery
+	-- BayfrontPark; tests/CityScenery.spec "The bayfront park"). Plan x, z throughout: Lake Avenue (x = 0) runs down its
+	-- middle and the bay lies south, past the hotel row. Pieces and paths are placed where the placement grid says the
+	-- ground is clear, so a spot that turns out taken is left out rather than moved. Its own folders
+	-- (Generated/BayfrontPark/Tile<x>_<z>, night lights in BayfrontParkLights/Tile<x>_<z>) and its own budget, so the
+	-- streetscape's above doesn't pay for it.
+	bayfrontPark = {
+		-- The lawn it dresses: open county ground from the backs of the bay row's lots and the one-offs' deep claims
+		-- (z 1,000..1,105) to the hotel row's plots along Lake Avenue (from z 1,300). Once dressed, its open lawn is
+		-- kept free of the random trees (the park plants its own palms).
+		area = { min = Vector2.new(-990, 1010), max = Vector2.new(990, 1298) },
+		-- Parts (every one counts in the map's and the phone's budgets): about 390 planned. When it runs out the least
+		-- important pieces drop first: the shrubs, then the bollards, the groves, the paths, the promenade's lamps and
+		-- palms; the plazas and their props come first.
+		budget = 400,
+		root = "BayfrontPark",
+		lightsRoot = "BayfrontParkLights",
+		tile = 500, -- studs per tile model
+		fenceCell = 40, -- the open lawn is kept from the random trees in squares this big
+		plazaTop = 0.09, -- the plazas', aprons' and courts' paving tops above the ground (the promenade lies over them)
+		-- The plazas' and the promenade's paving: cream stone pavers. The place's "Terrazzo" material variant reads as
+		-- beach sand with starfish and fist-sized pebbles at this scale (the street-level roast, 2026-10-26, point 6), so
+		-- the park uses plain Pavement (square slabs with joints) and no variant.
+		paving = { color = rgb(232, 222, 204), material = Enum.Material.Pavement, variant = nil :: string? },
+
+		-- The shared props it places (Config/CityProps, Dev/City/Props: one part each, cloned from
+		-- ServerStorage.CityAssets.Props.<name>, a few plain parts while that's missing) at this many times their
+		-- catalogue size (1 when not listed): the park's fountain and shell are bigger than a square's. Where the
+		-- catalogue gives a prop a collider, the park adds that invisible box too.
+		propScale = {
+			Fountain = 2.1, -- about 34 across, 17 tall
+			Bandshell = 2, -- 60 across, 36 tall, 40 deep
+			PlaygroundSet = 1.25,
+			SculptureA = 1.25,
+			SculptureB = 1.4,
+			MarketStall = 1.1,
+			BistroPair = 1.2,
+		} :: { [string]: number },
+		-- Props whose collider is a round drum (as wide as the box's narrower side) rather than a box.
+		roundColliders = { Fountain = true } :: { [string]: boolean },
+
+		-- Globe lamps (2 parts: a white pole, a globe that glows at night) and lit bollards beside the paths (1 part each,
+		-- glowing at night), both of the streetlight kind. Neither casts light of its own.
+		lamp = {
+			pole = Vector2.new(0.4, 12),
+			globe = 2, -- 1.6 read as a pinprick across the lawn at night
+			poleColor = rgb(246, 244, 238),
+			globeColor = rgb(252, 250, 244),
+			-- Each globe casts a warm light at night (the park was black but for its globes: the street-level roast,
+			-- 2026-10-26, point 9). A PointLight, no shadows.
+			light = { brightness = 1.8, range = 30, color = rgb(255, 214, 160) },
+		},
+		bollard = { size = Vector2.new(0.9, 3.2), color = rgb(246, 244, 238), every = 90, offset = 1.4 },
+
+		-- The promenade along the bay (south) side, the park's whole width either side of Lake Avenue: a terrazzo walk
+		-- (`z` its middle line) lined with royal palms on both sides (staggered, `setback` outside its edges), globe
+		-- lamps on its bay edge and benches on its land edge facing the bay, and a zebra crossing `crossing` deep
+		-- (Config/CityScenery crosswalks' look) where a road cuts it.
+		promenade = {
+			z = 1284,
+			width = 14,
+			top = 0.1,
+			step = 4, -- sampled this often along it: a taken sample breaks the walk there
+			palms = { species = "royal", spacing = 96, setback = 4, scale = { 1, 1.12 } },
+			lampEvery = 144,
+			benchEvery = 144,
+			crossing = 10,
+		},
+
+		-- The fountain plaza by Lake Avenue (east): a paved disc `plaza` across, the Fountain on a low stone step
+		-- (`surround`: just wider than its basin; the cyan disc it stood on read as water painted on the plaza: the
+		-- street-level roast, 2026-10-26, point 7), benches on a ring facing it (between the four path mouths and the
+		-- diagonals), globe lamps and royal palms on the diagonals, flowering shrubs round its rim.
+		fountain = {
+			at = Vector2.new(190, 1185),
+			facing = 0,
+			plaza = 96,
+			surround = { diameter = 23, top = 0.5, color = rgb(214, 204, 184), material = Enum.Material.Limestone },
+			benches = 8,
+			benchRing = 34,
+			lampRing = 45,
+			palmRing = 57,
+			palmSpecies = "royal",
+			shrubRing = 53,
+		},
+
+		-- The amphitheatre lawn (west): the Bandshell, its mouth facing east across the lawn to Lake Avenue, a terrazzo
+		-- apron at the stage's front ringed in neon, and low curved stone terraces (decor: a car drives over them) on
+		-- `radii` from the stage's front, `spread` degrees wide. Lamps and shrubs in the shell's own frame (x across
+		-- it, z back from its centre: its front edge is at -20).
+		amphitheatre = {
+			at = Vector2.new(-330, 1160),
+			facing = -90,
+			apron = 46,
+			ring = { diameter = 49, top = 0.07, color = rgb(255, 160, 172), kind = "neonPink" },
+			-- Footlights: a strip set in the apron along the stage's foot (`inset` out from the shell's front edge), cream
+			-- by day, a warm amber glow at night (1 part).
+			footlights = {
+				length = 34,
+				depth = 0.8,
+				top = 0.14,
+				inset = 5, -- clear of the stage's rounded lip (at 1.5 it hid the middle and left two dashes)
+				color = rgb(244, 232, 210),
+				kind = "neonAmber",
+			},
+			-- Seating steps: each terrace `height` higher than the one in front of it (the first `height` high), `depth`
+			-- deep, so the lawn rises in tiers away from the stage (as ankle-high curbs at one height they read as kerbs
+			-- on the grass: the street-level roast, 2026-10-26, point 5).
+			terraces = {
+				radii = { 36, 50, 64 },
+				spread = 100,
+				segment = 14, -- 22 showed the arcs' corners from the lawn
+				height = 0.9,
+				depth = 3.2,
+				color = rgb(214, 196, 160),
+				material = Enum.Material.Limestone,
+			},
+			lamps = { Vector2.new(-35, -22), Vector2.new(35, -22) },
+			shrubs = { Vector2.new(-36, 4), Vector2.new(36, 4), Vector2.new(-20, 23), Vector2.new(20, 23) },
+		},
+
+		-- Food trucks at the lawn's corner by Lake Avenue and the promenade (west): a paved apron reaching the walk, three
+		-- trucks along its bay half turned `truckTurn` so their right sides (the serving hatches) face the lawn, a
+		-- market stall, bistro tables on its lawn half and two lamps. Places in the apron's frame (x along it, z back
+		-- from its front; its front faces the lawn, north).
+		foodTrucks = {
+			at = Vector2.new(-150, 1251),
+			facing = 0,
+			apron = Vector2.new(124, 54),
+			color = rgb(214, 208, 196),
+			material = Enum.Material.Concrete,
+			trucks = { "FoodTruckA", "FoodTruckB", "FoodTruckA" },
+			truckAt = { Vector2.new(-30, 12), Vector2.new(6, 12), Vector2.new(42, 12) },
+			truckTurn = 90,
+			stall = { prop = "MarketStall", at = Vector2.new(-50, 12) },
+			tables = { Vector2.new(-46, -12), Vector2.new(-15, -12), Vector2.new(16, -12), Vector2.new(47, -12) },
+			lamps = { Vector2.new(-59, -24), Vector2.new(59, -24) },
+		},
+
+		-- The playground (west): the PlaygroundSet on a soft teal surface, benches watching it. Places in its frame (its
+		-- front faces south, to the promenade).
+		playground = {
+			at = Vector2.new(-600, 1200),
+			facing = 180,
+			surface = 46,
+			-- A poured rubber surface: matte (smooth plastic in this teal read as a neon disc under the Realistic light).
+			color = rgb(72, 150, 152),
+			material = Enum.Material.Rubber,
+			benches = { Vector2.new(-16, 30), Vector2.new(16, 30) },
+			shrubs = { Vector2.new(-30, 16), Vector2.new(30, 16) },
+		},
+
+		-- The sculpture garden (east): a coral-stone court framed by hedges on its long sides (each broken by a gap in
+		-- the middle), SculptureA and SculptureB in a zigzag on it, benches, lamps, shrubs at its corners. Places in its
+		-- frame (x along it, z back from its front, north).
+		sculptures = {
+			at = Vector2.new(470, 1175),
+			facing = 0,
+			court = Vector2.new(100, 64),
+			color = rgb(226, 212, 184),
+			material = Enum.Material.Limestone,
+			pieces = {
+				{ prop = "SculptureA", at = Vector2.new(-32, -12) },
+				{ prop = "SculptureB", at = Vector2.new(-10, 12) },
+				{ prop = "SculptureA", at = Vector2.new(12, -12) },
+				{ prop = "SculptureB", at = Vector2.new(34, 12) },
+			},
+			-- Clipped hedges in Grass: LeafyGrass read near black under the Realistic light, whatever its colour.
+			hedge = {
+				height = 2.8,
+				width = 2.6,
+				gap = 14,
+				inset = 1.5,
+				color = rgb(92, 138, 70),
+				material = Enum.Material.Grass,
+			},
+			benches = { Vector2.new(-30, 24), Vector2.new(30, 24) },
+			lamps = { Vector2.new(-46, -26), Vector2.new(46, -26) },
+			shrubs = { Vector2.new(-55, -37), Vector2.new(55, -37), Vector2.new(-55, 37), Vector2.new(55, 37) },
+		},
+
+		-- Curving paths: each route a smooth curve through its points (a Catmull-Rom spline), laid as slabs about `step`
+		-- long that run on `overlap` past their ends to close the bends, every other one a hair higher so the overlaps
+		-- never flicker. A slab whose middle falls inside a round plaza is left out (the plaza is the way there), and
+		-- lit bollards stand beside them.
+		paths = {
+			width = 8,
+			top = 0.06,
+			step = 44, -- 34 cost 10 more slabs for no visible gain; they went to two more groves
+			overlap = 1,
+			color = rgb(228, 216, 192),
+			material = Enum.Material.Limestone,
+			routes = {
+				-- East: Lake Avenue to the fountain; the fountain to the promenade and to the sculpture court; on round the
+				-- east lawn and down to the promenade.
+				{ Vector2.new(44, 1185), Vector2.new(144, 1185) },
+				{ Vector2.new(196, 1231), Vector2.new(210, 1256), Vector2.new(228, 1279) },
+				{ Vector2.new(236, 1185), Vector2.new(290, 1204), Vector2.new(350, 1190), Vector2.new(421, 1175) },
+				{
+					Vector2.new(519, 1175),
+					Vector2.new(590, 1150),
+					Vector2.new(680, 1166),
+					Vector2.new(770, 1142),
+					Vector2.new(860, 1160),
+					Vector2.new(930, 1202),
+					Vector2.new(955, 1250),
+					Vector2.new(962, 1279),
+				},
+				-- West: Lake Avenue along the lawn's north side, behind the shell and on to the playground; on from it round
+				-- the west lawn to the promenade; the promenade to the shell's south flank.
+				{
+					Vector2.new(-44, 1060),
+					Vector2.new(-130, 1068),
+					Vector2.new(-220, 1060),
+					Vector2.new(-290, 1076),
+					Vector2.new(-345, 1104),
+					Vector2.new(-380, 1140),
+					Vector2.new(-440, 1180),
+					Vector2.new(-510, 1198),
+					Vector2.new(-578, 1200),
+				},
+				{
+					Vector2.new(-622, 1200),
+					Vector2.new(-700, 1186),
+					Vector2.new(-790, 1204),
+					Vector2.new(-880, 1180),
+					Vector2.new(-945, 1225),
+					Vector2.new(-965, 1279),
+				},
+				{ Vector2.new(-262, 1279), Vector2.new(-290, 1245), Vector2.new(-330, 1222), Vector2.new(-345, 1198) },
+			} :: { { Vector2 } },
+		},
+
+		-- Palm groves breaking up the lawns, each palm drawn from `groveSpecies` by weight, leaning any way.
+		groves = {
+			{ at = Vector2.new(330, 1100), count = 4, radius = 28, shrubs = 2 },
+			{ at = Vector2.new(620, 1232), count = 3, radius = 22, shrubs = 2 },
+			{ at = Vector2.new(740, 1095), count = 4, radius = 28, shrubs = 2 },
+			{ at = Vector2.new(880, 1236), count = 3, radius = 22, shrubs = 1 },
+			{ at = Vector2.new(935, 1075), count = 3, radius = 24, shrubs = 1 },
+			{ at = Vector2.new(-470, 1085), count = 4, radius = 26, shrubs = 2 },
+			{ at = Vector2.new(-480, 1246), count = 3, radius = 22, shrubs = 1 },
+			{ at = Vector2.new(-760, 1135), count = 4, radius = 26, shrubs = 2 },
+			{ at = Vector2.new(-830, 1250), count = 3, radius = 22, shrubs = 1 },
+			{ at = Vector2.new(-950, 1092), count = 3, radius = 24, shrubs = 1 },
+			-- The two widest bare stretches of lawn (seen from above in Studio, 2026-10-26).
+			{ at = Vector2.new(560, 1080), count = 3, radius = 26, shrubs = 1 },
+			{ at = Vector2.new(-590, 1122), count = 3, radius = 26, shrubs = 1 },
+		} :: { ParkGrove },
+		groveSpecies = {
+			{ species = "coconut", weight = 0.5 },
+			{ species = "sabal", weight = 0.3 },
+			{ species = "royal", weight = 0.2 },
+		},
+
+		-- Shrubs: clumps of palmetto and bird-of-paradise (the planters' mesh, Config/CityScenery furniture.planter.plant),
+		-- each `height` and `spread` scaled by a draw in `scale`. The bougainvillea mounds (half-sunk magenta balls) are
+		-- gone: they read as magenta half-spheres (the street-level roast, 2026-10-26, point 5).
+		shrubs = {
+			clump = { height = 4.6, spread = 5.5 },
+			scale = { 0.75, 1.3 },
+		},
 	},
 }
 

@@ -152,8 +152,49 @@ umbrella sets near the water and the white foam line. Fixed in Studio:
 
 ## 3. Water: the lake as a bay
 
-**Part water as built (tested 2026-10-26, `img/scenery-12`, `-15`, `-16`, `-17`, `-18`; terrain water stays Davis's
-call):**
+**Terrain water (Davis, 2026-10-26: "also yes the water should be real water"; built and looked at in Studio
+2026-10-26, `docs/images/city/street-water-*.jpg`):**
+- `Dev/WaterBuilder` owns `Workspace.Terrain` (hard rule 9 gives MapBuilder only `Workspace.Map.Generated`). Run
+  `require(game.ServerScriptService.Server.Dev.WaterBuilder).build()` in Edit mode: it clears the terrain, sets the
+  water look and writes each lake as terrain, a 16-column strip at a time.
+- The shape is `Util/WaterShape` from `Config/Water`: the seabed meets the ground 0.3 under its top at every edge and
+  runs 8 studs on under the ground slabs (no seam). Off the beach (the shore the beach park lies along) the water line
+  sits about 8 studs out, then a stud to three deep for 90 studs (turquoise over pale sand), then deeper. Off the
+  seawalls it drops to 10 deep within 14 studs on a limestone bank. Everything shelves to the lake's `bedY`, now -24
+  (22 studs of water), which the bridge's piers stand on.
+- Voxels go in with `Terrain:WriteVoxelChannels` (sand and water share a voxel, so the water meets the sloping sand).
+  If that call fails, `WriteVoxels` is used instead (a voxel is sand or water; small gaps at the water's edge).
+- **Seen in Studio:** the engine draws (and collides) a solid voxel's surface half a voxel (2 studs) above its
+  occupancy level, while water draws at its level. Written as planned, the seabed stood 2 studs high everywhere: the
+  lip poked 1.7 studs over the beach's part sand, and a dry sand bar ran about 50 studs out before the water began.
+  So the seabed is written `Config/Water build.solidLift` (2) lower (`tests/Water.spec` checks it); measured after:
+  the seabed meets the ground under the part sand, the water line sits 8 studs out, 1.4 deep at 40 studs, 7 at 150,
+  24 in the middle; the piers stand on it.
+- **Graphics quality matters:** at low quality (Studio's Automatic edit quality on this laptop, and low-end phones)
+  terrain water draws opaque teal, whatever its transparency, so the sand under the shallows doesn't show. At the
+  top quality level it is see-through (the levels between weren't tried). Judge the look at high quality, and check
+  it still reads at low quality.
+- The look (`Config/Water look`), tuned in Studio at top quality: colour `14,124,146`, transparency 0.6, reflectance
+  0.5, waves 0.15 at 10 a minute. The table below (reflectance 1) read milky sky-blue from the beach; reflectance 0.4
+  or less read neon pool-cyan from the air. Seabed sand `226,212,172`, bank stone `204,188,152`
+  (`Terrain:SetMaterialColor`).
+- Water fills at most what the seabed leaves of a voxel (`1 - solid`): with the shallows' voxels overfilled, low
+  quality drew them as dark deep water, in a hard-edged block beside the rest.
+- While `Config/Water.terrain` is on, MapBuilder builds no part water, lake bed or banks, only the stone coping on the
+  walled shores (`Scenery/Water.coping`). Turn it off and the part water below comes back.
+- Gameplay: a car sinks and slows in terrain water, and players swim. `Services/WaterRescueService` checks driven cars
+  every half second. A car in water 4+ studs deep for 3 seconds, or on its roof in any water for 1.5 seconds, is put
+  in the right-hand lane of the nearest road (`AbilityService.roadPose`, `VehicleService.resetCar`) and its driver
+  reads "Your car was pulled out of the water." Wading in the shallows is fine. Since the integration step: a car
+  stuck in any water (under 2 studs/s across the ground for 8 seconds: grounded on the beach shelf, nosed into a
+  seawall) comes out too, and a car its driver gets out of in the water (VehicleService parks it on the surface) goes
+  to the road at the next check (`Config/Water rescue.stuckSpeed`, `stuckSeconds`; `Rescue.leftInWater`).
+- Checks: `tests/Water.spec` (the shape, the voxels, dry roads and spots, the rescue rules, no part water in the plan).
+  `Dev/MapCheck` step 8 fails on a road or spot in the water, a lake with no terrain water, terrain water on a road,
+  or a built part other than piers, ground and coping standing in the water.
+
+**Part water as built (tested 2026-10-26, `img/scenery-12`, `-15`, `-16`, `-17`, `-18`; used only while
+`Config/Water.terrain` is off):**
 - The first version (see-through **Glass** sheets in five concentric rings, a caustic ripple image) read as a
   swimming pool: bright azure, a pool-floor net pattern, and hard-edged rectangular rings that showed off the lake's
   rectangle from the air (`img/scenery-16`).
@@ -439,3 +480,77 @@ the Creator Store. The Studio-owned instances live in the place, not the repo (R
 
 All ids are `rbxassetid://<id>`. The images were uploaded with the Studio connector's `upload_image` from a localhost
 server (`python -m http.server` in `assets/city`).
+
+---
+
+## 11. The bayfront park (the lawn between downtown and the beach)
+
+**Built and polished in Studio (2026-10-26, street-life step).** `Dev/City/Scenery/BayfrontPark`,
+`Config/CityScenery bayfrontPark`, hooked into `Dev/MapBuilder addScenery` right after the street scenery (before the
+parked cars and the trees). Specs: `tests/CityScenery.spec` "The bayfront park" (27 passed in Studio). Shots:
+`docs/images/city/street-park-*.jpg` (day at street level, two aerials, night).
+
+Polish after the first look in Studio: the amphitheatre's terraces in 14-stud runs (22 showed their corners); amber
+footlights set in the apron at the stage's foot (1 part, night glow); the playground's surface poured rubber in a
+softer teal (smooth plastic read as a neon disc); the sculpture court's hedges in Grass (LeafyGrass read near black
+under the Realistic light); bougainvillea mounds sunk to low domes (they read as fuzzy balls); globe lamps 2 across
+(1.6 was a pinprick at night); the paths' slabs 44 long instead of 34 (no visible change, 10 parts saved) and the parts
+spent on two more groves on the widest bare lawn. It now fills its 400 parts exactly (the last shrub drops).
+
+Davis, 2026-10-26: "fill the streets: ... the empty lawn". The lawn is open county ground between the bay row's lots
+(and the deep claims of the arena, the market pavilions, the triple and sail towers, z up to about 1,105) and the hotel
+row's plots along Lake Avenue (from z 1,300). The park takes x -990..990, z 1,010..1,298, Lake Avenue down its middle.
+
+| Piece | Where (plan x, z) | What |
+|---|---|---|
+| Promenade | z 1,284, the whole width | 14-wide terrazzo walk on the bay side, royal palms both sides (staggered, every 96), globe lamps every 144 on its bay edge, benches facing the bay, a zebra crossing on Lake Avenue between its halves |
+| Fountain plaza | (190, 1,185), east, by the avenue | 96-wide terrazzo disc, the Fountain (2.1x the catalogue size) over a cyan neon ring, 8 benches facing it, 4 globe lamps and 4 royal palms on the diagonals |
+| Amphitheatre | (-330, 1,160), west | the Bandshell (2x) facing east across the lawn to the avenue, a terrazzo apron ringed in pink neon, three arcs of low coral-stone terraces (decor) |
+| Food trucks | (-150, 1,251), the lawn's corner by the avenue and the promenade | three trucks turned so their right sides face the lawn, a market stall, four bistro tables, two lamps, on a concrete apron |
+| Playground | (-600, 1,200) | the PlaygroundSet on a teal play surface, two benches |
+| Sculpture garden | (470, 1,175) | a coral-stone court, SculptureA and SculptureB in a zigzag, hedges along its long sides, benches, lamps |
+| Paths | 7 routes | curving limestone paths (slabs along Catmull-Rom curves), lit bollards every 90 |
+| Groves, shrubs | 12 groves | about 30 palms (coconut, sabal, royal) and flowering shrubs (planter clumps and bougainvillea mounds) |
+
+- **Props** are the shared catalogue's (`Config/CityProps`, `Dev/City/Props`), scaled by `bayfrontPark.propScale`,
+  with the catalogue's collider where it gives one. If a mesh faces the wrong way, fix its `turn` in `Config/CityProps`.
+- **Budget:** its own, 400 parts (all used), in `BayfrontPark/Tile<x>_<z>` (SLIM) and
+  `BayfrontParkLights/Tile<x>_<z>`. When it runs out, shrubs go first, then bollards, groves, paths, the promenade's
+  lamps and palms. All of it counts toward the map's 30,000 and the phone's in-view gate.
+- **Nothing moves:** every piece is placed only where the placement grid is clear (roads, lots and claims, spots, the
+  avenue's palms and lamps); a taken spot is left out. Paving is flat decor; solid pieces stand apart.
+- **The open lawn** is reserved after the park is dressed, so the country's random broadleaf groves no longer grow on
+  it.
+- **Seen in Studio (2026-10-26):** every plaza is there, the props face the right way (the trucks' hatches to the
+  lawn, the shell's mouth to the avenue, benches to the fountain and the bay), the paths meet the plazas, nothing on a
+  road, nothing floating. Still open: the lawns are generous for a game (more groves need parts the map doesn't have),
+  and at night the park is dark between its lamps (they glow but cast no light).
+
+---
+
+## 12. Parked cars
+
+**Previewed and polished in Studio (2026-10-26, street-life step).** `Dev/City/Street/Parking`, `Config/CityStreet
+parking`, hooked into `Dev/MapBuilder addParking` after the scenery and before the trees. Specs: `tests/CityStreet.spec`
+"Parked cars" (19 passed in Studio with the frontage cases). Shots: `docs/images/city/street-parking-*.jpg`.
+
+168 cars, 336 parts (each car is its mesh and one invisible solid box), all clones of the 29 templates in
+`ServerStorage.CityAssets.Cars` (no stand-ins): on the villas' drives, at the beach hotels' and the towers' round
+drop-offs, three at the diner, and most in the surface lots' stalls. Kerbs park none (no street's shoulder holds a
+car).
+
+Fixed after the first look in Studio:
+- **Size.** The generated cars are short for their width (a sedan template is 6.6 wide and 11 long; the shape's box is
+  15.4 long), and the build scaled each one to the box's length: cars came out 9 to 10 wide and up to 8 tall, wider
+  than their stalls and their own solid boxes. Now a car keeps its template's proportions: scaled evenly until it meets
+  its shape's box, then stretched along its length by at most 15% (`templateStretch`; 30% made the wheels read oval,
+  `street-parking-stretch-test.jpg`). The templates' sizes are measured into `Config/CityStreet templateSizes`, so the
+  plan stays pure and each car's solid box is the car's own size. A car shorter than its space stands at the end that
+  matters: nose to the garage, the diner or the stall's head (tail there when backed in).
+- **Colour.** White and silver read the same in the sun, and at the old weights (62% white or silver) the lots looked
+  all white from above. Silver is drawn less and blue and red more, and neighbours never share a paint.
+
+Still open: placement still clears room for the shape's whole box (the car is often shorter), so stalls and drives
+keep a little more room than the car needs. If a car template is remade, measure it into `templateSizes` (a stale
+size only makes the car smaller than planned, never bigger). `ParkedVan_Blue` has no template; a blue van takes the
+white one.
