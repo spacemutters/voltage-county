@@ -1,7 +1,7 @@
 --!strict
--- The bay (docs/city/SCENERY.md §3; Config/CityScenery water). Terrain water would read best, but it changes what
--- happens when a car goes in, which is Davis's call, so the bay stays parts that nothing collides with, as the lake's
--- water always was, made to read as Miami water:
+-- The bay as parts (docs/city/SCENERY.md §3; Config/CityScenery water): the look the bay had before it became terrain
+-- water (Config/Water, Dev/WaterBuilder), kept for when Config/Water.terrain is off. Parts that nothing collides with,
+-- as the lake's water always was, made to read as Miami water:
 --   shallows  along the beach shore only, strips of colour from the sand out: turquoise over the pale sandy bank,
 --             then teal, each strip fading into the next through a ramp image tinted with the next one's colour (no
 --             hard line between them)
@@ -10,11 +10,13 @@
 --   glints    sun sparkle on a light chop, an image tiled over every sheet
 --   foam      on the beach shore a crisp white foam line where the bank meets the water, and a paler wash off it
 --   coping    a flush coral-stone edge on the shores without a beach (broken where a bridge comes ashore)
--- Dev/MapBuilder builds the lake bed and its banks (in the bed's sand) and asks for these.
+-- Dev/MapBuilder builds the lake bed and its banks (in the bed's sand) and asks for these. While Config/Water.terrain
+-- is on the bay is terrain water (Dev/WaterBuilder) and MapBuilder asks only for the coping (Water.coping).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CityScenery = require(ReplicatedStorage.Shared.Config.CityScenery)
+local WaterShape = require(ReplicatedStorage.Shared.Util.WaterShape)
 local Types = require(script.Parent.Types)
 
 type PartSpec = Types.PartSpec
@@ -53,25 +55,14 @@ local function sheet(name: string, x0: number, x1: number, z0: number, z1: numbe
 	return blank(name, CFrame.new((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), Vector3.new(x1 - x0, y1 - y0, z1 - z0))
 end
 
--- Which sides of `lake` have a beach: a side the beach park (Config/CityScenery beach.park) lies along.
+-- Which sides of `lake` have a beach: a side the beach park (Config/CityScenery beach.park) lies along (the same rule
+-- the terrain water's shores follow, Util/WaterShape).
 function Water.beachSides(lake: Lake, parks: { Types.Park }): { [string]: boolean }
-	local sides: { [string]: boolean } = {}
+	local rects: { WaterShape.ParkRect } = {}
 	for _, park in parks do
-		if park.id ~= CityScenery.beach.park then
-			continue
-		end
-		local overlapX = park.min.X < lake.max.X and park.max.X > lake.min.X
-		local overlapZ = park.min.Y < lake.max.Y and park.max.Y > lake.min.Y
-		if overlapX and math.abs(park.max.Y - lake.min.Y) < 1 then
-			sides.north = true
-		elseif overlapX and math.abs(park.min.Y - lake.max.Y) < 1 then
-			sides.south = true
-		elseif overlapZ and math.abs(park.max.X - lake.min.X) < 1 then
-			sides.west = true
-		elseif overlapZ and math.abs(park.min.X - lake.max.X) < 1 then
-			sides.east = true
-		end
+		table.insert(rects, { id = park.id, min = park.min, max = park.max })
 	end
+	local sides: { [string]: boolean } = WaterShape.beachSides(lake.min, lake.max, rects) :: any
 	return sides
 end
 
@@ -260,7 +251,18 @@ function Water.plan(lake: Lake, streets: { Street }, parks: { Types.Park }): { P
 		strip(`{lake.id}Wash{side.key}`, a, b, side.inward, foam.line / 2, foam.wash, 0.03, foam.washColor)
 	end
 
-	-- The coping on the shores without a beach, broken where a bridge comes ashore.
+	for _, piece in Water.coping(lake, streets, parks) do
+		table.insert(out, piece)
+	end
+	return out
+end
+
+-- The coping on the shores of `lake` without a beach, broken where a bridge comes ashore: flush stone strips on the
+-- ground just outside the lake's edge (part water and terrain water alike).
+function Water.coping(lake: Lake, streets: { Street }, parks: { Types.Park }): { PartSpec }
+	local out: { PartSpec } = {}
+	local x0, x1, z0, z1 = lake.min.X, lake.max.X, lake.min.Y, lake.max.Y
+	local beach = Water.beachSides(lake, parks)
 	local coping = WATER.coping
 	local edges = {
 		{ key = "north", a = Vector2.new(x0, z0), b = Vector2.new(x1, z0), out = -Vector2.yAxis },

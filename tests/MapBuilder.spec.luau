@@ -1640,7 +1640,10 @@ return function(t: Harness.Api)
 
 		-- Streetlights only: a city building's facade wash (Dev/City Kit.wash) carries a SurfaceLight of its own and is
 		-- held to its archetype's budget instead (tests/City.spec).
-		t.it("lights at most one streetlight per 200 studs", function()
+		-- Every post's head lights since the street-level roast (2026-10-26, point 9); no two lit heads closer than
+		-- MapBuilder.TUNING.lightEmitSpacing (90 studs, under the posts' 110-stud interval).
+		t.it("lights at most one streetlight per lightEmitSpacing", function()
+			local spacing = MapBuilder.TUNING.lightEmitSpacing
 			local lit: { Vector3 } = {}
 			for _, spec in plan.specs do
 				if spec.light and spec.role == "light" then
@@ -1651,7 +1654,7 @@ return function(t: Harness.Api)
 			local close = 0
 			for i, a in lit do
 				for j = i + 1, #lit do
-					if (Vector2.new(a.X, a.Z) - Vector2.new(lit[j].X, lit[j].Z)).Magnitude < 200 then
+					if (Vector2.new(a.X, a.Z) - Vector2.new(lit[j].X, lit[j].Z)).Magnitude < spacing then
 						close += 1
 					end
 				end

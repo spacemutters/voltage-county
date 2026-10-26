@@ -837,4 +837,415 @@ return function(t: Harness.Api)
 			t.expect(stands >= CityScenery.beach.stands - 2).toBe(true)
 		end)
 	end)
+
+	-- The bayfront park (Dev/City/Scenery BayfrontPark; Config/CityScenery bayfrontPark): its props are the shared
+	-- catalogue's, one templated part each with the catalogue's collider; on a small county shaped like the real lawn
+	-- (Lake Avenue down its middle, the bay row's lots and deep claims to the north, the hotel row's plots to the south,
+	-- the avenue's palms and lamps) it plans the same parts every time within its budget, fit to build and filed, with
+	-- every plaza, the promenade and its crossing, paths, palms and lit lamps, nothing on a road, a sidewalk or a lot,
+	-- and its open lawn kept from the random trees; and the real county gets it.
+	t.describe("The bayfront park", function()
+		local CityProps = require(ReplicatedStorage.Shared.Config.CityProps)
+		local BayfrontPark = Scenery.BayfrontPark
+		local PARK = CityScenery.bayfrontPark
+
+		type Shape = { rect: Rect, kind: string, min: Vector2, max: Vector2 }
+		type ParkFixture = {
+			host: Types.Host,
+			specs: { PartSpec },
+			containers: { [string]: MapBuilder.Container },
+			shapes: { Shape },
+			given: number, -- the first `given` shapes are the county's; the rest the park reserved
+		}
+
+		local function shapeOf(rect: Rect, kind: string): Shape
+			local l = Vector2.new(-rect.u.Y, rect.u.X)
+			local reach = Vector2.new(
+				math.abs(rect.u.X) * rect.ha + math.abs(l.X) * rect.hc,
+				math.abs(rect.u.Y) * rect.ha + math.abs(l.Y) * rect.hc
+			)
+			return { rect = rect, kind = kind, min = rect.c - reach, max = rect.c + reach }
+		end
+
+		local function parkFixture(): ParkFixture
+			local shapes: { Shape } = {}
+			local specs: { PartSpec } = {}
+			local containers: { [string]: MapBuilder.Container } = {}
+			local streets = {
+				street(1, "arterial", "cedar_bend", Vector2.new(0, 900), Vector2.new(0, 1500), 28, 0),
+				street(2, "street", "cedar_bend", Vector2.new(-1000, 900), Vector2.new(1000, 900), 15, 8),
+				street(3, "street", "lakefront", Vector2.new(-1150, 1500), Vector2.new(1150, 1500), 15, 0),
+			}
+			for _, s in streets do
+				local mid = s.a + s.u * (s.length / 2)
+				table.insert(shapes, shapeOf({ c = mid, u = s.u, ha = s.length / 2, hc = s.half }, "road"))
+				if s.sidewalk > 0 then
+					for _, side in { -1, 1 } do
+						local c = mid + s.l * (side * (s.half + s.sidewalk / 2))
+						table.insert(
+							shapes,
+							shapeOf({ c = c, u = s.u, ha = s.length / 2, hc = s.sidewalk / 2 }, "sidewalk")
+						)
+					end
+				end
+			end
+			local function box(kind: string, x0: number, x1: number, z0: number, z1: number)
+				local rect: Rect = {
+					c = Vector2.new((x0 + x1) / 2, (z0 + z1) / 2),
+					u = Vector2.xAxis,
+					ha = (x1 - x0) / 2,
+					hc = (z1 - z0) / 2,
+				}
+				table.insert(shapes, shapeOf(rect, kind))
+			end
+			-- The bay row's lots past the south edge street and the one-offs' deep claims behind them; the hotel row's
+			-- plots along Lake Avenue and the shore road.
+			box("lot", -1000, -30, 925, 978)
+			box("lot", 30, 1000, 925, 978)
+			box("lot", 40, 192, 925, 1105)
+			box("lot", -840, -640, 925, 1085)
+			box("lot", -83, -30, 1300, 1470)
+			box("lot", 30, 83, 1300, 1470)
+			box("lot", -1135, 1135, 1430, 1483)
+			-- The avenue's palms and lamp posts on its verges.
+			for z = 1010, 1290, 36 do
+				for _, side in { -1, 1 } do
+					box("tree", side * 34 - 4.5, side * 34 + 4.5, z - 4.5, z + 4.5)
+				end
+			end
+			for z = 960, 1460, 110 do
+				box("light", -31.5, -30.5, z - 0.5, z + 0.5)
+				box("light", 30.5, 31.5, z - 0.5, z + 0.5)
+			end
+			local given = #shapes
+			local host: Types.Host = {
+				seed = 1887,
+				half = 5000,
+				sidewalkRaise = 0.5,
+				lineLift = 0.02,
+				streets = streets,
+				lakes = {},
+				parks = {},
+				groundAt = function(_x: number, _z: number): number
+					return 0
+				end,
+				blocked = function(rect: Rect, kinds: { [string]: boolean }, tolerance: number): boolean
+					local probe = shapeOf(rect, "")
+					for _, shape in shapes do
+						if
+							kinds[shape.kind]
+							and shape.min.X < probe.max.X
+							and shape.max.X > probe.min.X
+							and shape.min.Y < probe.max.Y
+							and shape.max.Y > probe.min.Y
+							and rectsOverlap(rect, shape.rect, tolerance)
+						then
+							return true
+						end
+					end
+					return false
+				end,
+				reserve = function(rect: Rect, kind: string)
+					table.insert(shapes, shapeOf(rect, kind))
+				end,
+				add = function(spec: PartSpec)
+					table.insert(specs, spec)
+				end,
+				container = function(
+					path: string,
+					class: "Folder" | "Model",
+					streaming: Enum.ModelStreamingMode?,
+					lod: string?
+				)
+					containers[path] = { path = path, class = class, streaming = streaming, lod = lod }
+				end,
+				note = function(text: string)
+					error(`the park left a note: {text}`)
+				end,
+			}
+			return { host = host, specs = specs, containers = containers, shapes = shapes, given = given }
+		end
+
+		-- Planned once for the cases that only look at it.
+		local planned: ParkFixture? = nil
+		local function dressed(): ParkFixture
+			if planned == nil then
+				local f = parkFixture()
+				BayfrontPark.plan(f.host)
+				planned = f
+			end
+			return planned :: ParkFixture
+		end
+
+		-- Every shared prop the park places.
+		local function propsUsed(): { string }
+			local used =
+				{ "Fountain", "Bandshell", "PlaygroundSet", "ParkBench", "BistroPair", PARK.foodTrucks.stall.prop }
+			for _, name in PARK.foodTrucks.trucks do
+				table.insert(used, name)
+			end
+			for _, piece in PARK.sculptures.pieces do
+				table.insert(used, piece.prop)
+			end
+			return used
+		end
+
+		t.it(
+			"places only props the shared catalogue knows, palms that exist and night lights of known kinds",
+			function()
+				local problems: { string } = {}
+				for _, name in propsUsed() do
+					if CityProps.props[name] == nil then
+						table.insert(problems, `no prop {name} in Config/CityProps`)
+					end
+				end
+				for name, scale in PARK.propScale do
+					if CityProps.props[name] == nil or scale <= 0 then
+						table.insert(problems, `propScale {name}`)
+					end
+				end
+				local species = { PARK.promenade.palms.species, PARK.fountain.palmSpecies }
+				for _, entry in PARK.groveSpecies do
+					table.insert(species, entry.species)
+				end
+				for _, name in species do
+					if Palms.species[name] == nil then
+						table.insert(problems, `no palm {name}`)
+					end
+				end
+				for _, kind in { PARK.amphitheatre.ring.kind, "streetlight" } do
+					if NIGHT.kinds[kind] == nil then
+						table.insert(problems, `no night light kind {kind}`)
+					end
+				end
+				if #PARK.foodTrucks.truckAt < #PARK.foodTrucks.trucks then
+					table.insert(problems, "foodTrucks: a truck with no place")
+				end
+				report(t, "park config", problems)
+			end
+		)
+
+		t.it(
+			"makes each prop one templated part at the park's scale, standing on the ground, with its collider",
+			function()
+				local problems: { string } = {}
+				for _, name in propsUsed() do
+					local foot = CFrame.new(10, 0, 20) * CFrame.Angles(0, 0.7, 0)
+					local specs, footprint = BayfrontPark.prop("BayfrontPark/Tile0_0", "P", name, foot)
+					local info = CityProps.props[name]
+					local size = info.size * (PARK.propScale[name] or 1)
+					local spec = specs[1]
+					local template = spec.template
+					if template == nil or #(template.standIn or {}) == 0 then
+						table.insert(problems, `{name}: no template, or no stand-in for while it's missing`)
+					end
+					if spec.collide or spec.query or spec.touch or (spec.size - size).Magnitude > 1e-6 then
+						table.insert(problems, `{name}: not a decor box of the park's size`)
+					end
+					if math.abs(spec.cframe.Y - spec.size.Y / 2) > 1e-6 then
+						table.insert(problems, `{name}: doesn't stand on the ground`)
+					end
+					if #specs ~= (if info.collider then 2 else 1) then
+						table.insert(problems, `{name}: {#specs} parts`)
+					end
+					local hit = specs[2]
+					if hit then
+						local lo, hi = Kit.localBounds(foot, hit)
+						local inside = lo.X >= -size.X / 2 - TOLERANCE
+							and hi.X <= size.X / 2 + TOLERANCE
+							and lo.Z >= -size.Z / 2 - TOLERANCE
+							and hi.Z <= size.Z / 2 + TOLERANCE
+							and lo.Y >= -TOLERANCE
+						if not (hit.collide and hit.query and hit.transparency == 1 and inside) then
+							table.insert(problems, `{name}: its collider isn't an invisible solid inside its box`)
+						end
+					end
+					for _, part in specs do
+						local problem = Kit.problem(part)
+						if problem then
+							table.insert(problems, problem)
+						end
+					end
+					if math.abs(footprint.ha - size.Z / 2) > 1e-6 or math.abs(footprint.hc - size.X / 2) > 1e-6 then
+						table.insert(problems, `{name}: footprint`)
+					end
+				end
+				report(t, "park props", problems)
+			end
+		)
+
+		t.it("plans the same park every time, within its budget, fit to build and filed", function()
+			local a, b = parkFixture(), parkFixture()
+			local addedA = BayfrontPark.plan(a.host)
+			local addedB = BayfrontPark.plan(b.host)
+			t.expect(addedA).toBe(addedB)
+			t.expect(#a.specs).toBe(addedA)
+			t.expect(#b.specs).toBe(#a.specs)
+			for i, spec in a.specs do
+				local other = b.specs[i]
+				t.expect(other.name).toBe(spec.name)
+				t.expect(other.cframe == spec.cframe).toBe(true)
+			end
+			t.expect(addedA <= PARK.budget).toBe(true)
+			print(`  CityScenery.spec park fixture: {addedA} parts of {PARK.budget}`)
+			local problems: { string } = {}
+			local names: { [string]: boolean } = {}
+			for _, spec in a.specs do
+				local problem = Kit.problem(spec)
+				if problem then
+					table.insert(problems, problem)
+				end
+				local key = `{spec.folder}/{spec.name}`
+				if names[key] then
+					table.insert(problems, `{key}: twice`)
+				end
+				names[key] = true
+				local entry = a.containers[spec.folder]
+				local lights = string.find(spec.folder, `^{PARK.lightsRoot}/`) ~= nil
+				local still = string.find(spec.folder, `^{PARK.root}/`) ~= nil
+				if entry == nil or entry.streaming ~= Enum.ModelStreamingMode.Atomic or not (lights or still) then
+					table.insert(problems, `{key}: not in one of the park's Atomic tiles`)
+				elseif (spec.tag == NIGHT.tag) ~= lights or (entry.lod == "SLIM") ~= still then
+					table.insert(problems, `{key}: a night light in a still tile, or a still part in a lights tile`)
+				end
+				-- The park's only Lights: its lamp globes cast a warm point light at night (the street-level roast,
+				-- 2026-10-26, point 9), filed in a lights tile and off by day.
+				local light = spec.light
+				if light and (light.kind ~= "point" or light.enabled ~= false or not lights) then
+					table.insert(problems, `{key}: a Light that isn't a lamp globe's (a point light, off by day)`)
+				end
+				if spec.role ~= "scenery" and spec.role ~= "line" then
+					table.insert(problems, `{key}: role {spec.role}`)
+				end
+				local template = spec.template
+				if template and template.path[1] ~= "CityAssets" then
+					table.insert(problems, `{key}: a template outside ServerStorage.CityAssets`)
+				end
+			end
+			report(t, "park fixture", problems)
+		end)
+
+		t.it("lays out every plaza, the promenade and its crossing, paths, palms and lit lamps", function()
+			local f = dressed()
+			local found: { [string]: number } = {}
+			local palms, lit, paths, walks, crossings, terraces = 0, 0, 0, 0, 0, 0
+			for _, spec in f.specs do
+				local template = spec.template
+				if template then
+					local leaf = template.path[#template.path]
+					found[leaf] = (found[leaf] or 0) + 1
+				end
+				if string.find(spec.name, "^ParkPalm%d+Trunk$") then
+					palms += 1
+				elseif spec.tag == NIGHT.tag then
+					lit += 1
+				elseif string.find(spec.name, "^ParkPath") then
+					paths += 1
+				elseif string.find(spec.name, "^ParkWalk") then
+					walks += 1
+				elseif string.find(spec.name, "^ParkCrossing") then
+					crossings += 1
+				elseif string.find(spec.name, "^ParkTerraces") then
+					terraces += 1
+				end
+			end
+			print(
+				`  CityScenery.spec park: {palms} palms, {lit} night lights, {paths} path slabs, {walks} promenade runs, `
+					.. `{terraces} terraces, {found.ParkBench or 0} benches`
+			)
+			local problems: { string } = {}
+			for _, name in { "Fountain", "Bandshell", "PlaygroundSet", "SculptureA", "SculptureB", "MarketStall" } do
+				if (found[name] or 0) == 0 then
+					table.insert(problems, `no {name}`)
+				end
+			end
+			if (found.FoodTruckA or 0) + (found.FoodTruckB or 0) ~= #PARK.foodTrucks.trucks then
+				table.insert(problems, "not every food truck")
+			end
+			if (found.ParkBench or 0) < 8 or (found.BistroPair or 0) == 0 then
+				table.insert(problems, "too few benches or no bistro tables")
+			end
+			if palms < 24 or lit < 15 or paths < 30 or walks < 2 or crossings ~= 1 or terraces < 10 then
+				table.insert(
+					problems,
+					"too few palms, lit lamps, path slabs, promenade runs or terraces, or no crossing"
+				)
+			end
+			report(t, "park layout", problems)
+		end)
+
+		t.it("keeps everything off the roads, sidewalks and lots, and its open lawn from the random trees", function()
+			local f = dressed()
+			local problems: { string } = {}
+			for _, spec in f.specs do
+				-- The crossing is paint on the road; a palm's crown is checked by its whole reach when it's planted (its
+				-- box turned to the palm's yaw would read wider here than it is).
+				if spec.role == "line" or string.find(spec.name, "^ParkPalm%d+Crown$") then
+					continue
+				end
+				local box = boxOf(spec)
+				local rect: Rect = {
+					c = (box.min + box.max) / 2,
+					u = Vector2.xAxis,
+					ha = (box.max.X - box.min.X) / 2,
+					hc = (box.max.Y - box.min.Y) / 2,
+				}
+				for i = 1, f.given do
+					local shape = f.shapes[i]
+					local kind = shape.kind
+					if
+						(kind == "road" or kind == "sidewalk" or kind == "lot")
+						and rectsOverlap(rect, shape.rect, TOLERANCE)
+					then
+						table.insert(problems, `{spec.name} on a {kind}`)
+						break
+					end
+				end
+			end
+			-- The open lawn is reserved (trees keep off "streetscape"); the road isn't.
+			local kinds = { streetscape = true }
+			t.expect(f.host.blocked(Piece.square(Vector2.new(600, 1050), 4), kinds, 0)).toBe(true)
+			t.expect(f.host.blocked(Piece.square(Vector2.new(0, 1150), 4), kinds, 0)).toBe(false)
+			report(t, "park off the roads", problems)
+		end)
+
+		t.it("dresses the county's lawn between downtown and the beach, within its budget", function()
+			local plan = MapBuilder.county()
+			local area = PARK.area
+			local count = 0
+			local found: { [string]: boolean } = {}
+			local problems: { string } = {}
+			for _, spec in plan.specs do
+				local inPark = string.find(spec.folder, `^{PARK.root}/`) ~= nil
+					or string.find(spec.folder, `^{PARK.lightsRoot}/`) ~= nil
+				if not inPark then
+					continue
+				end
+				count += 1
+				local template = spec.template
+				if template then
+					found[template.path[#template.path]] = true
+				end
+				local p = spec.cframe.Position
+				local margin = 40
+				if
+					p.X < area.min.X - margin
+					or p.X > area.max.X + margin
+					or p.Z < area.min.Y - margin
+					or p.Z > area.max.Y + margin
+				then
+					table.insert(problems, `{spec.name} outside the park`)
+				end
+			end
+			print(`  CityScenery.spec bayfront park in the county: {count} parts of {PARK.budget}`)
+			t.expect(count > 0 and count <= PARK.budget).toBe(true)
+			t.expect(plan.scenery.bayfrontPark).toBe(count)
+			for _, name in { "Fountain", "Bandshell", "FoodTruckA", "PlaygroundSet", "SculptureA" } do
+				if not found[name] then
+					table.insert(problems, `no {name} in the county's park`)
+				end
+			end
+			report(t, "county park", problems)
+		end)
+	end)
 end

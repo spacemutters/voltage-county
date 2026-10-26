@@ -16,8 +16,12 @@
 --   7. the city (Dev/City): notes its sites, core claims, old-look fallbacks and building parts by district and the
 --      Skyline model; fails on a one-off that found no site, on more parts in view at once than Config/Environment
 --      budget.inViewParts (the phone gate, MapCheck.inView), on a night light, sign, light or ad unit inside a SLIM
---      model, on a Skyline model that isn't Persistent or is over its budget, and on palms built as parts-only
---      stand-ins (their mesh templates missing from ServerStorage.CityAssets).
+--      model, on a Skyline model that isn't Persistent or is over its budget, and on palms or parked cars built as
+--      parts-only stand-ins (their mesh templates missing from ServerStorage.CityAssets).
+--   8. the bay (Config/Water, Dev/WaterBuilder): fails on a road or gameplay spot in the water (WaterBuilder
+--      .dryProblems), and with terrain water on, on a water area whose centre isn't terrain water (WaterBuilder.build
+--      hasn't run), a road point over the water with terrain water on it, or a built part other than the ground, the
+--      coping and a bridge's or feature's piers standing below a water line.
 -- It also confirms the Ground and Roads models stream as Persistent (so a fast car never outruns its road).
 --
 -- Edit-mode tool only (CLAUDE.md hard rule 9). Run it from MCP execute_luau (Edit datamodel) or the command bar:
@@ -42,6 +46,9 @@ local Pathfind = require(ReplicatedStorage.Shared.Road.Pathfind)
 local Perf = require(ReplicatedStorage.Shared.Config.Perf)
 local RoadGraph = require(ReplicatedStorage.Shared.Config.RoadGraph)
 local Scenery = require(script.Parent.City.Scenery)
+local Water = require(ReplicatedStorage.Shared.Config.Water)
+local WaterBuilder = require(script.Parent.WaterBuilder)
+local WaterShape = require(ReplicatedStorage.Shared.Util.WaterShape)
 
 export type Report = {
 	ok: boolean,
@@ -79,6 +86,8 @@ local SETTINGS = {
 	inViewCell = 128, -- studs: the phone gate bins parts in cells this big (step 7)
 	bridgeWords = { "bridge" }, -- a part is a bridge when its name, or a folder or model above it, has one
 	bridgeAttributes = { "Kind", "RoadKind", "EdgeKind" }, -- ...or one of these attributes says "bridge"
+	-- Step 8: the Generated folders whose parts may stand in the water (piers, the ground, the coping).
+	waterFolders = { Bridges = true, Features = true, Ground = true, Water = true } :: { [string]: boolean },
 }
 
 local EPSILON = 1e-6
@@ -906,6 +915,29 @@ local function checkCity(generated: Instance, report: Report)
 			`{standIns} palms are parts-only stand-ins: put the templates back in ServerStorage.CityAssets.Palms and rebuild`
 		)
 	end
+	-- Parked cars likewise (Dev/City/Street/Parking): a stand-in is four parts where the plan counts one.
+	local carStandIns = 0
+	for _, model in generated:GetDescendants() do
+		if model:IsA("Model") and model:GetAttribute(Scenery.Parking.standInAttribute) then
+			carStandIns += 1
+		end
+	end
+	if carStandIns > 0 then
+		table.insert(
+			report.missing,
+			`{carStandIns} parked cars are parts-only stand-ins: put the car templates in ServerStorage.CityAssets.Cars `
+				.. "and rebuild"
+		)
+	end
+	-- Every parked car on a parking surface (a drive, a car park, a lot's stalls): none on a forecourt, a sidewalk or a
+	-- lawn no car could reach (the street-level roast, 2026-10-26, point 1).
+	local offSurface = Scenery.Parking.offSurface(plan.specs)
+	if #offSurface > 0 then
+		table.insert(
+			report.missing,
+			`{#offSurface} parked cars stand on no parking surface (Config/CityStreet parking.surfaces), e.g. {offSurface[1]}`
+		)
+	end
 
 	local skyline = generated:FindFirstChild(City.skyline.folder)
 	if skyline then
@@ -925,6 +957,82 @@ local function checkCity(generated: Instance, report: Report)
 			)
 		end
 	end
+end
+
+-- Step 8: the bay (Config/Water; Dev/WaterBuilder; docs/city/SCENERY.md §3). No road or gameplay spot stands in the
+-- water (WaterBuilder.dryProblems, from the layout and the road graph). With terrain water on: each area's centre reads
+-- back as water from Workspace.Terrain (MapBuilder no longer builds a lake bed, so without it the bay is a hole), no
+-- road point over an area has water in its voxel, and no built part outside SETTINGS.waterFolders reaches below an
+-- area's water line inside it.
+local function checkWater(generated: Instance, report: Report)
+	local areas = WaterShape.areas()
+	for _, problem in WaterBuilder.dryProblems(areas) do
+		table.insert(report.missing, `water: {problem}`)
+	end
+	if not Water.terrain then
+		table.insert(report.notes, `water: {#areas} areas as parts (Config/Water.terrain is off)`)
+		return
+	end
+	for _, area in areas do
+		local centre = Vector3.new((area.min.X + area.max.X) / 2, area.waterY - 1, (area.min.Y + area.max.Y) / 2)
+		if not WaterBuilder.wetAt(centre) then
+			table.insert(
+				report.missing,
+				`water: {area.id} has no terrain water (run require(game.ServerScriptService.Server.Dev.WaterBuilder).build())`
+			)
+		end
+	end
+	local checked = 0
+	for index in Graph.edges() do
+		local count = math.max(1, math.ceil(Graph.edgeLength(index) / Water.dry.roadStep))
+		for s = 0, count do
+			local p = Graph.pointOnEdge(index, s / count)
+			if WaterShape.areaAt(p.X, p.Z, areas) == nil then
+				continue
+			end
+			checked += 1
+			if WaterBuilder.wetAt(p + Vector3.yAxis * 0.5) then
+				table.insert(
+					report.missing,
+					`water: the road at ({format(p.X)}, {format(p.Y)}, {format(p.Z)}) has terrain water on it`
+				)
+			end
+		end
+	end
+	local wet = 0
+	for _, child in generated:GetChildren() do
+		if SETTINGS.waterFolders[child.Name] then
+			continue
+		end
+		for _, part in child:GetDescendants() do
+			if not part:IsA("BasePart") then
+				continue
+			end
+			-- The part's world box: its half size along each world axis.
+			local cf, h = part.CFrame, part.Size / 2
+			local r, u, b = cf.RightVector, cf.UpVector, cf.LookVector
+			local p = cf.Position
+			local rx = math.abs(r.X) * h.X + math.abs(u.X) * h.Y + math.abs(b.X) * h.Z
+			local ry = math.abs(r.Y) * h.X + math.abs(u.Y) * h.Y + math.abs(b.Y) * h.Z
+			local rz = math.abs(r.Z) * h.X + math.abs(u.Z) * h.Y + math.abs(b.Z) * h.Z
+			for _, area in areas do
+				local inside = p.X - rx < area.max.X - 1
+					and p.X + rx > area.min.X + 1
+					and p.Z - rz < area.max.Y - 1
+					and p.Z + rz > area.min.Y + 1
+				if inside and p.Y - ry < area.waterY - 0.05 then
+					wet += 1
+					table.insert(report.missing, `water: {pathBelow(part, generated)} stands in {area.id}'s water`)
+				end
+			end
+		end
+	end
+	local cells = Workspace.Terrain:CountCells()
+	table.insert(
+		report.notes,
+		`water: {#areas} areas of terrain water ({cells} terrain cells); {checked} road points over it are dry; `
+			.. `{wet} parts stand in it outside the piers, ground and coping`
+	)
 end
 
 local function generatedFolder(): Instance?
@@ -1035,6 +1143,7 @@ function MapCheck.run(opts: Options?): Report
 		timeRoutes(report)
 		checkLooks(generated, report)
 		checkCity(generated, report)
+		checkWater(generated, report)
 
 		report.ok = countsMatch
 			and #report.overlaps == 0

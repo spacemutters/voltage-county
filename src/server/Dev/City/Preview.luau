@@ -20,6 +20,7 @@ local City = require(ReplicatedStorage.Shared.Config.City)
 local CityBuilder = require(script.Parent.CityBuilder)
 local DayNightService = require(script.Parent.Parent.Parent.Services.DayNightService)
 local MapBuilder = require(script.Parent.Parent.MapBuilder)
+local Palms = require(script.Parent.Scenery.Palms)
 local Types = require(script.Parent.Types)
 
 export type Options = {
@@ -80,7 +81,12 @@ function Preview.build(archetype: string, options: Options?): Model
 	model.Name = `{archetype}_{seed}_{variant.palette}{variant.crown}{variant.rhythm}`
 	model:SetAttribute("Parts", #specs)
 	for _, spec in specs do
-		MapBuilder.createPart(spec).Parent = model
+		-- A templated piece (the street front's café sets and planters) is cloned from its template, as the build does.
+		if spec.template then
+			Palms.instantiate(spec, MapBuilder.createPart).Parent = model
+		else
+			MapBuilder.createPart(spec).Parent = model
+		end
 	end
 	model.Parent = root()
 	return model

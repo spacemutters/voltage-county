@@ -156,7 +156,9 @@ local City = {
 	-- A plot in a city district that no archetype fits (its archetypes' copies used up, or a lone plot too narrow for
 	-- them) stays open: its run's paved lot, or ground, kept clear of trees. False brings back the old glass facade
 	-- there. Filling every plot with archetypes would cost about 7,000 more parts than buildingParts and the phone gate
-	-- allow (2026-10-26, measured in Studio), so the city is fewer, bigger buildings with open lots between.
+	-- allow (2026-10-26, measured in Studio), so the city is fewer, bigger buildings with open lots between. Since
+	-- 2026-10-26 those lots get uses of their own first (car parks, plazas, courts...: Config/CityLots, the planner's
+	-- pass 4); only a plot no lot fits stays open.
 	openFallback = true,
 
 	-- Every site is its own Atomic model, so it streams and swaps its level of detail as one piece (docs/city/TECH.md
@@ -453,8 +455,11 @@ local City = {
 		-- quarry 106 of buildingParts' 15,000. The suburbs' houses took the share the arts district's open lots left.
 		districts = { downtown = 8000, beach = 2300, suburbs = 3300, arts = 1100, quarry = 120 } :: { [string]: number },
 		skyline = 200,
-		-- About 1,950 measured 2026-10-26 (238 sites); DayNightService flips 200 a frame, so dusk takes 11 frames.
-		nightLights = 2200,
+		-- About 1,950 measured 2026-10-26 (238 sites); DayNightService flips 200 a frame, so dusk takes 11 frames. Plus
+		-- the open plots' lots' lamps (Config/CityLots budget.lights, 340 at most): 2,550, 13 frames. Plus the street fronts'
+		-- lit shop windows, blade signs and string lights (Config/CityStreet frontage.budget.nightLights, 260 at most):
+		-- 2,810, 15 frames.
+		nightLights = 2810,
 	},
 
 	-- Shared numbers for Dev/City/Kit (docs/city/TECH.md §2 and §5; CITY_PLAN §8.4 "sharpness rules").
@@ -572,7 +577,7 @@ local City = {
 			"HIGH TENSION",
 			"LIVE CIRCUIT",
 		},
-		shops = { "CORAL ARCADE", "VOLT ROW", "THE SWITCHYARD", "AMP ALLEY", "CURRENT MARKET" },
+		shops = { "CORAL ARCADE", "VOLT ROW", "BREAKER YARD", "AMP ALLEY", "CURRENT MARKET" },
 		-- One-offs with a name of their own.
 		civic = {
 			market = "LAKESIDE MARKET",

@@ -890,6 +890,11 @@ budget leans on four levers:
 
 Davis's real-phone check after the downtown step decides whether 20,000 holds.
 
+2026-10-26, street life (cafés, shop fronts, parked cars, the open plots' lots, the bayfront park): 20,758 near
+(-900, 300). The gate stayed at 20,000 (the desktop perf drive ran under 60 fps), and the lane paint left the
+Persistent Roads model for its own streamed folder `RoadLines` (-602) while the downtown lots' budget went from 900 to
+700 (-195): 19,963 as built.
+
 ## 10. What the checks keep checking
 
 Dev/MapCheck must pass: two builds give the same count, no road overlaps, every location built with its tag and
@@ -981,7 +986,7 @@ All decided 2026-10-25:
 | L5 | No canal and no sign gantries this round. |
 | L6 | The inspiration names go in the name gate. Built as `scripts/banned-city-names.txt`, read by the same gate step (section 10). |
 | L7 | Team Create is on and the place is published, so SLIM is used: night lights live in small separate models. Built (section 7.2). |
-| L8 | Terrain water is not used this round (it changes what happens when a car goes in the water; Davis decides): the bay stays parts. |
+| L8 | Terrain water is not used this round (it changes what happens when a car goes in the water; Davis decides): the bay stays parts. Superseded 2026-10-26 (Davis: "also yes the water should be real water"): the bay is terrain water, and cars left in deep water go back to the road (SCENERY.md §3). |
 | L9 | No decorative traffic signals. |
 
 Decided at integration, 2026-10-26:

@@ -10,11 +10,18 @@
 --     widths and maxPlots; one archetype never stands beside itself; copies, spacing and per-block limits hold;
 --     heights follow the downtown block caps and stay low near gameplay spots; zones with no district keep the old
 --     look
+--   * the open plots' lots (Config/CityLots): every lot type has its module, a weight-0 config and a district that
+--     draws it; a wider lot spends more parts, never past its budget, and lights up at night; open plots get lots that
+--     never stand beside their own type, inside their widths, plots, caps and the pass's budgets, the same every time;
+--     a car park's stalls lie inside it, clear of its booth, island and poles; every shared prop is a template with a
+--     few-part stand-in inside its box, and each template the place holds builds inside its box
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local City = require(ReplicatedStorage.Shared.Config.City)
+local CityLots = require(ReplicatedStorage.Shared.Config.CityLots)
+local CityProps = require(ReplicatedStorage.Shared.Config.CityProps)
 local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 
@@ -22,6 +29,9 @@ local CityFolder = ServerScriptService.Server.Dev.City
 local CityBuilder = require(CityFolder.CityBuilder)
 local Index = require(CityFolder.Archetypes.Index)
 local Kit = require(CityFolder.Kit)
+local LotKit = require(CityFolder.LotKit)
+local Palms = require(CityFolder.Scenery.Palms)
+local Props = require(CityFolder.Props)
 local Types = require(CityFolder.Types)
 
 type PartSpec = Types.PartSpec
@@ -816,6 +826,367 @@ return function(t: Harness.Api)
 				end
 				seen[key] = true
 			end
+		end)
+	end)
+
+	t.describe("City lots on open plots (Config/CityLots)", function()
+		local LOTS: { [string]: boolean } = {}
+		for _, id in CityLots.types do
+			LOTS[id] = true
+		end
+		local NIGHT_TAG = Environment.nightLights.tag
+
+		t.it("has a module, a weight-0 config and a district that draws every lot type", function()
+			local problems: { string } = {}
+			for _, id in CityLots.types do
+				local config = City.archetypes[id]
+				if Index.byId[id] == nil then
+					table.insert(problems, `{id}: no module in Archetypes/lots`)
+				end
+				if config == nil then
+					table.insert(problems, `{id}: no Config/CityArchetypes entry`)
+				elseif config.weight ~= 0 then
+					table.insert(problems, `{id}: weight {config.weight}, so the building passes would draw it`)
+				end
+			end
+			local drawn: { [string]: boolean } = {}
+			for district, mix in CityLots.mix do
+				if City.districtLooks[district] == nil then
+					table.insert(problems, `mix {district}: no such district`)
+				end
+				if CityLots.budget.parts[district] == nil or CityLots.parts[district] == nil then
+					table.insert(problems, `mix {district}: no part rate or budget`)
+				end
+				for id, weight in mix do
+					if not LOTS[id] then
+						table.insert(problems, `mix {district}: {id} is no lot type`)
+					elseif weight > 0 then
+						drawn[id] = true
+					end
+				end
+			end
+			for _, id in CityLots.types do
+				if not drawn[id] then
+					table.insert(problems, `{id}: no district draws it`)
+				end
+			end
+			for _, district in City.districts do
+				if CityLots.mix[district] == nil then
+					table.insert(problems, `{district}: no lot mix`)
+				end
+			end
+			report(t, "lot config", problems)
+		end)
+
+		t.it("spends more parts on a wider lot, never past its budget, and lights every lot at night", function()
+			local problems: { string } = {}
+			for _, id in CityLots.types do
+				local config = City.archetypes[id]
+				if config == nil or Index.byId[id] == nil then
+					continue
+				end
+				local counts: { number } = {}
+				for k, width in { config.minWidth, (config.minWidth + config.maxWidth) / 2, config.maxWidth } do
+					local variant: Variant = { palette = k, crown = k, rhythm = k % 2 + 1, mirror = k == 2 }
+					local site = sample(id, width, DEPTH, config.heights.max, variant, 11 * k)
+					local limit = LotKit.allowance(site)
+					if limit > config.budget then
+						table.insert(
+							problems,
+							`{id} at {width}: an allowance of {limit}, over its budget {config.budget}`
+						)
+					end
+					local specs, why = CityBuilder.build(site)
+					if specs == nil then
+						table.insert(problems, `{id} at {width}: {why}`)
+						continue
+					end
+					local lights = 0
+					for _, spec in specs do
+						if spec.tag == NIGHT_TAG then
+							lights += 1
+						end
+					end
+					if lights == 0 then
+						table.insert(problems, `{id} at {width}: nothing lights up at night`)
+					end
+					counts[k] = #specs
+				end
+				if counts[1] and counts[3] and counts[3] < counts[1] then
+					table.insert(
+						problems,
+						`{id}: {counts[3]} parts at its widest, fewer than {counts[1]} at its narrowest`
+					)
+				end
+			end
+			report(t, "lot parts", problems)
+		end)
+
+		-- Open ground: a long arts-district frontage and a suburb one, every plot in one block, so the buildings' per-block
+		-- limits run out and leave open plots for the lots.
+		local fixture = concat(
+			run(30, "71:1", 40, "the_plant", 201, Vector2.new(6000, 6000)),
+			run(30, "72:1", 38, "riverside", 301, Vector2.new(6000, 7000))
+		)
+		local seed = 4242
+
+		t.it("gives open plots a use: never beside its own type, inside its widths, plots, caps and budgets", function()
+			local placement = CityBuilder.place(fixture, seed)
+			local byIndex: { [number]: Plot } = {}
+			for _, p in fixture do
+				byIndex[p.index] = p
+			end
+			local lots: { Site } = {}
+			for _, site in placement.sites do
+				if LOTS[site.archetype] then
+					table.insert(lots, site)
+				end
+			end
+			print(`  City.spec lots: {#lots} lots, {#placement.legacy} plots left open in the open-ground fixture`)
+			t.expect(#lots).toBeGreaterThan(0)
+			local problems: { string } = {}
+			local parts: { [string]: number } = {}
+			local lights = 0
+			for a, site in lots do
+				local config = City.archetypes[site.archetype]
+				if #site.plots > math.min(config.maxPlots, CityLots.maxPlots) then
+					table.insert(problems, `{site.id} {site.archetype}: {#site.plots} plots`)
+				end
+				if site.width < config.minWidth - EPS or site.width > config.maxWidth + EPS then
+					table.insert(problems, `{site.id} {site.archetype}: {site.width} wide`)
+				end
+				for k = 2, #site.plots do
+					local before, after = byIndex[site.plots[k - 1]], byIndex[site.plots[k]]
+					if
+						after.frontage ~= before.frontage
+						or math.abs(after.along - before.along - before.width) > EPS
+					then
+						table.insert(problems, `{site.id}: plots {before.index} and {after.index} aren't neighbours`)
+					end
+				end
+				if site.height < config.heights.min - EPS or site.height > config.heights.max + EPS then
+					table.insert(problems, `{site.id} {site.archetype}: height {site.height}`)
+				end
+				local specs, why = CityBuilder.build(site)
+				if specs == nil then
+					table.insert(problems, `{site.id}: {why}`)
+				else
+					local own = 0
+					for _, spec in specs do
+						if spec.role == "building" then
+							own += 1
+						end
+						if spec.tag == NIGHT_TAG then
+							lights += 1
+						end
+					end
+					parts[site.district] = (parts[site.district] or 0) + own
+				end
+				for b = a + 1, #lots do
+					local other = lots[b]
+					if
+						other.archetype == site.archetype
+						and CityBuilder.gapBetween(site, other) <= City.rules.neighbourGap
+					then
+						table.insert(problems, `{site.id} and {other.id}: two {site.archetype} side by side`)
+					end
+				end
+			end
+			for district, n in parts do
+				if n > (CityLots.budget.parts[district] or 0) then
+					table.insert(problems, `{district}: {n} lot parts, over its budget`)
+				end
+			end
+			if lights > CityLots.budget.lights then
+				table.insert(problems, `{lights} lot lights, over the budget`)
+			end
+			report(t, "lots", problems)
+		end)
+
+		t.it("takes the plots it fills out of the open list, and plans the same lots every time", function()
+			local a = CityBuilder.place(fixture, seed)
+			local b = CityBuilder.place(fixture, seed)
+			local seen: { [number]: number } = {}
+			for _, site in a.sites do
+				for _, index in site.plots do
+					seen[index] = (seen[index] or 0) + 1
+				end
+			end
+			for _, p in a.legacy do
+				seen[p.index] = (seen[p.index] or 0) + 1
+			end
+			for _, p in fixture do
+				t.expect(seen[p.index]).toBe(1)
+			end
+			t.expect(#b.sites).toBe(#a.sites)
+			t.expect(#b.legacy).toBe(#a.legacy)
+			for i, site in a.sites do
+				local other = b.sites[i]
+				t.expect(other.archetype).toBe(site.archetype)
+				t.expect(other.frame == site.frame).toBe(true)
+				t.expect(other.height).toBe(site.height)
+				t.expect(other.variant.palette).toBe(site.variant.palette)
+			end
+		end)
+
+		t.it(
+			"hands a car park's stalls to the parked cars, inside the lot and clear of its booth, island and poles",
+			function()
+				local module = Index.byId.surface_parking :: any
+				t.expect(module ~= nil and type(module.stalls) == "function").toBe(true)
+				if module == nil then
+					return
+				end
+				local problems: { string } = {}
+				for _, width in { 21, 34, 64, 110, 150 } do
+					for rhythm = 1, 2 do
+						local variant: Variant =
+							{ palette = rhythm, crown = rhythm, rhythm = rhythm, mirror = rhythm == 2 }
+						local site = sample("surface_parking", width, DEPTH, 18, variant, 7 + width)
+						local stalls = module.stalls(site)
+						if #stalls == 0 then
+							table.insert(problems, `{width} wide: no stalls`)
+						end
+						local specs: { PartSpec } = CityBuilder.build(site) or {}
+						for n, stall in stalls do
+							local here = site.frame:Inverse() * stall.cframe
+							local size: Vector2 = stall.size
+							if
+								math.abs(here.X) + size.X / 2 > width / 2 + EPS
+								or math.abs(here.Z) + size.Y / 2 > DEPTH / 2 + EPS
+							then
+								table.insert(problems, `{width} wide, stall {n}: off the lot`)
+							end
+							if math.abs(math.abs(here.LookVector.Z) - 1) > EPS then
+								table.insert(problems, `{width} wide, stall {n}: not square to the road`)
+							end
+							-- Nothing solid (but the asphalt) stands in a stall, a hand's width in from its lines.
+							local x0, x1 = here.X - size.X / 2 + 0.5, here.X + size.X / 2 - 0.5
+							local z0, z1 = here.Z - size.Y / 2 + 0.5, here.Z + size.Y / 2 - 0.5
+							for _, spec in specs do
+								if spec.collide and spec.name ~= "B0Asphalt" then
+									local lo, hi = Kit.localBounds(site.frame, spec)
+									if
+										lo.X < x1
+										and hi.X > x0
+										and lo.Z < z1
+										and hi.Z > z0
+										and hi.Y > LotKit.top + 0.6
+									then
+										table.insert(problems, `{width} wide, stall {n}: {spec.name} stands in it`)
+									end
+								end
+							end
+						end
+					end
+				end
+				report(t, "stalls", problems)
+			end
+		)
+
+		t.it("makes every shared prop a template with a few-part stand-in inside its box", function()
+			local problems: { string } = {}
+			for name, info in CityProps.props do
+				local box = info.size
+				local frame = CFrame.new(10, box.Y / 2, 20) * CFrame.Angles(0, 0.3, 0)
+				local spec = Props.spec("Buildings/Sample", `B0{name}`, name, frame, box, "building")
+				local problem = Kit.problem(spec)
+				if problem then
+					table.insert(problems, problem)
+				end
+				local template = spec.template
+				if template == nil or template.path[#template.path] ~= name then
+					table.insert(problems, `{name}: no template at CityAssets.Props.{name}`)
+				end
+				local standIn = Props.standIn("Buildings/Sample", `B0{name}`, name, frame, box, "building")
+				if #standIn == 0 or #standIn > CityProps.standInMax then
+					table.insert(problems, `{name}: a stand-in of {#standIn} parts`)
+				end
+				for _, piece in standIn do
+					local bad = Kit.problem(piece)
+					if bad then
+						table.insert(problems, bad)
+					end
+					local lo, hi = Kit.localBounds(frame, piece)
+					local half = box / 2 + Vector3.one * 0.06
+					if lo.X < -half.X or hi.X > half.X or lo.Z < -half.Z or hi.Z > half.Z then
+						table.insert(problems, `{piece.name}: outside its prop's box`)
+					end
+					if lo.Y < -half.Y or hi.Y > half.Y then
+						table.insert(problems, `{piece.name}: above or below its prop's box`)
+					end
+				end
+			end
+			report(t, "props", problems)
+		end)
+
+		-- The build scales a prop's template to its box's height and stands it on the box's floor; a contained one
+		-- (Config/CityProps contain: the crane) never wider or deeper than the box the plan checked against roads,
+		-- sidewalks and neighbours either (Dev/City/Scenery Palms.fit). Measured on the templates the place holds (a
+		-- missing one builds its stand-in, checked above); how far the others reach past their box's sides is printed.
+		t.it("builds every shared prop's template on its box's floor, a contained one inside its box", function()
+			local problems: { string } = {}
+			local reach: { string } = {}
+			local made = 0
+			for name, info in CityProps.props do
+				if Palms.findTemplate({ CityProps.root[1], CityProps.root[2], name }, 1) == nil then
+					continue
+				end
+				local box = info.size
+				local frame = CFrame.new(10, box.Y / 2, 20) * CFrame.Angles(0, 0.3, 0)
+				local spec = Props.spec("Buildings/Sample", `B0{name}`, name, frame, box, "building")
+				local clone = Palms.instantiate(spec, function(_: PartSpec): BasePart
+					return Instance.new("Part")
+				end)
+				local at: CFrame?, size: Vector3? = nil, nil
+				if clone:IsA("BasePart") then
+					at, size = (clone :: BasePart).CFrame, (clone :: BasePart).Size
+				elseif clone:IsA("Model") then
+					at, size = (clone :: Model):GetBoundingBox()
+				end
+				clone:Destroy()
+				if at == nil or size == nil then
+					table.insert(problems, `{name}: the template is neither a part nor a model`)
+					continue
+				end
+				made += 1
+				local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+				for _, corner in
+					{
+						Vector3.new(-1, -1, -1),
+						Vector3.new(-1, -1, 1),
+						Vector3.new(-1, 1, -1),
+						Vector3.new(-1, 1, 1),
+						Vector3.new(1, -1, -1),
+						Vector3.new(1, -1, 1),
+						Vector3.new(1, 1, -1),
+						Vector3.new(1, 1, 1),
+					}
+				do
+					local p = frame:PointToObjectSpace(at * (corner * size / 2))
+					lo, hi = lo:Min(p), hi:Max(p)
+				end
+				local half = box / 2 + Vector3.one * 0.05
+				-- How far it reaches past its box's sides (0: inside).
+				local past = math.max(-lo.X - half.X, hi.X - half.X, -lo.Z - half.Z, hi.Z - half.Z, 0)
+				if info.contain and (past > 0 or hi.Y > half.Y) then
+					table.insert(problems, `{name}: built {size} spills out of its {box} box`)
+				elseif past > 0 then
+					table.insert(reach, `{name} {math.floor(past * 10 + 0.5) / 10}`)
+				end
+				if math.abs(lo.Y + box.Y / 2) > 0.05 then
+					table.insert(problems, `{name}: its bottom stands {lo.Y + box.Y / 2} off the box's floor`)
+				end
+			end
+			if made == 0 then
+				print("  City.spec props: no prop templates in ServerStorage.CityAssets.Props here; nothing measured")
+			elseif #reach > 0 then
+				table.sort(reach)
+				print(
+					`  City.spec props: studs past their box's sides (decor, height-scaled): {table.concat(reach, ", ")}`
+				)
+			end
+			report(t, "prop templates", problems)
 		end)
 	end)
 end

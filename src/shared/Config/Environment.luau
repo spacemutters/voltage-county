@@ -478,7 +478,8 @@ local Environment = {
 	-- with 5,100 to 5,550 of them streamed in on the client. Everything this pass adds is anchored and still: no physics
 	-- body, and leaves, glass bands, trim and the features never collide, take a raycast or a touch (tree trunks and
 	-- building shells do, like any wall). Trees, buildings and features sit in Atomic models that stream (only Ground,
-	-- Roads and the city's small Skyline model are Persistent; city buildings are SLIM, so far ones stay as cheap
+	-- Roads (the slabs and pads; the lane paint streams) and the city's small Skyline model are Persistent; city
+	-- buildings are SLIM, so far ones stay as cheap
 	-- stand-ins), so a phone holds what lies inside the 2,048-stud streaming target radius (about 13 % of the map) and
 	-- drops the far models first when short of memory. Leaves and trunks are plain blocks (12 triangles), not balls.
 	-- The perf drive and Davis's real-phone check decide whether these hold (Config/Perf); inViewParts is the gate a
@@ -488,16 +489,21 @@ local Environment = {
 		-- 16,000 for the hand-modelled city, about 27,400 planned.
 		mapParts = 30000,
 		-- The phone gate (CITY_PLAN §9): the most parts a player can have streamed in at once, every Persistent part
-		-- (the ground, the roads, the Skyline) plus every part within Perf.streaming.targetRadius of the worst road
+		-- (the ground, the road slabs and pads, the Skyline) plus every part within Perf.streaming.targetRadius of the worst road
 		-- node (downtown's centre). tests/MapBuilder.spec and Dev/MapCheck hold the county to it; Davis's phone check
-		-- after the downtown step decides whether it holds.
+		-- after the downtown step decides whether it holds. 2026-10-26, street life (cafés, shops, parked cars, the lots,
+		-- the bayfront park): 20,758 near (-900, 300), so not raised (the desktop perf drive ran at 53 fps, under its 60);
+		-- the lane paint left the Persistent Roads model to stream like decor (-600) and the downtown lots' budget went
+		-- from 900 to 700 (Config/CityLots): about 19,960.
 		inViewParts = 20000,
 		-- Trunks and leaves: about 1,400 trees at 2 or 3 parts each (a palm is 2: its trunk and its crown, whose mesh the
 		-- build clones; Dev/City/Scenery Palms). The street and beach palms are scenery (Config/CityScenery budget).
 		treeParts = 4400,
 		-- Every building part: the city's sites (Dev/City, about 40..150 parts each) and the old facade on the plots no
-		-- archetype fits. Per district in Config/City budgets (14,120 together).
-		buildingParts = 15000,
+		-- archetype fits. Per district in Config/City budgets (14,120 together). 2026-10-26: plus the open plots' lots
+		-- (car parks, plazas, courts...: Config/CityLots budget.parts, 1,714 at most, about 1,550 expected), so 15,000
+		-- for the buildings and 1,800 for the lots.
+		buildingParts = 16800,
 		featureParts = 200, -- the water tower, the diner and the bridge arches
 		groundParts = 700, -- the ground patchwork, lake beds and banks, mesas and hills
 	},

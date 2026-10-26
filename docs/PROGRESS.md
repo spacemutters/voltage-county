@@ -2,6 +2,122 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-10-26 — Street life and real water: cafés, shop fronts, parked cars, lots, the bayfront park, terrain bay
+
+Davis, 2026-10-26: "Yes, fill the streets: cafés, parked cars, shop fronts, the empty lawn and the empty downtown lots"
+and "also yes the water should be real water". Branch `street-life`. Built by helpers (props, frontage, parking, lots,
+park, water), reviewed, integrated, then roasted at street level and fixed (below). Nothing committed or published by
+these steps.
+
+**What is in the map now**
+- Shared props (`Config/CityProps`, `Dev/City/Props`): 17 generated meshes in `ServerStorage.CityAssets.Props`, one
+  part each; 523 placed (café sets 64, bistro pairs 150, market stalls 81, benches 82, food trucks 40, fountains 22,
+  sculptures 33, hoops 20, playgrounds 9, cranes 17, bandshells 2, news boxes 2, a bike rack).
+- Street fronts (`Dev/City/Street/Frontage`, `Config/CityStreet` frontage): café terraces with umbrellas and string
+  lights, shop fronts with invented names, blade signs that glow at night. 388 pieces of the 1,000 budget.
+- Parked cars (`Dev/City/Street/Parking`): 168, every one a template (29 meshes in `CityAssets.Cars`), in the lots'
+  stalls (158), on villa drives (7) and at the diner (3), each with an invisible box you bump into. No car stands on
+  a hotel forecourt any more (roast fixes below).
+- The open plots' lots (`Config/CityLots`, `Dev/City/Archetypes/lots`): car parks, plazas, food-truck courts, markets,
+  sports courts, construction sites with tower cranes, pocket parks: 243 lots. Plots still open: downtown 66, arts 11,
+  suburbs 3, beach 2, quarry 1 (475 this morning).
+- The bayfront park on the lawn between downtown and the beach (`Dev/City/Scenery/BayfrontPark`): 400 parts.
+- The bay is terrain water (`Dev/WaterBuilder`, `Config/Water`): green-turquoise, shallows off the beach, deep at the
+  seawalls, three low grassy keys with sandy edges across it. `Services/WaterRescueService` puts a car back on the
+  nearest road: 3 s in deep water, 1.5 s on its roof, 8 s stuck in any water (the shallows' shelf, nosed into a
+  seawall), or at once when its driver gets out in the water. Swimming works.
+
+**Integration fixes**
+- Phone gate: 20,758 parts in view near (-900, 300), over 20,000. Not raised: the desktop perf drive is under 60 fps
+  (below). The lane paint left the Persistent Roads model for its own streamed folder `RoadLines` (-602 in view, no
+  look change up close) and the downtown lots' budget went from 900 to 700 parts (-195): 19,963.
+- Studio: removed the props helper's leftovers (Workspace `PropsBooth_TEMP`, a loose minivan model, ServerStorage
+  attributes), camera back to Custom, full `MapBuilder.build()` then `WaterBuilder.build()` ("cedar_lake wet").
+- Sign names that are real businesses in the same trade replaced (searched first): THE COPPER COIL, OHM OVEN,
+  SWELLCELL, EL VOLTAJE, TAQUERIA KILOVATIO, BREAKER YARD MARKET (and BREAKER YARD in `Config/City`).
+- Water rescue: the stuck rule (`Config/Water rescue.stuckSpeed`, `stuckSeconds`) and the left-in-water pull-out
+  (`Rescue.leftInWater`); Water.spec cases for both.
+- The tower crane is fitted inside its box (`Config/CityProps contain`, `Dev/City/Scenery Palms.fit`), its box as deep
+  as its mesh; City.spec measures every prop template the place holds against its box.
+- Food-truck court stripes faded further (0.4 to 0.72): they still read as a hot-pink zebra from a window (gone since:
+  roast fixes below).
+
+**Street-level roast fixes** (a fresh reviewer walked the streets in the shots: 10 points; the worst fixed, in order)
+1. *Cars where no car could drive:* the hotel and tower drop-off cars (8) are gone (`Config/CityStreet
+   parking.dropOff.share` 0): a forecourt meets the road only across a kerb, grass and the sidewalk. New build gate:
+   `Parking.offSurface` + Dev/MapCheck fail any parked car whose middle isn't over a parking surface (a drive, a car
+   park, a lot's asphalt: `parking.surfaces`). Broken on purpose in Studio: with the drop-offs back on it flagged
+   exactly those 8 cars and no other. Their parts went to the lots (158 lot cars, was 150).
+2. *Lots that were still empty slabs:* the food-truck court's painted zebra is gone; it is one paver floor now (warm
+   stone in Pavement with a fine joint grid), café tables in up to two rows of up to 4 (was 1 or 2), a hedge along its
+   front, and its string of lights sags in two strands with a warm light under it. The market's string sags too.
+3. *Water:* greener and clearer (`Config/Water look`: colour 12,120,128, transparency 0.68, less mirrored sky 0.42,
+   waves 0.3 at 12), and three low keys across the bay (`Config/Water islands`, written by WaterBuilder after the
+   water as chains of terrain balls, the deep cells trimmed: 591,576 cells). The causeway's long shadow and the
+   hangers' lines on the water are shadows, not seams.
+5. *Park:* the shrubs are all palmetto clumps (the magenta half-balls are gone); the amphitheatre's terraces rise in
+   three steps (0.9, 1.8, 2.7 high, 3.2 deep) instead of ankle-high kerbs.
+6. *Sand as paving:* the park's plazas, aprons and promenade are cream Pavement (herringbone pavers at the right scale)
+   instead of the place's "Terrazzo" material variant, which reads as beach sand with starfish.
+7. *Water painted on the ground:* the fountain stands on a low limestone step just wider than its basin; the cyan disc
+   that spread past it is gone.
+8. *Lot cars:* turned up to 3 degrees each (was 1.5); paints redrawn so about 40 % are red or blue.
+9. *Dead street at night:* every streetlight post now casts its light (`TUNING.lightEmitSpacing` 200 to 90, brightness
+   2 to 3, range 48 to 56); each café row's swag and each lot festoon carries a warm point light; the park's globe lamps
+   cast light. 569 Lights in the map, none with shadows.
+10. *Cut-off hoarding text:* the construction hoarding's lettering canvas stays within 1,800 pixels across, so the
+   name no longer runs off both ends.
+Not done: 4 (a storefront kit with recessed glass, doors and interiors), parallel kerb parking (no road has a shoulder
+that holds a car without blocking a lane; widening roads moves the road graph), dropped kerbs at driveways, the bay
+reaching the map edge (the lake sits inside the County Loop's roads), boats and channel markers, moving traffic and
+people, the park opening onto the water, kerbs and seawall railings everywhere.
+
+**Numbers** (rebuilt after the roast fixes, 2026-10-26)
+- Map 28,360 parts of 30,000 (35,730 instances). Phone gate 19,959 of 20,000, near (-900, 300).
+- Building parts 15,416 of 16,800: downtown 8,470, suburbs 3,201, beach 2,299, arts 1,332, quarry 114.
+- 481 sites (238 buildings, 243 lots), 33 core claims. Building night lights 2,220 of 2,810; streetlight night lights
+  721; 569 Light instances.
+- Terrain: 1 water area, 591,576 cells, 3 islands.
+
+**Checked in Studio**
+- After the roast fixes: full `MapBuilder.build()` then `WaterBuilder.build()` (cedar_lake wet). MapCheck PASS (346
+  of 346 road nodes, 0 road overlaps, 0 missing, no parked car off a parking surface; water: 94 road points over the
+  bay dry, 0 parts in it). Spec harness on fresh copies: passed=2744, failed=0 (three specs follow the new rules: a
+  café swag's and a park globe's point light are allowed, and lit streetlights keep `TUNING.lightEmitSpacing` apart).
+  Gate CHECK PASSED.
+- Playtest: boots clean (only the known legacy-chat warning). Perf drive on desktop: 57.8 fps mean (17.3 ms), p95
+  27.8 ms, 0 stuck, 70 mph (budget 60 fps / 20 ms; an earlier run 53.4 fps, and one run whose car never reached the
+  loop). A car in deep water came out after 3.3 s onto the bridge with "Your car was pulled out of the water."; one
+  stopped in the beach shelf after 10 s; one left by its driver in the water at once. Swimming works. A parked car
+  stops a walking player and a driven car bounces off it without spinning or lifting.
+- Shots in `docs/images/city/street/` (HUD hidden): the bay skyline at golden hour, the Deco row by day and at night,
+  a villa drive, the causeway at dusk, the night skyline, café terraces, a downtown car park and food-truck court, the
+  park from above and its fountain, the beach water by day and at sunset.
+- After the roast fixes (playtest, HUD hidden, scripted camera, clock by `DevClockTime`), `after-01` ... `after-09` in
+  `docs/images/city/street/`: the skyline across the bay, the bay and its keys at golden hour, the hotel row by day and
+  at night (the forecourts empty of cars, the lamps lighting the ground), a beach café terrace at night under its
+  swag light, downtown at street level, a downtown food-truck court on pavers, the bayfront park from the causeway's
+  north end, a suburb villa with its car on the drive.
+
+**Waiting on Davis**
+- Publishing (File > Publish to Roblox) so live games get it. `Lighting.Technology`: the place already uses
+  LightingStyle Realistic with PrioritizeLightingQuality on, today's form of Future; a script can't read Technology.
+- Two lines for `CLAUDE.md` from the water helper (rule 9 and the Layout line: WaterBuilder owns Workspace.Terrain).
+- The real-phone check: the gate is at its limit, and the desktop drive is just under 60 fps.
+
+**Still weak**
+- Downtown has 66 open paved plots again (the lots' budget cut), and the wide lots that are dressed are sparse: most
+  food-truck courts run out of parts before their hedge and string of lights.
+- Shop fronts are still flat panels on tower walls (roast point 4); the road between the hotel row and the lawn is
+  still dark away from the lamps; nothing moves on the streets.
+- The bay is still an inland rectangle ringed by fields and hills; no boats.
+- The desktop perf drive is under 60 fps (it was never re-run after the morning's city); the Realistic lighting and
+  about 16,000 to 19,700 streamed parts are the likely cost.
+- Props other than the crane are scaled by height and reach past their boxes by up to about 3 studs (hoop, food
+  trucks, bandshell, sculpture B, bistro pairs, bike rack): decor, but their boxes should be measured like the cars'.
+- Café umbrellas on the Deco row read as flat slabs; the golden-hour sky goes teal-green; the far skyline at night is
+  dark when downtown streams out.
+
 ## 2026-10-26 — Miami city: hand-modelled buildings, beach, bay, lighting, roast fixes and a showcase
 
 Davis, 2026-10-25: redo the buildings and the scenery, Miami not Greenville, every building hand-modelled from its own
