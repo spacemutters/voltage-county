@@ -1,7 +1,10 @@
 --!strict
 -- Houses (docs/phase-13-contracts.md "Houses"): claiming and releasing plots (one plot per player per server, one
 -- player per plot), the upgrade list and its checks, the home charger's rate and price (between the county's public
--- stalls, and only for the owner's own car at their own plot), and the garage door's rules and layout. Pure logic:
+-- stalls, and only for the owner's own car at their own plot), the garage door's rules and layout, and the house
+-- styles (Config/Houses variants): each stays on its plot and out of the garage's bay and the door's swing, keeps
+-- its part names apart, paints every part from every one of its palettes, stays inside the part budget, lights its
+-- windows and porch lights at night, and puts the upgrades where that style's door, beds and roof are. Pure logic:
 -- runs in Edit mode.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -26,14 +29,26 @@ local HALF = 0.5 -- a battery level below the charging taper
 local PERCENT = 100
 local MIN_UPGRADES = 3
 local MAX_UPGRADES = 5
+local MIN_STYLES = 3 -- "a few" house styles
+local EPSILON = 0.01 -- studs a part may touch past an edge (rounding)
+local BURIED = 0.6 -- walls and columns may sink this far into the ground
+local STYLE_UPGRADES = { "porchLights", "garden", "solarRoof" } -- every style places these itself
 
--- Every HousePlot location id, in MapLayout order.
-local function plotIds(): { string }
-	local ids: { string } = {}
+-- Every HousePlot location, in MapLayout order.
+local function plots(): { MapLayout.Location }
+	local list: { MapLayout.Location } = {}
 	for _, location in MapLayout.locations do
 		if location.tag == Houses.plotTag then
-			table.insert(ids, location.id)
+			table.insert(list, location)
 		end
+	end
+	return list
+end
+
+local function plotIds(): { string }
+	local ids: { string } = {}
+	for _, location in plots() do
+		table.insert(ids, location.id)
 	end
 	return ids
 end
@@ -86,6 +101,42 @@ local function pieceNamed(name: string): Houses.Piece
 	error(`no structure piece {name}`)
 end
 
+local function variantPiece(variant: Houses.Variant, name: string): Houses.Piece
+	for _, piece in variant.pieces do
+		if piece.name == name then
+			return piece
+		end
+	end
+	error(`{variant.id} has no piece {name}`)
+end
+
+-- The parts an upgrade adds to a house in this style (its own, else the shared ones).
+local function extrasOf(variant: Houses.Variant, id: string): { Houses.Piece }
+	return variant.extras[id] or Houses.extras[id] or {}
+end
+
+-- Every piece a house in this style can show at once: the garage, the style, the plain mailbox and every upgrade's
+-- parts but the painted mailbox (it takes the plain one's place, names and all).
+local function everyPiece(variant: Houses.Variant): { Houses.Piece }
+	local list: { Houses.Piece } = table.clone(Houses.structure)
+	table.move(variant.pieces, 1, #variant.pieces, #list + 1, list)
+	table.move(Houses.plainMailbox, 1, #Houses.plainMailbox, #list + 1, list)
+	for _, upgrade in Houses.upgrades do
+		if upgrade.id ~= Houses.plainMailboxReplacedBy then
+			local extra = extrasOf(variant, upgrade.id)
+			table.move(extra, 1, #extra, #list + 1, list)
+		end
+	end
+	return list
+end
+
+-- The parts HouseService builds besides the pieces: the door, the charger bay and the door's sensor.
+local FIXED_PARTS = { Houses.door.name, Houses.chargerPad.name, Houses.door.sensorName }
+
+local function describe(v: Vector3): string
+	return string.format("(%.2f, %.2f, %.2f)", v.X, v.Y, v.Z)
+end
+
 return function(t: Harness.Api)
 	t.describe("Houses", function()
 		t.describe("plots", function()
@@ -94,14 +145,12 @@ return function(t: Harness.Api)
 				t.expect(#ids > 0).toBe(true)
 				local seenIds: { [string]: boolean } = {}
 				local seenAddresses: { [string]: boolean } = {}
-				for _, location in MapLayout.locations do
-					if location.tag == Houses.plotTag then
-						t.expect(location.zone).toBe("riverside")
-						t.expect(seenIds[location.id]).toBe(nil)
-						t.expect(seenAddresses[location.displayName]).toBe(nil)
-						seenIds[location.id] = true
-						seenAddresses[location.displayName] = true
-					end
+				for _, location in plots() do
+					t.expect(location.zone).toBe("riverside")
+					t.expect(seenIds[location.id]).toBe(nil)
+					t.expect(seenAddresses[location.displayName]).toBe(nil)
+					seenIds[location.id] = true
+					seenAddresses[location.displayName] = true
 				end
 				t.expect(seenIds[PLOT_A]).toBe(true)
 				t.expect(seenIds[PLOT_B]).toBe(true)
@@ -116,27 +165,209 @@ return function(t: Harness.Api)
 				end
 				t.expect(found).toBe(true)
 			end)
+		end)
 
-			t.it("lights the windows and porch lights at night, as kinds Services/DayNightService knows", function()
-				local pieces: { Houses.Piece } = table.clone(Houses.structure)
-				for _, list in Houses.extras do
-					table.move(list, 1, #list, #pieces + 1, pieces)
+		t.describe("styles", function()
+			t.it(`has at least {MIN_STYLES} styles, each with its own id and at least one palette`, function()
+				t.expect(#Houses.variants >= MIN_STYLES).toBe(true)
+				local seen: { [string]: boolean } = {}
+				for _, variant in Houses.variants do
+					t.expect(seen[variant.id]).toBe(nil)
+					seen[variant.id] = true
+					t.expect(#variant.palettes > 0).toBe(true)
+					t.expect(#variant.pieces > 0).toBe(true)
 				end
-				local lit: { [string]: string } = {}
-				for _, piece in pieces do
-					local night = piece.night
-					if night ~= nil then
-						t.expect(`{piece.name}: {Environment.nightLights.kinds[night] ~= nil}`)
-							.toBe(`{piece.name}: true`)
-						lit[piece.name] = night
+			end)
+
+			t.it("deals every plot a style and palette, the same every time, neighbours never alike", function()
+				local count = #plots()
+				local used: { [number]: boolean } = {}
+				local last: number? = nil
+				for index = 1, count do
+					local variant, colors = Houses.styleOf(index)
+					local again, sameColors = Houses.styleOf(index)
+					t.expect(`{index}: {again},{sameColors}`).toBe(`{index}: {variant},{colors}`)
+					t.expect(variant >= 1 and variant <= #Houses.variants).toBe(true)
+					t.expect(colors >= 1 and colors <= #Houses.variants[variant].palettes).toBe(true)
+					t.expect(`{index}: {variant ~= last}`).toBe(`{index}: true`)
+					used[variant] = true
+					last = variant
+				end
+				if count >= #Houses.variants then
+					for variant = 1, #Houses.variants do
+						t.expect(`{Houses.variants[variant].id} used: {used[variant] == true}`)
+							.toBe(`{Houses.variants[variant].id} used: true`)
 					end
 				end
-				t.expect(lit.WindowLeft).toBe("window")
-				t.expect(lit.WindowRight).toBe("window")
-				t.expect(lit.PorchLightLeft).toBe("streetlight")
-				t.expect(lit.PorchLightRight).toBe("streetlight")
-				-- Solar panels are glass too, but stay dark.
-				t.expect(lit.SolarPanelLeft).toBe(nil)
+			end)
+
+			t.it("keeps every part on the plot and under the height limit", function()
+				local footprint = plots()[1].size
+				local hx, hz = footprint.X / 2 + EPSILON, footprint.Z / 2 + EPSILON
+				for _, variant in Houses.variants do
+					local list = everyPiece(variant)
+					table.move(Houses.extras.mailbox, 1, #Houses.extras.mailbox, #list + 1, list)
+					for _, piece in list do
+						local reach = Houses.reach(piece)
+						local lo, hi = piece.offset - reach, piece.offset + reach
+						local fits = lo.X >= -hx
+							and hi.X <= hx
+							and lo.Z >= -hz
+							and hi.Z <= hz
+							and lo.Y >= -BURIED - EPSILON
+							and hi.Y <= Houses.maxHeight
+						t.expect(`{variant.id}.{piece.name} {describe(lo)}..{describe(hi)} fits: {fits}`)
+							.toBe(`{variant.id}.{piece.name} {describe(lo)}..{describe(hi)} fits: true`)
+					end
+				end
+			end)
+
+			t.it("keeps out of the garage's bay and the door's swing", function()
+				for _, variant in Houses.variants do
+					local list: { Houses.Piece } = table.clone(variant.pieces)
+					for _, extra in variant.extras do
+						table.move(extra, 1, #extra, #list + 1, list)
+					end
+					for _, piece in list do
+						local frame = Houses.pieceFrame(piece, CFrame.identity)
+						for index, zone in Houses.garageClear do
+							local hits = HouseService.overlapsBox(CFrame.new(zone.offset), zone.size, frame, piece.size)
+							t.expect(`{variant.id}.{piece.name} in garage zone {index}: {hits}`)
+								.toBe(`{variant.id}.{piece.name} in garage zone {index}: false`)
+						end
+					end
+				end
+			end)
+
+			t.it("names every part of a house once", function()
+				for _, variant in Houses.variants do
+					local seen: { [string]: boolean } = {}
+					for _, name in FIXED_PARTS do
+						seen[name] = true
+					end
+					for _, piece in everyPiece(variant) do
+						t.expect(`{variant.id}.{piece.name} twice: {seen[piece.name] == true}`)
+							.toBe(`{variant.id}.{piece.name} twice: false`)
+						seen[piece.name] = true
+					end
+					-- The painted mailbox reuses the plain one's names (it replaces it), and nothing else's.
+					for _, piece in Houses.extras.mailbox do
+						local plain = false
+						for _, other in Houses.plainMailbox do
+							plain = plain or other.name == piece.name
+						end
+						local clash = seen[piece.name] == true and not plain
+						t.expect(`{variant.id}.{piece.name} clashes: {clash}`)
+							.toBe(`{variant.id}.{piece.name} clashes: false`)
+					end
+				end
+			end)
+
+			t.it("paints every part from every palette of its style", function()
+				local doorPiece: Houses.Piece = {
+					name = Houses.door.name,
+					offset = Houses.door.offset,
+					size = Houses.door.size,
+					paint = Houses.door.paint,
+					solid = true,
+				}
+				for _, variant in Houses.variants do
+					local list = everyPiece(variant)
+					table.insert(list, doorPiece)
+					for index, colors in variant.palettes do
+						for _, piece in list do
+							local painted = Houses.lookOf(piece, colors) ~= nil
+							t.expect(`{variant.id} palette {index} paints {piece.name}: {painted}`)
+								.toBe(`{variant.id} palette {index} paints {piece.name}: true`)
+						end
+					end
+				end
+			end)
+
+			t.it("stays inside the part budget with every upgrade on", function()
+				for _, variant in Houses.variants do
+					local count = #everyPiece(variant) + #FIXED_PARTS
+					-- The painted mailbox in place of the plain one, if it has more parts.
+					count += math.max(#Houses.extras.mailbox - #Houses.plainMailbox, 0)
+					t.expect(`{variant.id}: {count} parts, within {Houses.partBudget}: {count <= Houses.partBudget}`)
+						.toBe(`{variant.id}: {count} parts, within {Houses.partBudget}: true`)
+				end
+			end)
+
+			t.it("places the porch lights, the garden and the solar panels for each style", function()
+				for _, variant in Houses.variants do
+					for _, id in STYLE_UPGRADES do
+						local extra = variant.extras[id]
+						t.expect(`{variant.id}.{id}: {extra ~= nil and #extra > 0}`).toBe(`{variant.id}.{id}: true`)
+					end
+					local names: { [string]: boolean } = {}
+					for _, piece in extrasOf(variant, "porchLights") do
+						names[piece.name] = piece.glow == true
+					end
+					t.expect(`{variant.id} lamps glow: {names.PorchLightLeft},{names.PorchLightRight}`)
+						.toBe(`{variant.id} lamps glow: true,true`)
+					local panels = 0
+					for _, piece in extrasOf(variant, "solarRoof") do
+						if string.find(piece.name, "SolarPanel", 1, true) == 1 then
+							panels += 1
+						end
+					end
+					t.expect(`{variant.id} solar panels: {panels >= 2}`).toBe(`{variant.id} solar panels: true`)
+				end
+			end)
+
+			t.it("lights the windows and porch lights at night, as kinds Services/DayNightService knows", function()
+				for _, variant in Houses.variants do
+					local windows = 0
+					local lit: { [string]: string } = {}
+					for _, piece in everyPiece(variant) do
+						local night = piece.night
+						if night ~= nil then
+							t.expect(`{variant.id}.{piece.name}: {Environment.nightLights.kinds[night] ~= nil}`)
+								.toBe(`{variant.id}.{piece.name}: true`)
+							lit[piece.name] = night
+							if night == "window" then
+								windows += 1
+							end
+						end
+					end
+					t.expect(`{variant.id} lit windows: {windows >= 2}`).toBe(`{variant.id} lit windows: true`)
+					t.expect(`{variant.id}: {lit.PorchLightLeft},{lit.PorchLightRight}`)
+						.toBe(`{variant.id}: streetlight,streetlight`)
+					-- Solar panels are glass too, but stay dark.
+					t.expect(`{variant.id}: {lit.SolarPanelLeft}`).toBe(`{variant.id}: nil`)
+				end
+			end)
+
+			t.it("keeps glass opaque and only rails see-through", function()
+				for _, variant in Houses.variants do
+					for _, piece in everyPiece(variant) do
+						local look = Houses.lookOf(piece, variant.palettes[1])
+						local clear = if look ~= nil then look.transparency or 0 else 0
+						local ok = clear == 0 or string.find(piece.name, "Rail", 1, true) ~= nil
+						t.expect(`{variant.id}.{piece.name} transparency {clear}: {ok}`)
+							.toBe(`{variant.id}.{piece.name} transparency {clear}: true`)
+					end
+				end
+			end)
+
+			t.it("casts no shadow from slivers and see-through parts, and keeps shadows on masses", function()
+				local sliver: Houses.Piece =
+					{ name = "Sliver", offset = Vector3.zero, size = Vector3.new(0.3, 8, 0.3), solid = false }
+				local slab: Houses.Piece =
+					{ name = "Slab", offset = Vector3.zero, size = Vector3.new(20, 0.6, 3), solid = false }
+				local rail: Houses.Piece = {
+					name = "Rail",
+					offset = Vector3.zero,
+					size = Vector3.new(20, 3, 0.2),
+					solid = false,
+					transparency = 0.55,
+				}
+				t.expect(Houses.castsShadow(sliver)).toBe(false)
+				t.expect(Houses.castsShadow(slab)).toBe(true)
+				t.expect(Houses.castsShadow(rail)).toBe(false)
+				sliver.shadow = true
+				t.expect(Houses.castsShadow(sliver)).toBe(true)
 			end)
 		end)
 
@@ -209,26 +440,56 @@ return function(t: Harness.Api)
 				t.expect(HouseService.ownerOf(claims, PLOT_A)).toBe(nil)
 			end)
 
-			t.it("refuses a claim while a car or a player stands where a wall would appear", function()
+			t.it("refuses a claim while a car or a player stands where a wall would appear, in every style", function()
 				local frame = Houses.plotFrame(Vector3.new(100, 5, -40), 90)
-				local boxes = HouseService.lotBoxes(frame)
-				t.expect(#boxes).toBe(#Houses.lotClear.pieces + (if Houses.lotClear.door then 1 else 0))
 				local car = Vector3.new(7, 4, 16)
-				local body = pieceNamed("Body")
 				local door = Houses.door
 				local pad = Houses.chargerPad
-				local inBody = { frame = frame * CFrame.new(body.offset), size = car }
-				local person =
-					{ frame = frame * CFrame.new(body.offset.X, 3, body.offset.Z), size = Vector3.new(2, 2, 1) }
-				local inDoorway = { frame = frame * CFrame.new(door.offset.X, car.Y / 2, door.offset.Z), size = car }
-				t.expect(HouseService.lotBlocked(boxes, { inBody })).toBe(true)
-				t.expect(HouseService.lotBlocked(boxes, { person })).toBe(true)
-				t.expect(HouseService.lotBlocked(boxes, { inDoorway })).toBe(true)
-				-- A car on the driveway or on the charger bay isn't in a wall's way.
-				local onDriveway = { frame = frame * CFrame.new(door.offset.X, car.Y / 2, -12), size = car }
-				local onPad = { frame = frame * CFrame.new(pad.offset.X, car.Y / 2, pad.offset.Z), size = car }
-				t.expect(HouseService.lotBlocked(boxes, { onDriveway, onPad })).toBe(false)
-				t.expect(HouseService.lotBlocked(boxes, {})).toBe(false)
+				for _, variant in Houses.variants do
+					local boxes = HouseService.lotBoxes(frame, variant)
+					local expected = if Houses.lotClear.door then 1 else 0
+					for _, pieces in { Houses.structure, variant.pieces } do
+						for _, piece in pieces do
+							if HouseService.mustBeClear(piece) then
+								expected += 1
+							end
+						end
+					end
+					t.expect(`{variant.id}: {#boxes}`).toBe(`{variant.id}: {expected}`)
+					local body = variantPiece(variant, "Body")
+					local inBody = { frame = frame * CFrame.new(body.offset.X, car.Y / 2, body.offset.Z), size = car }
+					local person =
+						{ frame = frame * CFrame.new(body.offset.X, 3, body.offset.Z), size = Vector3.new(2, 2, 1) }
+					local inDoorway =
+						{ frame = frame * CFrame.new(door.offset.X, car.Y / 2, door.offset.Z), size = car }
+					t.expect(`{variant.id} car in the house: {HouseService.lotBlocked(boxes, { inBody })}`)
+						.toBe(`{variant.id} car in the house: true`)
+					t.expect(`{variant.id} player in the house: {HouseService.lotBlocked(boxes, { person })}`)
+						.toBe(`{variant.id} player in the house: true`)
+					t.expect(`{variant.id} car in the doorway: {HouseService.lotBlocked(boxes, { inDoorway })}`)
+						.toBe(`{variant.id} car in the doorway: true`)
+					-- A car on the driveway or on the charger bay isn't in a wall's way.
+					local onDriveway = { frame = frame * CFrame.new(door.offset.X, car.Y / 2, -12), size = car }
+					local onPad = { frame = frame * CFrame.new(pad.offset.X, car.Y / 2, pad.offset.Z), size = car }
+					t.expect(`{variant.id} driveway and bay: {HouseService.lotBlocked(boxes, { onDriveway, onPad })}`)
+						.toBe(`{variant.id} driveway and bay: false`)
+					t.expect(HouseService.lotBlocked(boxes, {})).toBe(false)
+				end
+			end)
+
+			t.it("checks walls and masses but not floor slabs or roofs", function()
+				local function piece(y0: number, y1: number, solid: boolean): Houses.Piece
+					return {
+						name = "Test",
+						offset = Vector3.new(0, (y0 + y1) / 2, 0),
+						size = Vector3.new(4, y1 - y0, 4),
+						solid = solid,
+					}
+				end
+				t.expect(HouseService.mustBeClear(piece(-0.5, 11, true))).toBe(true) -- a wall
+				t.expect(HouseService.mustBeClear(piece(0, 0.35, true))).toBe(false) -- a slab
+				t.expect(HouseService.mustBeClear(piece(11, 12, true))).toBe(false) -- a roof
+				t.expect(HouseService.mustBeClear(piece(-0.5, 11, false))).toBe(false) -- trim
 			end)
 
 			t.it("releasing with no plot changes nothing", function()
@@ -397,6 +658,13 @@ return function(t: Harness.Api)
 				end
 			)
 
+			t.it("keeps the bay 16 wide between the garage walls and the door as wide as the bay", function()
+				local inner, outer = pieceNamed("GarageWallInner"), pieceNamed("GarageWallOuter")
+				local bay = (outer.offset.X - outer.size.X / 2) - (inner.offset.X + inner.size.X / 2)
+				t.expect(bay).toBe(Houses.door.size.X)
+				t.expect(Houses.door.size.X >= 16).toBe(true)
+			end)
+
 			t.it("tells boxes that overlap from boxes beside or touching them, turned or not", function()
 				local frame = CFrame.new()
 				local size = Vector3.new(4, 4, 4)
@@ -428,13 +696,39 @@ return function(t: Harness.Api)
 				t.expect(HouseService.overlapsBox(doorway, door.doorwaySize, straddling, car)).toBe(true)
 			end)
 
-			t.it("closes to the ground and opens clear of the doorway", function()
+			t.it("closes to the ground and opens clear of the doorway, under the roof", function()
 				local door = Houses.door
 				local header = pieceNamed("GarageHeader")
+				local roof = pieceNamed("GarageRoof")
 				t.expect(door.offset.Y - door.size.Y / 2).toBe(0)
 				-- Open, it lies flat (turned openTilt about X), so its thickness is its height.
 				t.expect(door.openTilt).toBe(90)
 				t.expect(door.openOffset.Y - door.size.Z / 2 >= header.offset.Y - header.size.Y / 2).toBe(true)
+				t.expect(door.openOffset.Y + door.size.Z / 2 <= roof.offset.Y - roof.size.Y / 2).toBe(true)
+			end)
+
+			t.it("sweeps only through the garage's clear zones as it swings", function()
+				local door = Houses.door
+				local closed = CFrame.new(door.offset)
+				local open = CFrame.new(door.openOffset) * CFrame.Angles(math.rad(door.openTilt), 0, 0)
+				for step = 0, 10 do
+					local frame = closed:Lerp(open, step / 10)
+					-- Every corner of the door inside one of the zones (grown a hair for rounding).
+					for _, x in { -1, 1 } do
+						for _, y in { -1, 1 } do
+							for _, z in { -1, 1 } do
+								local point = (frame * CFrame.new(door.size * Vector3.new(x, y, z) / 2)).Position
+								local inside = false
+								for _, zone in Houses.garageClear do
+									local grown = zone.size + Vector3.new(0.2, 0.8, 0.2)
+									inside = inside or HouseService.insideBox(CFrame.new(zone.offset), grown, point)
+								end
+								t.expect(`step {step} corner {describe(point)} clear: {inside}`)
+									.toBe(`step {step} corner {describe(point)} clear: true`)
+							end
+						end
+					end
+				end
 			end)
 		end)
 	end)

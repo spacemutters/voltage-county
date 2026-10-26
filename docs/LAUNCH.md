@@ -205,7 +205,9 @@ can't either), so they are typed in once by hand, and the place keeps them from 
 3. Click **TextChatService** in the Explorer. In Properties, set **ChatVersion** to **TextChatService** (the place
    still says LegacyChatService; Roblox's newer chat is the one the game is built for, and scripts can't switch it).
    Leave **CreateDefaultTextChannels** ticked.
-4. **File > Publish to Roblox**.
+4. Click **Lighting** in the Explorer. **LightingStyle** should read **Realistic** and **PrioritizeLightingQuality**
+   should be ticked (Claude set both in the place on 2026-10-26; the game's scripts can't change them while it runs).
+5. **File > Publish to Roblox**.
 
 ## 11. Change the game password once (Together, 5 minutes, before the beta)
 

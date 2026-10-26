@@ -26,14 +26,20 @@ if ($notStrict) {
 	Fail "strict mode"
 }
 
-# No real carmaker or model names in game code (CLAUDE.md hard rule 4). List: scripts/banned-names.txt.
+# No real carmaker or model names in game code (CLAUDE.md hard rule 4), and no real building, architect, street or
+# neighbourhood the city takes after. Lists: scripts/banned-names.txt, scripts/banned-city-names.txt (the second is
+# not part of the AI Car Designer's brand list below).
 Write-Host "== brand names" -ForegroundColor Cyan
 $patterns = Get-Content scripts/banned-names.txt | Where-Object { $_.Trim() -and -not $_.StartsWith("#") }
+$cityPatterns = Get-Content scripts/banned-city-names.txt | Where-Object { $_.Trim() -and -not $_.StartsWith("#") }
 $allFiles = Get-ChildItem src, tests -Recurse -File | Where-Object { $_.FullName -notmatch "\\Vendor\\" }
-$hits = $allFiles | Select-String -Pattern "\b($($patterns -join '|'))\b"
+# A name counts whole wherever it stands, also inside an identifier: "_" and "-" separate words like a space does
+# (so "marine_stadium" and "ocean-drive" are caught), and a space in a pattern matches any of the three.
+$joined = (@($patterns) + @($cityPatterns) | ForEach-Object { $_.Trim().Replace(" ?", "[ _-]?").Replace(" ", "[ _-]") }) -join '|'
+$hits = $allFiles | Select-String -Pattern "(?<![A-Za-z0-9])($joined)(?![A-Za-z0-9])"
 if ($hits) {
 	$hits | ForEach-Object { Write-Host "  $($_.Path):$($_.LineNumber): $($_.Line.Trim())" }
-	Fail "brand names (real carmaker or model name in game code)"
+	Fail "brand names (a real carmaker, model, building or place name in game code)"
 }
 
 # The game checks AI text against its own copy of that list (src/shared/Util/BrandNames.luau, ROT13 so the check

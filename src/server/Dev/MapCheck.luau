@@ -12,7 +12,12 @@
 --      ms; each call must stay under 5 ms);
 --   6. checks every night light (parts tagged Config/Environment nightLights.tag) has a kind Services/DayNightService
 --      knows and its day colour, and every MapLayout feature has its model under Generated.Features; it notes how
---      many night lights of each kind and how many trees the map holds.
+--      many night lights of each kind and how many trees the map holds;
+--   7. the city (Dev/City): notes its sites, core claims, old-look fallbacks and building parts by district and the
+--      Skyline model; fails on a one-off that found no site, on more parts in view at once than Config/Environment
+--      budget.inViewParts (the phone gate, MapCheck.inView), on a night light, sign, light or ad unit inside a SLIM
+--      model, on a Skyline model that isn't Persistent or is over its budget, and on palms built as parts-only
+--      stand-ins (their mesh templates missing from ServerStorage.CityAssets).
 -- It also confirms the Ground and Roads models stream as Persistent (so a fast car never outruns its road).
 --
 -- Edit-mode tool only (CLAUDE.md hard rule 9). Run it from MCP execute_luau (Edit datamodel) or the command bar:
@@ -28,12 +33,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local City = require(ReplicatedStorage.Shared.Config.City)
 local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 local Graph = require(ReplicatedStorage.Shared.Road.Graph)
 local MapBuilder = require(script.Parent.MapBuilder)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
 local Pathfind = require(ReplicatedStorage.Shared.Road.Pathfind)
+local Perf = require(ReplicatedStorage.Shared.Config.Perf)
 local RoadGraph = require(ReplicatedStorage.Shared.Config.RoadGraph)
+local Scenery = require(script.Parent.City.Scenery)
 
 export type Report = {
 	ok: boolean,
@@ -68,6 +76,7 @@ local SETTINGS = {
 	routeBudgetMs = 5, -- each Pathfind.route call must take less than this (PLAN.md Phase 2)
 	routeRepeats = 3, -- each route is timed this many times and the median kept, so one GC pause can't fail it
 	printLimit = 25, -- lines printed per list (the Report always holds every entry)
+	inViewCell = 128, -- studs: the phone gate bins parts in cells this big (step 7)
 	bridgeWords = { "bridge" }, -- a part is a bridge when its name, or a folder or model above it, has one
 	bridgeAttributes = { "Kind", "RoadKind", "EdgeKind" }, -- ...or one of these attributes says "bridge"
 }
@@ -722,6 +731,202 @@ local function checkStreaming(generated: Instance, report: Report)
 	end
 end
 
+-- The phone gate (Config/Environment budget.inViewParts; docs/city/CITY_PLAN.md §9), pure: the most parts a player
+-- could have streamed in at once. Every part in a Persistent model counts everywhere; every other part counts when its
+-- centre lies within `radius` (Perf.streaming.targetRadius) of the player, taken at each of `points` (the road nodes).
+-- Parts are binned in cells of SETTINGS.inViewCell studs and a cell counts when its centre is in range. Returns the
+-- worst count and where.
+local function inViewParts(
+	specs: { MapBuilder.PartSpec },
+	containers: { MapBuilder.Container },
+	points: { Vector3 },
+	radius: number
+): (number, Vector3?)
+	local persistent: { [string]: boolean } = {}
+	for _, entry in containers do
+		if entry.streaming == Enum.ModelStreamingMode.Persistent then
+			persistent[entry.path] = true
+		end
+	end
+	local known: { [string]: boolean } = {}
+	local function always(folder: string): boolean
+		local cached = known[folder]
+		if cached ~= nil then
+			return cached
+		end
+		local path, found = folder, false
+		while path ~= "" do
+			if persistent[path] then
+				found = true
+				break
+			end
+			local slash = string.find(path, "/[^/]*$")
+			path = if slash then string.sub(path, 1, slash - 1) else ""
+		end
+		known[folder] = found
+		return found
+	end
+	local cell = SETTINGS.inViewCell
+	local fixed = 0
+	local bins: { [number]: { x: number, z: number, n: number } } = {}
+	local list: { { x: number, z: number, n: number } } = {}
+	for _, spec in specs do
+		if always(spec.folder) then
+			fixed += 1
+			continue
+		end
+		local p = spec.cframe.Position
+		local x, z = math.floor(p.X / cell), math.floor(p.Z / cell)
+		local key = (x + 32768) * 65536 + (z + 32768)
+		local bin = bins[key]
+		if bin == nil then
+			bin = { x = (x + 0.5) * cell, z = (z + 0.5) * cell, n = 0 }
+			bins[key] = bin
+			table.insert(list, bin)
+		end
+		bin.n += 1
+	end
+	local worst, at = 0, nil
+	local reach = radius * radius
+	for _, point in points do
+		local sum = 0
+		for _, bin in list do
+			local dx, dz = bin.x - point.X, bin.z - point.Z
+			if dx * dx + dz * dz <= reach then
+				sum += bin.n
+			end
+		end
+		if sum > worst then
+			worst, at = sum, point
+		end
+	end
+	return fixed + worst, at
+end
+
+-- Step 7: the city (Dev/City; docs/city/CITY_PLAN.md §9 and §10). From a fresh plan (step 1 shows a build is the
+-- plan): its sites, core claims, old-look fallbacks and building parts by district, the Skyline model and the one-offs
+-- (one that found no site fails); the phone gate on the planned parts (over budget fails). On the built map: every SLIM
+-- model holds still parts only (no night light, sign, light or ad unit: they change at runtime), and the Skyline model
+-- is Persistent and within its budget.
+local function checkCity(generated: Instance, report: Report)
+	local plan = MapBuilder.county()
+	local city = plan.city
+	local function byDistrict(counts: { [string]: number }): string
+		local keys: { string } = {}
+		for key in counts do
+			table.insert(keys, key)
+		end
+		table.sort(keys)
+		local out: { string } = {}
+		for _, key in keys do
+			table.insert(out, `{if key == "" then "no district" else key} {counts[key]}`)
+		end
+		return if #out > 0 then table.concat(out, ", ") else "none"
+	end
+	table.insert(
+		report.notes,
+		`city: {#plan.sites} sites, {city.claims} core claims; building parts by district: {byDistrict(city.parts)}`
+	)
+	table.insert(report.notes, `city: plots left to the old look (no archetype fits them): {byDistrict(city.legacy)}`)
+	table.insert(report.notes, `city: plots left open (Config/City openFallback): {byDistrict(city.open)}`)
+	-- No old glass box downtown or on the beach (roast 2026-10-26 point 4): those districts are the city's showcase.
+	for _, district in { "downtown", "beach" } do
+		local boxes = city.legacy[district] or 0
+		if boxes > 0 then
+			table.insert(
+				report.missing,
+				`city: {boxes} old-look box buildings in {district} (Config/City openFallback)`
+			)
+		end
+	end
+	table.insert(report.notes, `city: Skyline {city.skyline} parts; building night lights {city.lights}`)
+	if #city.missing > 0 then
+		table.insert(report.notes, `city: not written yet: {table.concat(city.missing, ", ")}`)
+	end
+	for _, id in city.unplaced do
+		table.insert(report.missing, `city one-off {id}: no site near its anchor (Config/City landmarks)`)
+	end
+
+	local points: { Vector3 } = {}
+	for _, node in RoadGraph.nodes do
+		table.insert(points, node.position)
+	end
+	local parts, at = inViewParts(plan.specs, plan.containers, points, Perf.streaming.targetRadius)
+	local budget = Environment.budget.inViewParts
+	local where = if at then `({format(at.X)}, {format(at.Z)})` else "nowhere"
+	table.insert(report.notes, `in view at once: at most {parts} parts (budget {budget}), near {where}`)
+	if parts > budget then
+		table.insert(report.missing, `{parts} parts in view at once near {where}: over budget.inViewParts {budget}`)
+	end
+
+	local found, slim = pcall(function(): any
+		return (Enum.ModelLevelOfDetail :: any).SLIM
+	end)
+	if found and slim ~= nil then
+		local tag = Environment.nightLights.tag
+		for _, model in generated:GetDescendants() do
+			if not model:IsA("Model") then
+				continue
+			end
+			local read, lod = pcall(function(): any
+				return (model :: any).LevelOfDetail
+			end)
+			if not read or lod ~= slim then
+				continue
+			end
+			for _, inner in model:GetDescendants() do
+				local live = (inner:IsA("BasePart") and inner:HasTag(tag))
+					or inner:IsA("SurfaceGui")
+					or inner:IsA("Light")
+					or inner.ClassName == "AdGui"
+				if live then
+					table.insert(
+						report.missing,
+						`{pathBelow(inner, generated)}: in a SLIM model, but it changes at runtime (night light, sign, light or ad unit)`
+					)
+					break
+				end
+			end
+		end
+	else
+		table.insert(report.notes, "this Studio has no SLIM level of detail; the SLIM models weren't checked")
+	end
+
+	-- Palms the build couldn't clone from their templates (Dev/City/Scenery/Palms): each is about ten parts where the
+	-- plan and the phone gate above count two.
+	local standIns = 0
+	for _, model in generated:GetDescendants() do
+		if model:IsA("Model") and model:GetAttribute(Scenery.Palms.standInAttribute) then
+			standIns += 1
+		end
+	end
+	if standIns > 0 then
+		table.insert(
+			report.missing,
+			`{standIns} palms are parts-only stand-ins: put the templates back in ServerStorage.CityAssets.Palms and rebuild`
+		)
+	end
+
+	local skyline = generated:FindFirstChild(City.skyline.folder)
+	if skyline then
+		if not skyline:IsA("Model") or (skyline :: Model).ModelStreamingMode ~= Enum.ModelStreamingMode.Persistent then
+			table.insert(report.missing, `{City.skyline.folder}: want a Persistent Model`)
+		end
+		local count = 0
+		for _, part in skyline:GetDescendants() do
+			if part:IsA("BasePart") then
+				count += 1
+			end
+		end
+		if count > City.budgets.skyline then
+			table.insert(
+				report.missing,
+				`{City.skyline.folder}: {count} parts, over budgets.skyline {City.budgets.skyline}`
+			)
+		end
+	end
+end
+
 local function generatedFolder(): Instance?
 	local map = Workspace:FindFirstChild("Map")
 	return if map then map:FindFirstChild("Generated") else nil
@@ -761,6 +966,7 @@ end
 local MapCheck = {}
 MapCheck.Geometry = Geometry
 MapCheck.SETTINGS = SETTINGS
+MapCheck.inView = inViewParts
 
 local running = false
 
@@ -828,6 +1034,7 @@ function MapCheck.run(opts: Options?): Report
 		checkReachable(report)
 		timeRoutes(report)
 		checkLooks(generated, report)
+		checkCity(generated, report)
 
 		report.ok = countsMatch
 			and #report.overlaps == 0

@@ -1,0 +1,179 @@
+# The real buildings, architects, developers, streets and neighbourhoods the city takes after (docs/city/ARCHETYPES.md,
+# docs/city/CITY_PLAN.md; decision L6). Inspiration only: their names stay in docs/ and never appear in src/ or tests/
+# (code, comments, instance names, signs). One regular expression per line, matched case-insensitively as whole
+# words, by the same gate step as scripts/banned-names.txt (scripts/check.ps1 and check.sh). Kept apart from that
+# list so the AI Car Designer's own brand check (Util/BrandNames and the backend's copy) doesn't change with it.
+# Everyday words among the inspirations (Atlantis, Palace, Babylon, Colony, Tides, Avalon, Panorama, Marquis,
+# Breakwater, Barnacle, Spear, Alhambra) are kept out by neutral archetype ids and by review instead.
+Miami Beach
+Miami-?Dade
+South Beach
+Ocean Drive
+Collins Avenue
+Lincoln Road
+Brickell
+Wynwood
+Edgewater
+Biscayne
+Coral Gables
+Coconut Grove
+Little Havana
+Little Haiti
+Calle Ocho
+Sunny Isles
+Key Biscayne
+Virginia Key
+Star Island
+Fisher Island
+Allison Island
+Normandy Isles
+Overtown
+Allapattah
+Design District
+Opa-?locka
+Lummus
+Miracle Mile
+Espa.{1,2}ola Way
+Fontainebleau
+Eden Roc
+Carlyle
+Cardozo
+Biltmore
+Versace
+Casuarina
+Freedom Tower
+Waldorf
+Delano
+Bayside Marketplace
+Kaseya
+InterContinental
+Four Seasons
+Bacardi
+Missoni
+Jade Signature
+Southeast Financial
+CenTrust
+Metromover
+PortMiami
+Venetian Causeway
+Museum Garage
+Emanu-?El
+Arquitectonica
+Hadid
+Herzog
+de Meuron
+Lapidus
+Hohauser
+Kiehnel
+Skislewicz
+Swartburg
+Sieger Suarez
+Kobi Karp
+Bjarke Ingels
+Zyscovich
+Brennand
+Merrick
+One Thousand Museum
+Miami Tower
+Knight Center
+Carlos Ott
+Pei Cobb
+# The four supertall landmarks (ARCHETYPES §5, T01 to T04): names not listed above.
+Astoria
+Zaha
+Scorpion Tower
+Bank of America
+I\.? ?M\.? Pei
+Bodas Miani
+Revuelta
+# The beach hotels B07 to B12 (ARCHETYPES §6): names and architects not listed above.
+National Hotel
+Vagabond
+Albert Anis
+Roy France
+Robert A\.? Taylor
+Whitman's Spanish Colony
+# The civic landmarks (ARCHETYPES §9, C01 to C07): their builders, architects and names not listed above.
+Giralda
+Schultze
+Miami News
+Ten Eyck
+August Geiger
+Skyviews
+American Airlines
+Marine Stadium
+Hilario Candela
+Spillis Candela
+Pancoast
+Charles Greco
+Alhambra Water Tower
+Denman Fink
+George Fink
+George A\.? Fuller
+Seville
+Sevilla
+Stone Mountain
+Benjamin Thompson
+Rouse Company
+James Rouse
+AmericanAirlines
+FTX Arena
+Miami Heat
+360 Architecture
+Jack Meyer
+# The downtown towers T15 to T18 (ARCHETYPES §5): their designers, developers and names not listed above.
+Climate Ribbon
+Hugh Dutton
+Swire
+YoungArts
+Carrera-?Justiz
+Johannes Dietz
+Enrique Gutierrez
+Dezervator
+DeSimone
+# The arts district W01 to W05 (ARCHETYPES §8): the walls, gallery, garages and port, their makers not listed above.
+Tony Goldman
+Goldman Properties
+Institute of Contemporary Art
+ICA Miami
+Aranguren
+Gallegos
+Terence Riley
+WORKac
+J\.? ?Mayer ?H
+Nicolas Buff\w*
+Clavel
+Keenen
+Wennett
+Port of Miami
+Fascell
+ZPMC
+# Downtown T05 and T07 to T10 (ARCHETYPES §5): the office tower, the wedge, the sky-court slab, the stair slab and the
+# three-tier tower, their architects, engineers and makers not listed above (Atlantis and Palace are everyday words:
+# kept out by review).
+Wells Fargo Center
+Skidmore
+Owings
+Zahner
+Hervin Romney
+Fort-?Brescia
+Thornton Tomasetti
+Elysee
+# Downtown T11 to T14 (ARCHETYPES §5): the twisting twins, the three-tower podium, the cantilevered slab tower and the
+# finned tower, their names, architects and designers not listed above.
+Grand Bay
+Raymond Jungles
+Laurinda Spear
+Starck
+Viceroy
+Hani Rashid
+Lise Anne Couture
+Asymptote Architecture
+# The beach hotels B02 to B06 (ARCHETYPES §6): their names and architects not listed above (Colony, Breakwater and
+# Tides alone are everyday words: kept out by review, their hotel names listed whole).
+Colony Hotel
+Breakwater Hotel
+Hotel Breakwater
+Tides Hotel
+Essex House
+Murray Dixon

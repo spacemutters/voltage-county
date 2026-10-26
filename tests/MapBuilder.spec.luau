@@ -8,20 +8,28 @@
 -- MapLayout puts it, with its tag, attributes and brand sign, and nothing built on it (Phase 4). The look beyond the
 -- roads (docs/roast-2026-10-24.md point 3): the map within Config/Environment's part budget, role by role; the
 -- ground a patchwork of grass; trees between the configured counts, trunks solid and leaves not, clear of roads,
--- sidewalks, lots, pads, house plots, buildings, features and water; every building with glass, floor bands or
--- piers and a roof edge, some of it lit at night; the hills, parks and features where MapLayout puts them, off the
--- roads. Pure: builds nothing. Runs on small hand-made junctions and on the real county.
+-- sidewalks, lots, pads, house plots, buildings, features and water; every old-facade building with glass and a roof
+-- edge; the city (Dev/City; docs/city/CITY_PLAN.md §10): every site inside its footprint, height and part budget, with
+-- glass and a roof, each archetype placed and within its copies, every one-off built once, neighbours never twins,
+-- no look twice, no two near towers of one height, most of them lit at night, SLIM models holding still parts only, the
+-- Skyline Persistent and within budget, building parts per district, and the phone gate (budget.inViewParts); the
+-- hills, parks and features where MapLayout puts them, off the roads. Pure: builds nothing. Runs on small hand-made
+-- junctions and on the real county.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Brands = require(ReplicatedStorage.Shared.Config.Brands)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
+local City = require(ReplicatedStorage.Shared.Config.City)
+local CityBuilder = require(ServerScriptService.Server.Dev.City.CityBuilder)
 local Dealership = require(ReplicatedStorage.Shared.Config.Dealership)
 local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
 local MapBuilder = require(ServerScriptService.Server.Dev.MapBuilder)
+local MapCheck = require(ServerScriptService.Server.Dev.MapCheck)
 local MapLayout = require(ReplicatedStorage.Shared.Config.MapLayout)
+local Perf = require(ReplicatedStorage.Shared.Config.Perf)
 local RoadGraph = require(ReplicatedStorage.Shared.Config.RoadGraph)
 local World = require(ReplicatedStorage.Shared.Config.World)
 
@@ -959,7 +967,33 @@ return function(t: Harness.Api)
 			within("building", plan.counts.building or 0, BUDGET.buildingParts)
 			within("feature", plan.counts.feature or 0, BUDGET.featureParts)
 			within("ground", plan.counts.ground or 0, BUDGET.groundParts)
+			-- The city (Config/City budgets): the Skyline model and the building night lights hold; building parts per
+			-- district are the plan's shares of buildingParts (CITY_PLAN §9), printed with any district past its share
+			-- so the lead can see where the parts go (buildingParts and mapParts are the limits that fail).
+			local districts: { string } = {}
+			for district, count in plan.city.parts do
+				local share = City.budgets.districts[district]
+				local past = if share and count > share then ` (over its share of {share})` else ""
+				table.insert(districts, `{if district == "" then "no district" else district} {count}{past}`)
+			end
+			table.sort(districts)
+			print(`  MapBuilder: building parts by district: {table.concat(districts, ", ")}`)
+			within("Skyline", plan.city.skyline, City.budgets.skyline)
+			within("building night lights", plan.city.lights, City.budgets.nightLights)
 			report(t, "over budget", over)
+		end)
+
+		-- The phone gate (Config/Environment budget.inViewParts; CITY_PLAN §9): every Persistent part, plus every part
+		-- within the streaming target radius of the worst road node.
+		t.it(`keeps at most {BUDGET.inViewParts} parts in view at once`, function()
+			local points: { Vector3 } = {}
+			for _, node in RoadGraph.nodes do
+				table.insert(points, node.position)
+			end
+			local parts, at = MapCheck.inView(plan.specs, plan.containers, points, Perf.streaming.targetRadius)
+			local where = if at then `({math.round(at.X)}, {math.round(at.Z)})` else "nowhere"
+			print(`  MapBuilder: at most {parts} parts in view at once, near {where}`)
+			t.expect(parts <= BUDGET.inViewParts).toBe(true)
 		end)
 
 		t.it("lays the open land and the green zones in a patchwork of grass shades", function()
@@ -1035,7 +1069,10 @@ return function(t: Harness.Api)
 			)
 		end)
 
-		t.it("gives every building glass, floor bands or piers and a roof edge, some of it lit at night", function()
+		-- The old facade stands only on plots no archetype fits (Config/City districtLooks legacyWeight 0), and with
+		-- Config/City openFallback not even there in a city district (those plots stay open): however few, each still has
+		-- glass and a roof edge proud of it.
+		t.it("gives every old-look building glass and a roof edge, and counts them by district", function()
 			local buildings: { [string]: { [string]: PartSpec } } = {}
 			for _, spec in plan.specs do
 				local id = if spec.role == "building" then string.match(spec.name, "^Building%d+") else nil
@@ -1076,11 +1113,223 @@ return function(t: Harness.Api)
 					end
 				end
 			end
-			print(`  MapBuilder: {count} buildings, {banded} with floor bands or piers, {lit} with lit windows`)
+			local districts: { string } = {}
+			for district, n in plan.city.legacy do
+				table.insert(districts, `{if district == "" then "no district" else district} {n}`)
+			end
+			table.sort(districts)
+			local open: { string } = {}
+			for district, n in plan.city.open do
+				table.insert(open, `{district} {n}`)
+			end
+			table.sort(open)
+			print(
+				`  MapBuilder: {count} old-look buildings ({banded} banded, {lit} lit) on plots no archetype fits: `
+					.. `{if #districts > 0 then table.concat(districts, ", ") else "none"}; plots left open `
+					.. `(Config/City openFallback): {if #open > 0 then table.concat(open, ", ") else "none"}`
+			)
 			report(t, "building", problems)
-			t.expect(count).toBeGreaterThan(100)
-			t.expect(banded).toBeGreaterThan(count / 2)
-			t.expect(lit).toBeGreaterThan(count / 4)
+			-- With openFallback, a city district holds no old-look building at all.
+			if City.openFallback then
+				local stray: { string } = {}
+				for district, n in plan.city.legacy do
+					if district ~= "" then
+						table.insert(stray, `{district}: {n} old-look buildings, though openFallback is on`)
+					end
+				end
+				report(t, "open fallback", stray)
+			end
+		end)
+
+		-- The city (Dev/City; docs/city/CITY_PLAN.md §10). A site's parts are the ones named after it, wherever they are
+		-- filed: its own model, its lights model or the Skyline.
+		local bySite: { [string]: { PartSpec } } = {}
+		for _, spec in plan.specs do
+			local id = if spec.role == "building" then string.match(spec.name, "^B%d+") else nil
+			if id then
+				local list = bySite[id] or {}
+				table.insert(list, spec)
+				bySite[id] = list
+			end
+		end
+		local notReady: { [string]: boolean } = {}
+		for _, line in plan.city.missing do
+			notReady[string.match(line, "^[%w_]+") or line] = true
+		end
+
+		-- Every site built from its archetype stays inside its footprint, its height and its part budget
+		-- (CityBuilder.check, run again on the planned parts), has glass and reaches its roof; no archetype passes its
+		-- copies; and at least one of each archetype placement may draw stands in the county.
+		t.it("builds every city site from its archetype, inside its footprint, height and budget", function()
+			local problems: { string } = {}
+			local copies: { [string]: number } = {}
+			for _, site in plan.sites do
+				local specs: { PartSpec } = bySite[site.id] or {}
+				for _, problem in CityBuilder.check(site, specs) do
+					table.insert(problems, `{site.id} {site.archetype}: {problem}`)
+				end
+				local glass, top = false, -math.huge
+				for _, spec in specs do
+					glass = glass or spec.material == Enum.Material.Glass
+					top = math.max(top, spec.cframe.Y + spec.size.Y / 2)
+				end
+				if not glass then
+					table.insert(problems, `{site.id}: no glass`)
+				end
+				if top < site.height - 1 then
+					table.insert(problems, `{site.id}: its top {top} is short of its height {site.height}`)
+				end
+				if site.band ~= CityBuilder.bandOf(site.height) then
+					table.insert(problems, `{site.id}: band {site.band} for a height of {site.height}`)
+				end
+				copies[site.archetype] = (copies[site.archetype] or 0) + 1
+			end
+			for id, config in City.archetypes do
+				if City.notOnPlots[id] or notReady[id] then
+					continue
+				end
+				local count = copies[id] or 0
+				if count == 0 then
+					table.insert(problems, `{id}: not one in the county`)
+				elseif count > config.maxCopies then
+					table.insert(problems, `{id}: {count} copies, over {config.maxCopies}`)
+				end
+			end
+			print(
+				`  MapBuilder: {#plan.sites} city sites, {plan.city.claims} core claims; not written yet: `
+					.. `{if #plan.city.missing > 0 then table.concat(plan.city.missing, ", ") else "nothing"}`
+			)
+			report(t, "city", problems)
+		end)
+
+		-- Every one-off (Config/City landmarks) whose archetype is written stands once, near its anchor.
+		t.it("builds every one-off once, near its anchor", function()
+			local problems: { string } = {}
+			for _, id in plan.city.unplaced do
+				table.insert(problems, `{id}: found no site near its anchor`)
+			end
+			for _, entry in City.landmarks do
+				if notReady[entry.id] or City.notOnPlots[entry.id] then
+					continue
+				end
+				local found = 0
+				for _, site in plan.sites do
+					if site.archetype == entry.id and site.landmark then
+						found += 1
+						local far = (Vector2.new(site.frame.X, site.frame.Z) - entry.at).Magnitude
+						if far > (entry.radius or City.landmarkRadius) + site.width / 2 + site.depth then
+							table.insert(problems, `{entry.id}: {math.round(far)} studs from its anchor`)
+						end
+					end
+				end
+				if found ~= 1 then
+					table.insert(problems, `{entry.id}: built {found} times as a one-off`)
+				end
+			end
+			report(t, "one-off", problems)
+		end)
+
+		-- Neighbours (beside, across the street, round the corner) never share an archetype, except across the street
+		-- as the last resort, a palette apart and rules.acrossHeight taller or lower; no look (archetype, palette, crown,
+		-- rhythm) twice while its archetype has looks left; no two towers near each other within two floors of one
+		-- height; and most sites light up at night.
+		t.it(
+			"never stands twins side by side, repeats a look or twins a tower's height, and lights most sites",
+			function()
+				local rules = City.rules
+				local problems: { string } = {}
+				local sites = plan.sites
+				for a = 1, #sites do
+					local one = sites[a]
+					for b = a + 1, #sites do
+						local other = sites[b]
+						if
+							one.archetype == other.archetype
+							and CityBuilder.gapBetween(one, other) <= rules.neighbourGap
+						then
+							local apart = rules.acrossHeight * math.max(one.height, other.height) - 0.01
+							local across = one.block ~= other.block
+								and one.variant.palette ~= other.variant.palette
+								and math.abs(one.height - other.height) >= apart
+							if not across then
+								table.insert(problems, `{one.id} and {other.id}: two {one.archetype} side by side`)
+							end
+						end
+						if one.height >= City.bands.T and other.height >= City.bands.T then
+							local far = (Vector2.new(one.frame.X, one.frame.Z) - Vector2.new(
+								other.frame.X,
+								other.frame.Z
+							)).Magnitude
+							if
+								far <= rules.twinRange
+								and math.abs(one.height - other.height) < rules.twinGap - 0.01
+							then
+								table.insert(
+									problems,
+									`{one.id} and {other.id}: towers {math.round(far)} apart, one height`
+								)
+							end
+						end
+					end
+				end
+				local looks: { [string]: string } = {}
+				local copies: { [string]: number } = {}
+				for _, site in sites do
+					copies[site.archetype] = (copies[site.archetype] or 0) + 1
+				end
+				local lit = 0
+				for _, site in sites do
+					local config = City.archetypes[site.archetype]
+					local v = site.variant
+					local key = `{site.archetype}:{v.palette}:{v.crown}:{v.rhythm}`
+					if looks[key] and config.palettes * config.crowns * config.rhythms >= copies[site.archetype] then
+						table.insert(problems, `{site.id} and {looks[key]}: one look`)
+					end
+					looks[key] = site.id
+					local specs: { PartSpec } = bySite[site.id] or {}
+					for _, spec in specs do
+						if spec.tag == Environment.nightLights.tag then
+							lit += 1
+							break
+						end
+					end
+				end
+				print(`  MapBuilder: {lit} of {#sites} city sites light up at night`)
+				report(t, "city rules", problems)
+				t.expect(lit >= 0.4 * #sites).toBe(true)
+			end
+		)
+
+		-- SLIM models hold still parts only (docs/city/TECH.md §6): night lights, signs, lights and ad units change at
+		-- runtime, so they live in each site's lights model. The Skyline model is Persistent.
+		t.it("keeps night lights, signs and lights out of SLIM models, and the Skyline Persistent", function()
+			local slim: { [string]: boolean } = {}
+			local kinds: { [string]: MapBuilder.Container } = {}
+			for _, entry in plan.containers do
+				kinds[entry.path] = entry
+				if entry.lod == "SLIM" then
+					slim[entry.path] = true
+				end
+			end
+			local problems: { string } = {}
+			for _, spec in plan.specs do
+				if slim[spec.folder] and CityBuilder.isLight(spec) then
+					table.insert(problems, `{spec.folder}/{spec.name}: changes at runtime, in a SLIM model`)
+				end
+				if spec.folder == City.skyline.folder then
+					local entry = kinds[spec.folder]
+					if entry == nil or entry.streaming ~= Enum.ModelStreamingMode.Persistent then
+						table.insert(problems, `{spec.folder}: not a Persistent model`)
+					end
+				end
+			end
+			for _, site in plan.sites do
+				local entry = kinds[site.folder]
+				if entry == nil or entry.lod ~= "SLIM" or entry.streaming ~= Enum.ModelStreamingMode.Atomic then
+					table.insert(problems, `{site.folder}: not an Atomic SLIM model`)
+				end
+			end
+			report(t, "slim", problems)
 		end)
 
 		t.it("builds the hills, parks and features where MapLayout puts them, off the roads", function()
@@ -1375,6 +1624,7 @@ return function(t: Harness.Api)
 						table.insert(unknown, `{spec.folder}/{spec.name}`)
 					end
 					local tiled = string.find(spec.folder, "^Buildings/")
+						or string.find(spec.folder, "^BuildingLights/")
 						or string.find(spec.folder, "^Trees/")
 						or string.find(spec.folder, "^Features/")
 					if tiled then
@@ -1388,10 +1638,12 @@ return function(t: Harness.Api)
 			end
 		)
 
+		-- Streetlights only: a city building's facade wash (Dev/City Kit.wash) carries a SurfaceLight of its own and is
+		-- held to its archetype's budget instead (tests/City.spec).
 		t.it("lights at most one streetlight per 200 studs", function()
 			local lit: { Vector3 } = {}
 			for _, spec in plan.specs do
-				if spec.light then
+				if spec.light and spec.role == "light" then
 					table.insert(lit, spec.cframe.Position)
 				end
 			end
