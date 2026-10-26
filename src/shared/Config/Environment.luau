@@ -240,6 +240,47 @@ local Environment = {
 				nightMaterial = Enum.Material.Neon,
 				nightColor = rgb(196, 222, 255),
 			},
+			-- The Miami city's neon (docs/city/CITY_PLAN.md §7.1, colours tested in docs/city/SCENERY.md §8). By day
+			-- each is its part's own colour in SmoothPlastic, a pastel moulding; at night a saturated tube. Never white
+			-- Neon: it blows out.
+			neonPink = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(255, 90, 170),
+			},
+			neonViolet = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(170, 90, 255),
+			},
+			neonAmber = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(255, 170, 60),
+			},
+			neonBlue = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(61, 123, 255),
+			},
+			-- Tower crowns and lanterns: a cool white that stays under the blow-out.
+			crown = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(170, 200, 236),
+			},
+			-- LED strips on balcony and podium edges.
+			ledBlue = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(60, 130, 255),
+			},
+			-- A facade wash: a small fixture part whose SurfaceLight lights the wall above it at night.
+			uplight = {
+				dayMaterial = Enum.Material.SmoothPlastic,
+				nightMaterial = Enum.Material.Neon,
+				nightColor = rgb(255, 196, 150),
+			},
 		} :: { [string]: NightLook },
 	},
 
@@ -256,8 +297,11 @@ local Environment = {
 		mapParts = 16000, -- the whole of Workspace.Map.Generated
 		treeParts = 4800, -- trunks and leaves: about 1,750 trees at 2 or 3 parts each
 		-- glass, floor bands, roof edges, corner piers and roof boxes of about 620 buildings: measured 5,496 on
-		-- 2026-10-24 after capping downtown at 4 floor bands (the whole map stays under mapParts)
-		buildingParts = 5600,
+		-- 2026-10-24 after capping downtown at 4 floor bands (the whole map stays under mapParts). 2026-10-25: the Miami
+		-- city's first two archetypes (Dev/City: standard glass towers and Deco hotels, 45 to 66 parts each, budgets in
+		-- Config/City) stand on about 15 of those plots: measured 5,782. Room is left for a little more; the full city
+		-- needs the bigger budgets docs/city/CITY_PLAN.md §9 proposes (the lead's decision L4, after a perf drive).
+		buildingParts = 6400,
 		featureParts = 200, -- the water tower, the diner and the bridge arches
 		groundParts = 700, -- the ground patchwork, lake beds and banks, mesas and hills
 	},

@@ -23,12 +23,15 @@
 --   Sidewalks                    raised kerbed sidewalks on Cedar Bend and Riverside streets and arterials, cut
 --                                for a driveway flush with the road in front of every pad
 --   Bridges                      railings, supports under raised roads, fill under low raised roads
---   Lots, Buildings              paved lots and buildings along town streets (Models per block, Atomic). Where the
---                                zone has a facade (Config/Environment facades) a building is glass set in from its
---                                footprint, under floor bands that stand proud of it and a roof edge, or past
---                                towerFrom a glass tower with corner piers; some carry a plant box on the roof. Some
---                                buildings' glass is split at a floor line, one piece a night light (it glows from
---                                dusk to dawn). Parks (MapLayout.parks) get none
+--   Lots, Buildings              paved lots and buildings along town streets (Models per block, Atomic). The Miami
+--                                city (Dev/City, Config/City; docs/city/ARCHETYPE_GUIDE.md) decides what stands on
+--                                the plots: its archetypes where it places them (a tower in its own Atomic model
+--                                Buildings/Tower<n>, parts named B<n>...), and on every other plot the old facade:
+--                                where the zone has one (Config/Environment facades) a building is glass set in
+--                                from its footprint, under floor bands that stand proud of it and a roof edge, or
+--                                past towerFrom a glass tower with corner piers; some carry a plant box on the roof.
+--                                Some buildings' glass is split at a floor line, one piece a night light (it glows
+--                                from dusk to dawn). Parks (MapLayout.parks) get none
 --   Landmarks                    the big buildings MapLayout.landmarks names (Models, Atomic); a landmark with a
 --                                signBrand gets the brand's name on a sign on its roof
 --   Features/<id>                MapLayout.features (Models, Atomic): the water tower, the diner and its sign, the
@@ -78,11 +81,15 @@ local Workspace = game:GetService("Workspace")
 local Config = ReplicatedStorage.Shared.Config
 local Ads = require(Config.Ads)
 local Brands = require(Config.Brands)
+local City = require(Config.City)
 local Dealership = require(Config.Dealership)
 local Environment = require(Config.Environment)
 local MapLayoutModule = require(Config.MapLayout)
 local RoadGraphModule = require(Config.RoadGraph)
 local World = require(Config.World)
+
+local CityBuilder = require(script.Parent.City.CityBuilder)
+local MapTypes = require(script.Parent.MapTypes)
 
 ---------------------------------------------------------------------------------------------------------------
 -- Types
@@ -194,89 +201,21 @@ export type EdgeData = {
 export type StyleData = { shoulder: number, sidewalk: number, color: Color3, lineColor: Color3 }
 export type GraphData = { nodes: { NodeData }, edges: { EdgeData }, styles: { [string]: StyleData } }
 
--- What a part is for. Specs and MapCheck group parts by it.
-export type Role =
-	"road" -- a road segment slab (Roads/Segments)
-	| "pad" -- a junction pad piece (Roads/Intersections)
-	| "line" -- paint
-	| "sidewalk"
-	| "ground"
-	| "water"
-	| "ramp" -- a jump ramp
-	| "lot"
-	| "building"
-	| "landmark"
-	| "light" -- streetlight post or head
-	| "support" -- bridge railings, pillars and fill
-	| "location" -- a MapLayout location's tagged part
-	| "prop" -- small things on a location
-	| "spawn"
-	| "displayPad" -- a dealership or used-lot display platform
-	| "sign" -- a dealership brand sign (post and board)
-	| "billboard" -- a billboard's panel or one of its posts (Phase 12)
-	| "tree" -- a tree's trunk or one of its leaf blocks
-	| "feature" -- a part of a MapLayout feature (water tower, diner, bridge arches)
-
--- Text painted on one face of a part (a SurfaceGui with one TextLabel). `center` and `size` are fractions of the
--- face (defaults: centred, TUNING.labelSize); `pixelsPerStud` defaults to TUNING.labelPixelsPerStud (big signs use
--- fewer, so their SurfaceGui stays a sensible size).
-export type LabelSpec = {
-	face: Enum.NormalId,
-	text: string,
-	color: Color3,
-	center: Vector2?,
-	size: Vector2?,
-	pixelsPerStud: number?,
-}
-
--- An AdGui on one face of a part (a billboard's ad unit; Config/Ads). Built switched off: Services/AdsService turns it
--- on at runtime only when ads may be served. `fallbackImage` "" leaves Roblox's default.
-export type AdUnitSpec = { name: string, face: Enum.NormalId, enableVideoAds: boolean, fallbackImage: string }
-
--- `enabled` false builds the Light switched off (a night light's: Services/DayNightService switches it on at dusk).
-export type LightSpec = {
-	kind: "point" | "spot",
-	brightness: number,
-	range: number,
-	angle: number,
-	color: Color3,
-	face: Enum.NormalId,
-	enabled: boolean?,
-}
-
--- One part of the build. `folder` is the container path below Generated ("Roads/Segments"); every container on
--- it is listed in Plan.containers. A part with `parent` set is parented to the part of that name in `folder`
--- (location props hang under their location part).
-export type PartSpec = {
-	folder: string,
-	parent: string?,
-	name: string,
-	class: "Part" | "WedgePart" | "CornerWedgePart" | "SpawnLocation",
-	shape: "block" | "wedge" | "cornerWedge" | "cylinder",
-	role: Role,
-	size: Vector3,
-	cframe: CFrame,
-	color: Color3,
-	material: Enum.Material,
-	collide: boolean,
-	query: boolean,
-	touch: boolean,
-	shadow: boolean,
-	transparency: number,
-	tag: string?,
-	attributes: { [string]: any }?,
-	light: LightSpec?,
-	labels: { LabelSpec }?,
-	adUnit: AdUnitSpec?,
-}
-
-export type Container = { path: string, class: "Folder" | "Model", streaming: Enum.ModelStreamingMode? }
+-- The part specs (Dev/MapTypes, shared with the city builder Dev/City): re-exported here.
+export type Role = MapTypes.Role
+export type LabelSpec = MapTypes.LabelSpec
+export type AdUnitSpec = MapTypes.AdUnitSpec
+export type LightSpec = MapTypes.LightSpec
+export type TextureSpec = MapTypes.TextureSpec
+export type PartSpec = MapTypes.PartSpec
+export type Container = MapTypes.Container
 
 export type Plan = {
 	specs: { PartSpec },
 	containers: { Container },
 	notes: { string }, -- things worth knowing (a road with no room left, a prop that didn't fit...)
 	counts: { [string]: number }, -- parts per role
+	sites: { CityBuilder.Site }, -- the city's sites built from their archetypes (Dev/City), in plan order
 }
 
 ---------------------------------------------------------------------------------------------------------------
@@ -1120,6 +1059,7 @@ type Ctx = {
 	groundAt: (x: number, z: number) -> number,
 	half: number, -- the map's half extent
 	driveways: { [string]: { Span } }, -- by `{edge.id}:{side}`: stretches (along the edge) with no sidewalk
+	sites: { CityBuilder.Site }, -- the city's sites built so far (addCity)
 }
 
 local DEFAULT_STYLE: StyleData = {
@@ -3688,6 +3628,9 @@ local LOT_BLOCKERS: { [string]: boolean } = {
 	feature = true,
 }
 
+-- What a city site keeps low beside (Config/City nearSpotRange).
+local SPOT_KINDS: { [string]: boolean } = { location = true, access = true }
+
 local function inflate(rect: Rect, by: number): Rect
 	return { c = rect.c, u = rect.u, ha = rect.ha + by, hc = rect.hc + by }
 end
@@ -3809,6 +3752,52 @@ local function addBuilding(
 	end
 end
 
+-- What stands on the built plots (Dev/City/CityBuilder; docs/city/CITY_PLAN.md): the city's archetypes where Config/City
+-- places them, each site in its block's model or, a tower, its own Atomic model; the old facade (addBuilding) on
+-- every other plot. A site the city builder can't build is left to the old facade with a note.
+local function addCity(ctx: Ctx, plots: { CityBuilder.Plot })
+	local placement = CityBuilder.place(plots, ctx.layout.seed)
+	local legacy: { CityBuilder.Plot } = table.clone(placement.legacy)
+	local byIndex: { [number]: CityBuilder.Plot } = {}
+	for _, plot in plots do
+		byIndex[plot.index] = plot
+	end
+	for _, site in placement.sites do
+		local specs, problem = CityBuilder.build(site)
+		if specs then
+			container(ctx, site.folder, "Model", Enum.ModelStreamingMode.Atomic)
+			for _, spec in specs do
+				add(ctx, spec)
+			end
+			table.insert(ctx.sites, site)
+		else
+			note(ctx, `city: {problem}; the old look stands there`)
+			for _, index in site.plots do
+				table.insert(legacy, byIndex[index])
+			end
+		end
+	end
+	table.sort(legacy, function(a, b)
+		return a.index < b.index
+	end)
+	local zones = ctx.layout.zones
+	for _, plot in legacy do
+		addBuilding(
+			ctx,
+			plot.folder,
+			plot.index,
+			plot.center,
+			plot.u,
+			plot.buildingDepth,
+			plot.buildingWidth,
+			plot.height,
+			plot.color,
+			zones[plot.zone],
+			plot.shade
+		)
+	end
+end
+
 -- Lots along both sides of every town street and arterial, each one a plot from the sidewalk back to a fixed
 -- depth. The zone's density decides whether a plot gets a building, and it does when the plot is inside that
 -- zone, on flat open ground and clear of everything else. Neighbouring built plots share one paved lot. Every
@@ -3821,6 +3810,7 @@ local function addBuildings(ctx: Ctx, zones: { ZoneData })
 	local reserved = layout.reservedWestOfX or -HUGE
 	local limit = ctx.half - 1
 	local plotDepth = TUNING.setbackMax + TUNING.depthMax
+	local plots: { CityBuilder.Plot } = {}
 
 	local function usable(plot: Rect, frontage: string): ZoneData?
 		local zone = zoneAt(zones, plot.c)
@@ -3913,19 +3903,28 @@ local function addBuildings(ctx: Ctx, zones: { ZoneData })
 					local c = planAt(edge, along + width / 2, side * (front + setback + depth / 2))
 					local colors = zone.buildingColors
 					local color = if #colors > 0 then colors[shade % #colors + 1] else TUNING.landmarkDefaultColor
-					addBuilding(
-						ctx,
-						`Buildings/{blockName}`,
-						buildings,
-						c,
-						edge.u,
-						depth,
-						width - TUNING.buildingGap,
-						height,
-						color,
-						zone,
-						shade
-					)
+					-- The city builder decides what stands here once the whole pass is done (addCity).
+					table.insert(plots, {
+						index = buildings,
+						frontage = frontage,
+						block = face,
+						along = along,
+						width = width,
+						plotDepth = plotDepth,
+						frontStart = planAt(edge, along, side * front),
+						u = edge.u,
+						away = edge.l * side,
+						zone = zone.id,
+						tall = tall,
+						nearSpot = gridHits(ctx.grid, inflate(plot, City.nearSpotRange), SPOT_KINDS, 0),
+						shade = shade,
+						folder = `Buildings/{blockName}`,
+						center = c,
+						buildingDepth = depth,
+						buildingWidth = width - TUNING.buildingGap,
+						height = height,
+						color = color,
+					})
 				else
 					closeRun()
 				end
@@ -3934,6 +3933,7 @@ local function addBuildings(ctx: Ctx, zones: { ZoneData })
 			closeRun()
 		end
 	end
+	addCity(ctx, plots)
 end
 
 ---------------------------------------------------------------------------------------------------------------
@@ -4229,6 +4229,7 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 		end,
 		half = World.mapHalfExtent,
 		driveways = {},
+		sites = {},
 	}
 	local persistent = Enum.ModelStreamingMode.Persistent
 	container(ctx, "Ground", "Model", persistent)
@@ -4285,7 +4286,7 @@ function MapBuilder.planWith(layout: LayoutData, graph: GraphData): Plan
 	for _, spec in ctx.specs do
 		counts[spec.role] = (counts[spec.role] or 0) + 1
 	end
-	return { specs = ctx.specs, containers = ctx.containers, notes = notes, counts = counts }
+	return { specs = ctx.specs, containers = ctx.containers, notes = notes, counts = counts, sites = ctx.sites }
 end
 
 -- The county's full plan from Config/MapLayout and Config/RoadGraph.
@@ -4317,7 +4318,10 @@ local function createPart(spec: PartSpec): BasePart
 		part = spawn
 	else
 		local plain = Instance.new("Part")
-		plain.Shape = if spec.shape == "cylinder" then Enum.PartType.Cylinder else Enum.PartType.Block
+		plain.Shape = if spec.shape == "cylinder"
+			then Enum.PartType.Cylinder
+			elseif spec.shape == "ball" then Enum.PartType.Ball
+			else Enum.PartType.Block
 		part = plain
 	end
 	part.Name = spec.name
@@ -4326,6 +4330,7 @@ local function createPart(spec: PartSpec): BasePart
 	part.Color = spec.color
 	part.Material = spec.material
 	part.Transparency = spec.transparency
+	part.Reflectance = spec.reflectance or 0
 	part.Anchored = true
 	part.CanCollide = spec.collide
 	part.CanQuery = spec.query
@@ -4350,6 +4355,12 @@ local function createPart(spec: PartSpec): BasePart
 			spot.Angle = light.angle
 			spot.Range = light.range
 			instance = spot
+		elseif light.kind == "surface" then
+			local surface = Instance.new("SurfaceLight")
+			surface.Face = light.face
+			surface.Angle = light.angle
+			surface.Range = light.range
+			instance = surface
 		else
 			local point = Instance.new("PointLight")
 			point.Range = light.range
@@ -4380,9 +4391,23 @@ local function createPart(spec: PartSpec): BasePart
 		text.BackgroundTransparency = 1
 		text.Text = label.text
 		text.TextColor3 = label.color
-		text.Font = TUNING.labelFont
+		text.Font = label.font or TUNING.labelFont
 		text.TextScaled = true
 		text.Parent = gui
+	end
+	local textures: { TextureSpec } = spec.textures or {}
+	for i, look in textures do
+		local texture = Instance.new("Texture")
+		texture.Name = `Texture{i}`
+		texture.Face = look.face
+		texture.Texture = look.image
+		texture.StudsPerTileU = look.u
+		texture.StudsPerTileV = look.v
+		texture.OffsetStudsU = look.offsetU or 0
+		texture.OffsetStudsV = look.offsetV or 0
+		texture.Color3 = look.color
+		texture.Transparency = look.transparency or 0
+		texture.Parent = part
 	end
 	local adUnit = spec.adUnit
 	if adUnit then
@@ -4412,6 +4437,10 @@ local function createPart(spec: PartSpec): BasePart
 	end
 	return part
 end
+
+-- One planned part as an instance, unparented (the city previews in docs/city/ARCHETYPE_GUIDE.md build sample sites
+-- with it, exactly as build() would).
+MapBuilder.createPart = createPart
 
 local building = false
 

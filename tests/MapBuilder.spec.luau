@@ -8,15 +8,19 @@
 -- MapLayout puts it, with its tag, attributes and brand sign, and nothing built on it (Phase 4). The look beyond the
 -- roads (docs/roast-2026-10-24.md point 3): the map within Config/Environment's part budget, role by role; the
 -- ground a patchwork of grass; trees between the configured counts, trunks solid and leaves not, clear of roads,
--- sidewalks, lots, pads, house plots, buildings, features and water; every building with glass, floor bands or
--- piers and a roof edge, some of it lit at night; the hills, parks and features where MapLayout puts them, off the
--- roads. Pure: builds nothing. Runs on small hand-made junctions and on the real county.
+-- sidewalks, lots, pads, house plots, buildings, features and water; every old-facade building with glass, floor
+-- bands or piers and a roof edge, some of it lit at night; every Miami city site (Dev/City) inside its footprint,
+-- height and part budget, with glass and a roof, each archetype placed and within its copies; the hills, parks and
+-- features where MapLayout puts them, off the roads. Pure: builds nothing. Runs on small hand-made junctions and on
+-- the real county.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Brands = require(ReplicatedStorage.Shared.Config.Brands)
 local Catalog = require(ReplicatedStorage.Shared.Vehicle.Catalog)
+local City = require(ReplicatedStorage.Shared.Config.City)
+local CityBuilder = require(ServerScriptService.Server.Dev.City.CityBuilder)
 local Dealership = require(ReplicatedStorage.Shared.Config.Dealership)
 local Environment = require(ReplicatedStorage.Shared.Config.Environment)
 local Harness = require(ReplicatedStorage.Shared.Testing.Harness)
@@ -1083,6 +1087,54 @@ return function(t: Harness.Api)
 			t.expect(lit).toBeGreaterThan(count / 4)
 		end)
 
+		-- The Miami city (Dev/City; docs/city/CITY_PLAN.md): every site built from its archetype stays inside its footprint,
+		-- its height and its part budget (CityBuilder.check, run again on the planned parts), has glass and reaches its
+		-- roof; neighbours on one frontage never share an archetype; no archetype passes its copies; and at least one
+		-- of each archetype stands in the county.
+		t.it("builds every city site from its archetype, inside its footprint, height and budget", function()
+			local byFolder: { [string]: { PartSpec } } = {}
+			for _, spec in plan.specs do
+				local list = byFolder[spec.folder] or {}
+				table.insert(list, spec)
+				byFolder[spec.folder] = list
+			end
+			local problems: { string } = {}
+			local copies: { [string]: number } = {}
+			for _, site in plan.sites do
+				local specs: { PartSpec } = {}
+				for _, spec in byFolder[site.folder] or {} do
+					if string.match(spec.name, "^B%d+") == site.id then
+						table.insert(specs, spec)
+					end
+				end
+				for _, problem in CityBuilder.check(site, specs) do
+					table.insert(problems, `{site.id} {site.archetype}: {problem}`)
+				end
+				local glass, top = false, -math.huge
+				for _, spec in specs do
+					glass = glass or spec.material == Enum.Material.Glass
+					top = math.max(top, spec.cframe.Y + spec.size.Y / 2)
+				end
+				if not glass then
+					table.insert(problems, `{site.id}: no glass`)
+				end
+				if top < site.height - 1 then
+					table.insert(problems, `{site.id}: its top {top} is short of its height {site.height}`)
+				end
+				copies[site.archetype] = (copies[site.archetype] or 0) + 1
+			end
+			for id, config in City.archetypes do
+				local count = copies[id] or 0
+				if count == 0 then
+					table.insert(problems, `{id}: not one in the county`)
+				elseif count > config.maxCopies then
+					table.insert(problems, `{id}: {count} copies, over {config.maxCopies}`)
+				end
+			end
+			print(`  MapBuilder: {#plan.sites} city sites`)
+			report(t, "city", problems)
+		end)
+
 		t.it("builds the hills, parks and features where MapLayout puts them, off the roads", function()
 			local byPath: { [string]: PartSpec } = {}
 			local featureParts: { [string]: number } = {}
@@ -1388,10 +1440,12 @@ return function(t: Harness.Api)
 			end
 		)
 
+		-- Streetlights only: a city building's facade wash (Dev/City Kit.wash) carries a SurfaceLight of its own and is
+		-- held to its archetype's budget instead (tests/City.spec).
 		t.it("lights at most one streetlight per 200 studs", function()
 			local lit: { Vector3 } = {}
 			for _, spec in plan.specs do
-				if spec.light then
+				if spec.light and spec.role == "light" then
 					table.insert(lit, spec.cframe.Position)
 				end
 			end
