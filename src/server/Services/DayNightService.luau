@@ -240,9 +240,39 @@ local function findAtmosphere(): Atmosphere
 	return made
 end
 
+-- Lighting's scene settings and effects from Config/Environment dayNight.scene, set once: shadows, sky reflections and
+-- a little contrast and colour (an effect already there under the same name is reused).
+local function applyScene()
+	local scene = DAY_NIGHT.scene
+	Lighting.GlobalShadows = scene.globalShadows
+	Lighting.ShadowSoftness = scene.shadowSoftness
+	Lighting.EnvironmentSpecularScale = scene.environmentSpecularScale
+	Lighting.EnvironmentDiffuseScale = scene.environmentDiffuseScale
+	Lighting.ExposureCompensation = scene.exposureCompensation
+	local grade = scene.colorCorrection
+	local color = Lighting:FindFirstChild(grade.name) or Instance.new("ColorCorrectionEffect")
+	if color:IsA("ColorCorrectionEffect") then
+		color.Name = grade.name
+		color.Contrast = grade.contrast
+		color.Saturation = grade.saturation
+		color.Brightness = grade.brightness
+		color.TintColor = grade.tintColor
+		color.Parent = Lighting
+	end
+	local rays = scene.sunRays
+	local sun = Lighting:FindFirstChild(rays.name) or Instance.new("SunRaysEffect")
+	if sun:IsA("SunRaysEffect") then
+		sun.Name = rays.name
+		sun.Intensity = rays.intensity
+		sun.Spread = rays.spread
+		sun.Parent = Lighting
+	end
+end
+
 -- Boot ---------------------------------------------------------------------------------------------------------------
 
 function DayNightService:Start()
+	applyScene()
 	atmosphere = findAtmosphere()
 	setClock(DAY_NIGHT.startClock)
 

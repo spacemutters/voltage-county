@@ -75,11 +75,12 @@ local function mix(species: string, weight: number): Mix
 	return { species = species, weight = weight }
 end
 
--- The sky by day, the same from mid-morning to late afternoon.
+-- The sky by day, the same from mid-morning to late afternoon. The fill light is kept low so the sun, the shadows and
+-- the sky's reflections give the shapes their edges (2026-10-25: a brighter fill washed every model flat).
 local DAY: Keyframe = {
 	clock = 0,
-	ambient = rgb(98, 102, 110),
-	outdoorAmbient = rgb(136, 138, 142),
+	ambient = rgb(56, 60, 70),
+	outdoorAmbient = rgb(112, 116, 126),
 	fogColor = rgb(192, 208, 224),
 	atmosphereColor = rgb(199, 210, 224),
 	atmosphereDecay = rgb(106, 112, 125),
@@ -135,8 +136,8 @@ local Environment = {
 			{
 				-- Dawn: warm and low.
 				clock = 6.75,
-				ambient = rgb(112, 98, 92),
-				outdoorAmbient = rgb(168, 138, 120),
+				ambient = rgb(76, 66, 64),
+				outdoorAmbient = rgb(140, 116, 104),
 				fogColor = rgb(216, 170, 142),
 				atmosphereColor = rgb(228, 184, 156),
 				atmosphereDecay = rgb(196, 128, 104),
@@ -147,8 +148,8 @@ local Environment = {
 			{
 				-- Golden hour.
 				clock = 17.5,
-				ambient = rgb(118, 102, 92),
-				outdoorAmbient = rgb(178, 142, 118),
+				ambient = rgb(78, 66, 62),
+				outdoorAmbient = rgb(150, 120, 102),
 				fogColor = rgb(228, 172, 134),
 				atmosphereColor = rgb(236, 182, 148),
 				atmosphereDecay = rgb(204, 122, 98),
@@ -174,6 +175,25 @@ local Environment = {
 			offset = 0.25,
 			glare = 0,
 			haze = 1,
+		},
+		-- Set once when the server starts (DayNightService). The place had shadows off and no sky reflections, which
+		-- made every model read flat and soft (2026-10-25). Lighting.Technology isn't scriptable: it is set to Future
+		-- by hand in Studio (docs/LAUNCH.md step 10).
+		scene = {
+			globalShadows = true,
+			shadowSoftness = 0.15, -- 0 = razor-sharp, 1 = blurry
+			environmentSpecularScale = 1, -- sky reflections on paint, glass and metal
+			environmentDiffuseScale = 1, -- light from the sky itself
+			exposureCompensation = 0,
+			-- Effects made under Lighting when missing (one already there with the same name is set to these values).
+			colorCorrection = {
+				name = "SceneColor",
+				contrast = 0.1,
+				saturation = 0.12,
+				brightness = 0,
+				tintColor = rgb(255, 250, 244),
+			},
+			sunRays = { name = "SceneSunRays", intensity = 0.04, spread = 0.8 },
 		},
 	},
 
