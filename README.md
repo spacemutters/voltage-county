@@ -29,7 +29,10 @@ that turns a player's description into a new car.
 Luau (strict mode), Rojo, Wally, Selene, StyLua, react-lua for the UI. Backend: TypeScript, Zod, the Anthropic SDK,
 Supabase, Vercel.
 
+## How it was built
+
+With Claude Code as a pair programmer, one phase at a time. The rules it works to are in `CLAUDE.md`.
+
 ## Running it
 
-Setup, Studio sync and test commands are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). The full build plan is
-[PLAN.md](PLAN.md).
+Setup, Studio sync and test commands are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
