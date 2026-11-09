@@ -193,8 +193,8 @@ function AbilityService.zonesAt(position: Vector3): (boolean, boolean)
 end
 
 -- Whether the caller may use the ability `request.ability` now (server time), and what to tell them. Checked in
--- this order: a real ability id; a car, owned, driven from the Driver seat, not parked; the trim has the
--- ability; nothing running on the car; off cooldown; not in a no-fly zone; flight only inside a flight zone; the
+-- this order: a real ability id; a car, owned, driven from the Driver seat, not parked; nothing running on the car;
+-- whether this trim has the requested ability; off cooldown; not in a no-fly zone; flight only inside a flight zone; the
 -- hop only at the minimum speed. Nothing else in the request counts.
 function AbilityService.decide(request: any, facts: Facts, now: number): (boolean, string)
 	local ability = if type(request) == "table" then request.ability else nil
@@ -209,11 +209,12 @@ function AbilityService.decide(request: any, facts: Facts, now: number): (boolea
 	elseif not facts.tracked then
 		return false, messages.notDriving
 	end
+	if facts.running then
+		return false, messages.busy
+	end
 	local vehicleId, trimId = facts.vehicleId, facts.trimId
 	if vehicleId == nil or trimId == nil or not Abilities.has(vehicleId, trimId, ability) then
 		return false, messages.noAbility[ability]
-	elseif facts.running then
-		return false, messages.busy
 	end
 	local readyAt = facts.readyAt[ability]
 	if readyAt ~= nil and now < readyAt then

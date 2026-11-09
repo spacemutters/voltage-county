@@ -872,7 +872,7 @@ local features: { Feature } = {
 }
 
 -- Display pads. The dealership is an auto mall on both sides of the street south of Cedar Bend Motors (row 6,
--- z = 600, between columns f and g): Ohm Motors in one row behind the showroom facing that street, and the other
+-- z = 600, between columns f and g): Ohm Motors in two rows behind the showroom facing that street, and the other
 -- seven brands across it, filling the block between x = 600..900 and z = 600..900 (MapBuilder clears its
 -- buildings), in four rows facing north. The used lot's numbered spaces stand in a row behind its office, facing
 -- it. Every pad sits inside its block, clear of the streets' sidewalks (a street's sidewalk reaches 23 studs from
@@ -894,16 +894,33 @@ local function section(brandId: string, count: number, centreX: number, z: numbe
 	return { brandId = brandId, pads = padRow(count, centreX, z, yaw) }
 end
 
--- The mall block's two sections per row: six or seven pads each, together centred on x = 750. Rows run 60 studs
--- apart, leaving a 32-stud aisle between them. The seven-pad luxury and exotic rows leave a 9-stud centre gap.
-local MALL_WEST, MALL_EAST, MALL_CENTRE = 684.5, 815.5, 750
+local function sectionRows(
+	brandId: string,
+	countPerRow: number,
+	centreX: number,
+	rows: { number },
+	yaw: number
+): DealershipSection
+	local pads: { CFrame } = {}
+	for _, z in rows do
+		for _, pad in padRow(countPerRow, centreX, z, yaw) do
+			table.insert(pads, pad)
+		end
+	end
+	return { brandId = brandId, pads = pads }
+end
+
+-- The mall block's two sections per row hold six or seven pads. Their centres keep the widest east sections one
+-- stud inside the x = 900 street's sidewalk. Rows run 60 studs apart, leaving a 32-stud aisle between them.
+local MALL_WEST, MALL_EAST, MALL_CENTRE = 684.5, 811, 750
 local MALL_ROWS = { 652, 712, 772, 832 }
 
 local dealership: DealershipLayout = {
 	padSize = DISPLAY_PAD,
 	sections = {
-		-- Ohm Motors, the hero brand: twelve pads behind the showroom (its back wall is at z = 480), facing south.
-		section("ohm", 12, MALL_CENTRE, 530, 180),
+		-- Ohm Motors, the hero brand: two rows behind the showroom (its back wall is at z = 480), facing south.
+		-- Keeping them within the showroom's width leaves the neighbouring city plots undisturbed.
+		sectionRows("ohm", 6, MALL_CENTRE, { 514, 550 }, 180),
 		-- Across the street: the everyday and tuner brands nearest the showroom, the work fleet at the back.
 		section("halden", 6, MALL_WEST, MALL_ROWS[1], 0),
 		section("kaze", 6, MALL_EAST, MALL_ROWS[1], 0),

@@ -1043,7 +1043,8 @@ local function fitMounts(ctx: Ctx)
 		local found = if at
 			then seek(function(p: Vector3): Vector3?
 				local y = surfaceDown(ctx, p.X, p.Z)
-				return if y then Vector3.new(p.X, y + lift, p.Z) else nil
+				-- Never lifted past the body's top (a box-fronted city car's "hood" is its roof).
+				return if y then Vector3.new(p.X, math.min(y + lift, ctx.target.max.Y), p.Z) else nil
 			end, at, { Vector3.zAxis, Vector3.xAxis })
 			else nil
 		if found then

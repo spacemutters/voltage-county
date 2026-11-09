@@ -111,15 +111,17 @@ local Controls = {
 		mode = { Enum.KeyCode.ButtonY },
 		camera = { Enum.KeyCode.ButtonR3 },
 		regen = { Enum.KeyCode.DPadUp },
-		-- Phase 8, bound like the keyboard's T. ButtonR1 was free: the triggers, X, Y, B, R3, D-pad up and A drive,
-		-- and the phone has ButtonL1 (UI/Phone/PhoneConfig keys).
+		-- Phase 8, bound like the keyboard's T. ButtonR1 is contextual to cars with a hitch.
 		hitch = { Enum.KeyCode.ButtonR1 },
 		-- Phase 10, bound like the keyboard's Q. Clicking the left stick (L3) was free and stays under the thumb that
 		-- steers: the triggers, X, Y, B, R3, D-pad up, A and RB drive, LB opens the phone, and A also opens the
 		-- Customize shop in a bay (UI/Customize/Style).
 		ability = { Enum.KeyCode.ButtonL3 },
-		cruiseClimb = { Enum.KeyCode.ButtonR1 },
-		cruiseDescend = { Enum.KeyCode.ButtonL1 },
+		-- While flying only, bound above the driving controls: like the keyboard's Space, climb takes the handbrake's
+		-- X, and descend takes regen's D-pad up (neither applies in the air). Every other button is taken; Start and
+		-- Select are Roblox's own menu buttons.
+		cruiseClimb = { Enum.KeyCode.ButtonX },
+		cruiseDescend = { Enum.KeyCode.DPadUp },
 		-- Roast fixes, bound like the keyboard's. Only the D-pad's down, left and right were free (up is regen), so
 		-- the horn and the indicators get them; the headlights come on by themselves at night, and hazards stay on
 		-- the keyboard.
@@ -144,6 +146,8 @@ local Controls = {
 		ButtonR1 = "RB",
 		ButtonL1 = "LB",
 		ButtonL3 = "L3",
+		ButtonStart = "Menu",
+		ButtonSelect = "View",
 		DPadDown = "D-pad down",
 		DPadLeft = "D-pad left",
 		DPadRight = "D-pad right",

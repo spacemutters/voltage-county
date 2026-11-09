@@ -2014,9 +2014,10 @@ local Vehicles: { [string]: Vehicle } = {
 				acquisition = "dealership",
 				price = 6000000,
 				upgradeFrom = "standard",
-				topSpeedMph = 225,
-				zeroToSixtySec = 1.9,
-				energyMinutes = 18,
+				-- The larger flight battery gives this dearer trim its range edge without challenging the Arc's pace.
+				topSpeedMph = 218,
+				zeroToSixtySec = 2.1,
+				energyMinutes = 26,
 				seats = 2,
 				handling = 0.95,
 				drive = "AWD",
@@ -2085,14 +2086,14 @@ local Vehicles: { [string]: Vehicle } = {
 		},
 	},
 
-	-- A balanced 2+2 sports coupe for fast road trips.
+	-- A balanced electric 2+2 sports coupe for fast road trips.
 	kaze_akeru = {
 		id = "kaze_akeru",
 		brandId = "kaze",
 		displayName = "Kaze Akeru",
 		class = "sports",
 		bodyStyle = "coupe",
-		energy = "fuel",
+		energy = "battery",
 		playerDrivable = true,
 		geometry = {
 			length = 14.5,
@@ -2271,8 +2272,9 @@ local Vehicles: { [string]: Vehicle } = {
 				displayName = "Varzo Longtail",
 				acquisition = "dealership",
 				price = 2450000,
-				topSpeedMph = 235,
-				zeroToSixtySec = 2.1,
+				-- Its advantage is high-speed stability, not more pull than the Arc.
+				topSpeedMph = 220,
+				zeroToSixtySec = 2.2,
 				energyMinutes = 20,
 				seats = 2,
 				handling = 0.95,
@@ -2440,14 +2442,14 @@ local Vehicles: { [string]: Vehicle } = {
 		},
 	},
 
-	-- Aldermoor's long-wheelbase flagship luxury sedan.
+	-- Aldermoor's long-wheelbase electric flagship luxury sedan.
 	aldermoor_ormond = {
 		id = "aldermoor_ormond",
 		brandId = "aldermoor",
 		displayName = "Aldermoor Ormond",
 		class = "luxury",
 		bodyStyle = "sedan",
-		energy = "fuel",
+		energy = "battery",
 		playerDrivable = true,
 		geometry = {
 			length = 17.5,
@@ -2734,14 +2736,14 @@ local Vehicles: { [string]: Vehicle } = {
 		},
 	},
 
-	-- A compact crossover for everyday road and light-trail use.
+	-- A compact electric crossover for everyday road and light-trail use.
 	halden_ambit = {
 		id = "halden_ambit",
 		brandId = "halden",
 		displayName = "Halden Ambit",
 		class = "suv",
 		bodyStyle = "suv",
-		energy = "fuel",
+		energy = "battery",
 		playerDrivable = true,
 		geometry = {
 			length = 14.5,
@@ -2910,7 +2912,8 @@ local Vehicles: { [string]: Vehicle } = {
 				price = 107000,
 				topSpeedMph = 108,
 				zeroToSixtySec = 6.5,
-				energyMinutes = 36,
+				-- Its heavy-duty tank gives it a real edge over the cheaper Brakken Long Range.
+				energyMinutes = 39,
 				seats = 5,
 				handling = 0.4,
 				drive = "AWD",

@@ -214,9 +214,10 @@ return function(t: Harness.Api)
 			t.expect(zones.steering.right).toBe(touch.margin + 2 * touch.steerSize.X + touch.gap)
 			t.expect(zones.pedals.right).toBe(screen.X - touch.margin)
 			-- The pedal block and the Horn / Lights row above it.
+			-- The Horn / Lights row, or the taller up / down lift buttons that take its place while flying.
 			local pedalColumn = math.max(touch.gasSize.Y, touch.brakeSize.Y + touch.gap + touch.handbrakeSize.Y)
 				+ touch.gap
-				+ touch.signalSize.Y
+				+ math.max(touch.signalSize.Y, touch.cruiseLiftSize.Y)
 			t.expect(zones.pedals.top).toBe(screen.Y - touch.margin - pedalColumn)
 			t.expect(zones.pedals.left)
 				.toBe(screen.X - (touch.margin + touch.gasSize.X + touch.gap + touch.brakeSize.X))

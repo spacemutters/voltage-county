@@ -3286,7 +3286,13 @@ local function addBrandSign(ctx: Ctx, folder: string, brandId: string, pads: { C
 	end
 	local centre = CFrame.new(sum / #pads) * first.Rotation
 	local post, board = TUNING.brandSignPost, TUNING.brandSignBoard
-	local back = size.Z / 2 + TUNING.brandSignGap + post.Z / 2 -- behind the pads is local +Z
+	-- A section may use more than one row. Put its one sign behind the rearmost row; for a single row this is the
+	-- same position as before. Behind the pads is local +Z.
+	local furthestBack = -HUGE
+	for _, pad in pads do
+		furthestBack = math.max(furthestBack, centre:PointToObjectSpace(pad.Position).Z)
+	end
+	local back = furthestBack + size.Z / 2 + TUNING.brandSignGap + post.Z / 2
 	local postFrame = centre * CFrame.new(0, post.Y / 2, back)
 	local footprint: Rect =
 		{ c = flat(postFrame.Position), u = flat(first.LookVector).Unit, ha = board.Z / 2, hc = board.X / 2 }

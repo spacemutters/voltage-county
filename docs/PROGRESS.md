@@ -2,6 +2,37 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-11-09 — Cars: 20 new originals, the flying Ohm Vela, a realistic-car pipeline
+
+Davis, 2026-11-08/09: "I want like 20 sports cars, trucks, SUVs ... one of the Tesla Roadster with the similar flying
+stuff. The flying thing is very important" and "we dont want them cartoon or video game looking ... like the greenvile
+one like really really real". Branch `cars-and-flight`. Car roast: docs/roast-cars-2026-11-08.md.
+
+**What changed**
+- 20 new original cars (Config/Vehicles, Codex, reviewed): Ohm Vela, Pip, Lumen, Fieldline; Kaze Zenji, Akeru, Rokku;
+  Montevale Ostria, Varzo; Brannock Mallet, Warden; Aldermoor Esterly, Ormond, Solenne, Graystone; Halden Ambit, Ferro;
+  Ironwood Talus, Bulwark; Northline Haulmate. 54 cars; dealership 56 pads (Ohm in two rows). Names checked: no real model.
+- Real flight, "cruise", for the Ohm Vela Flight (Config/Abilities, Vehicle/Thrusters cruiseStep, AbilityService,
+  AbilityController; Codex, reviewed): Q lifts off to 18 studs and hovers; Space / Left Ctrl climb and descend (gamepad X
+  and D-pad up; touch Up/Down buttons); throttle and steer fly it at up to 140 studs/s under a soft 160-stud ceiling, for
+  45 s; Q again lands it under control. The server validates every start and stop, watches its bounds and forces a
+  landing in a NoFlyZone. Vela Flight is a $6,000,000 dealership upgrade (cash only, like the Arc Boost).
+- Every car: glossy clear-coat paint (gloss 0.2), dark tinted reflective glass, lamp lenses (car roast 1-3).
+- A free realistic-car pipeline (no account): tools/hf_car.py (FLUX.1 schnell studio photo, then Hunyuan3D 2.1 on Hugging
+  Face's public demos), tools/blender_car.py (portable Blender, headless: drops the floor, cuts the wheels out as their own
+  parts, glass overlay, lamp copies, paint mask), tools/paint_mask.py, tools/roblox_upload.py (Open Cloud Model asset),
+  Dev/ArtPass "tinted" drafts (the texture stays under a SurfaceAppearance overlay; Vehicle/Appearance and the pearl
+  effect tint it), tools/make_cars.py (overnight runner; each photo is held for an eye check against real-car likeness).
+- The Vela's body is the realistic one. The other 19 new cars wear Studio-generated bodies for now (each checked by eye;
+  look-alikes of real cars rejected), until the pipeline's free GPU allowance makes their realistic ones.
+
+**Checked in Studio**: full map rebuild, MapCheck ok; harness TESTS: passed=3011 failed=0 (the runner now refreshes client
+code too; Harness.failures keeps the failure lines). Playtest: Vela Flight took off, climbed 30 studs/s to about 115,
+cruised at 140 studs/s, turned, descended and landed on a tower podium; no anti-exploit offences.
+
+**Waiting**: Hugging Face's free GPU allowance (anonymous) ran out after the Vela; the runner retries every 10 minutes.
+A free Hugging Face account (Davis) or its Pro plan ($9/month, 40 GPU-minutes a day) would make all 19 in a day.
+
 ## 2026-11-08 — Launch polish: the open lots, the park lawn, real glass and ground detail, roast fixes
 
 Davis, 2026-11-08: "finish up the development" for the soft launch, then "we want real detail like textures i like the
