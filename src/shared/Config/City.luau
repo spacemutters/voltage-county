@@ -473,6 +473,7 @@ local City = {
 		-- from across the city a grid of mullions turns into a blue checkerboard (roast point 2).
 		gridMaxHeight = 160,
 		gridFrom = 40, -- studs up: the lobby and podium glass below keep their grid
+		paneSpan = 4, -- bays and floors per tile of textures.paneVariety
 		-- A pale or pastel SmoothPlastic wall (a box part) is built in Plaster, stucco that doesn't mirror the blue
 		-- sky: every channel at least stuccoMin and the brightest at least stuccoBright (0..1).
 		stuccoMin = 0.45,
@@ -495,6 +496,10 @@ local City = {
 		-- A wall with one window per tile (88 % wide, 56 % tall, 12 % below the tile's top; tiles start at the face's
 		-- top edge): tinted to the wall's colour over a dark glass part, it makes a punched stucco wall from one part.
 		punched = "rbxassetid://77733097138973",
+		-- Pane variety over the curtain-wall glass (Dev/City/Kit glass; drawn by tools/facade_textures.py, 2026-11-08):
+		-- one tile is kit.paneSpan bays by kit.paneSpan floors, every pane its own (clear, sky, blinds, curtains, a dark
+		-- or a lit room). a: offices and condos; b: homes, with a spandrel band at each pane's foot.
+		paneVariety = { "rbxassetid://94446400373836", "rbxassetid://93229225156562" } :: { string },
 	},
 
 	palettes = {

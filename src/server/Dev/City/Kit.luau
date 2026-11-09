@@ -534,6 +534,26 @@ function Kit.glass(m: Model, name: string, min: Vector3, max: Vector3, color: Co
 				color = o.lines or City.palettes.frame.white,
 			})
 		end
+		-- Curtain-wall glass also wears a pane-variety layer (2026-11-08, Davis: "real detail like textures"): one tile
+		-- per KIT.paneSpan bays and floors, each pane its own (clear, sky, blinds, curtains, a dark or a lit room), so
+		-- no two neighbouring panes match. One of the variants per part, by its name: a stable pick.
+		local curtain = image == City.textures.windowFine
+			or image == City.textures.windowBold
+			or image == City.textures.slabLine
+		local variety = City.textures.paneVariety
+		if curtain and #variety > 0 then
+			local pick = variety[nameSeed(name, m.site.seed) % #variety + 1]
+			for _, face in faces do
+				table.insert(textures, {
+					face = Kit.face(m, face),
+					image = pick,
+					u = (o.u or 6) * KIT.paneSpan,
+					v = (o.v or 12) * KIT.paneSpan,
+					offsetV = o.offsetV,
+					color = Color3.new(1, 1, 1),
+				})
+			end
+		end
 		spec.textures = textures
 	end
 	if o.lit then
