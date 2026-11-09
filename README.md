@@ -1,7 +1,7 @@
 # Voltage County
 
 An original open-world driving and roleplay game for Roblox. A small county with a city, a bay and a drag strip;
-over 30 original cars across eight made-up brands; jobs, a robotaxi fleet, houses to own; and an AI Car Designer
+54 original cars across eight made-up brands; jobs, a robotaxi fleet, houses to own; and an AI Car Designer
 that turns a player's description into a new car.
 
 <p>

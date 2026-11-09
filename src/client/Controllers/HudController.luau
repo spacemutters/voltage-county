@@ -132,6 +132,9 @@ HudController.onHitch = InputController.newSignal()
 -- Fires () when the player presses the touch Boost / Fly button (AbilityController asks the server).
 HudController.onAbility = InputController.newSignal()
 
+-- Fires (lift: number) while the contextual touch cruise controls are held (-1 descend, 0 hold, 1 climb).
+HudController.onCruiseLift = InputController.newSignal()
+
 -- Fires () when the player taps the fleet chip (PhoneController opens the Fleet app; it can't be required here,
 -- since it requires this module).
 HudController.onFleetChipTapped = InputController.newSignal()
@@ -177,6 +180,10 @@ end
 -- The touch Boost / Fly button was pressed: AbilityController takes it from here.
 local function onAbilityPressed()
 	HudController.onAbility:Fire()
+end
+
+local function onCruiseLiftChanged(lift: number)
+	HudController.onCruiseLift:Fire(lift)
 end
 
 -- The fleet chip was tapped: PhoneController opens the Fleet app.
@@ -238,7 +245,11 @@ local function App(props: View)
 		}),
 		-- Unmounted (not just hidden) during a cutscene, so a held pedal or steering zone lets go.
 		TouchControls = if showTouchControls
-			then e(TouchControls, { ability = ability, onAbility = onAbilityPressed })
+			then e(TouchControls, {
+				ability = ability,
+				onAbility = onAbilityPressed,
+				onCruiseLift = onCruiseLiftChanged,
+			})
 			else nil,
 		DevSpawnMenu = if props.showDevMenu
 			then e("Frame", {
@@ -643,6 +654,7 @@ function HudController.setAbility(ability: AbilityChip?)
 		and current.label == ability.label
 		and current.status == ability.status
 		and current.state == ability.state
+		and current.lift == ability.lift
 		and current.fill == ability.fill
 		and current.seconds == ability.seconds
 		and current.busy == ability.busy

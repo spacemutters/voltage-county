@@ -85,7 +85,16 @@ local KINGPIN_CLEARANCE = "KingpinClearance"
 
 -- The art itself (colors, studs and shares, like the greybox shapes' numbers), not gameplay tunables.
 local ART = {
-	glass = { color = Color3.fromRGB(30, 38, 48), material = Enum.Material.Glass, transparency = 0.3 },
+	-- Tinted glass that mirrors the sky and shows the cabin through it (2026-11-08 car roast point 3: the old flat navy
+	-- read as painted slabs).
+	glass = {
+		color = Color3.fromRGB(16, 20, 24),
+		material = Enum.Material.Glass,
+		transparency = 0.25,
+		reflectance = 0.3,
+	},
+	-- A light mesh keeps its texture under a lens that catches the sky (car roast point 2).
+	lens = { material = Enum.Material.SmoothPlastic, reflectance = 0.28 },
 	-- Glow copies of a light mesh are this much larger than it, so they cover it when lit (the brake over the tail).
 	grow = { head = 1.03, tail = 1.03, brake = 1.05 },
 	lampProud = 0.02, -- a box lamp stands this far off the surface it moves onto
@@ -372,7 +381,14 @@ type Draft = {
 	tail: MeshPart?,
 	gear: MeshPart?,
 	wheels: { MeshPart },
+	-- A tinted draft (image-to-3D art, tools/blender_car.py): its body keeps its texture under a paint mask, and its
+	-- lamp meshes are copies of body faces that only shape the glow. The mask's asset ids come from its attributes.
+	tint: Tint?,
 }
+
+-- A tinted draft's attributes (PaintOverlay, PaintRoughness, PaintMetalness): the overlay colour map (alpha 0 where
+-- the paint is), and its roughness and metalness maps.
+type Tint = { overlay: string, roughness: string?, metalness: string? }
 
 local function roleOf(meshName: string): Role?
 	-- Some generations keep list punctuation in their part names ('["painted body panels"_geom'): letters, digits,
@@ -424,6 +440,21 @@ function ArtPass.draftOf(id: string): Model?
 		end
 	end
 	return best
+end
+
+-- A tinted draft's paint mask (its PaintOverlay attribute), or nil for an ordinary draft.
+local function tintOf(model: Model): Tint?
+	local overlay = model:GetAttribute("PaintOverlay")
+	if type(overlay) ~= "string" or overlay == "" then
+		return nil
+	end
+	local roughness = model:GetAttribute("PaintRoughness")
+	local metalness = model:GetAttribute("PaintMetalness")
+	return {
+		overlay = overlay,
+		roughness = if type(roughness) == "string" then roughness else nil,
+		metalness = if type(metalness) == "string" then metalness else nil,
+	}
 end
 
 -- Reads a draft's meshes by role and finds its car frame.
@@ -481,6 +512,7 @@ local function readDraft(id: string, kind: Kind): Draft
 		tail = found.tail,
 		gear = found.gear,
 		wheels = wheels,
+		tint = tintOf(model),
 	}
 end
 
@@ -707,10 +739,22 @@ local function fitBody(ctx: Ctx)
 	if ctx.kind == "car" then
 		local paint = ctx.meshes.paint
 		local finish = Customization.getFinish(Customization.defaults.finish)
+		local tint = ctx.draft.tint
+		if tint then
+			-- The texture stays (glass, tyres, grilles, lamps); the paint is the mask's see-through part, which shows
+			-- the colour Vehicle/Appearance sets on this SurfaceAppearance.
+			local look = Instance.new("SurfaceAppearance")
+			look.ColorMap = tint.overlay
+			look.RoughnessMap = tint.roughness or ""
+			look.MetalnessMap = tint.metalness or ""
+			look.AlphaMode = Enum.AlphaMode.Overlay
+			look.Color = paint.Color
+			look.Parent = paint
+		end
 		paint.TextureID = ""
 		if finish then
 			paint.Material = finish.material
-			paint.Reflectance = finish.reflectance
+			paint.Reflectance = if tint then 0 else finish.reflectance
 		end
 		CollectionService:AddTag(paint, "Paint")
 		local glass = ctx.meshes.glass
@@ -719,7 +763,19 @@ local function fitBody(ctx: Ctx)
 			glass.Color = ART.glass.color
 			glass.Material = ART.glass.material
 			glass.Transparency = ART.glass.transparency
+			glass.Reflectance = ART.glass.reflectance
 			CollectionService:AddTag(glass, "Glass")
+		end
+		for _, role in { "head", "tail" } do
+			local lens = ctx.meshes[role]
+			if lens then
+				lens.Material = ART.lens.material
+				lens.Reflectance = ART.lens.reflectance
+				if tint then
+					-- A copy of the body's own lamp faces: the body draws the lamp, this only shapes the glow.
+					lens.Transparency = 1
+				end
+			end
 		end
 	end
 end
@@ -987,7 +1043,8 @@ local function fitMounts(ctx: Ctx)
 		local found = if at
 			then seek(function(p: Vector3): Vector3?
 				local y = surfaceDown(ctx, p.X, p.Z)
-				return if y then Vector3.new(p.X, y + lift, p.Z) else nil
+				-- Never lifted past the body's top (a box-fronted city car's "hood" is its roof).
+				return if y then Vector3.new(p.X, math.min(y + lift, ctx.target.max.Y), p.Z) else nil
 			end, at, { Vector3.zAxis, Vector3.xAxis })
 			else nil
 		if found then

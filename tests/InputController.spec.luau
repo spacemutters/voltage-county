@@ -190,10 +190,17 @@ return function(t: Harness.Api)
 
 		t.it("binds every keyboard action, and no key to two actions", function()
 			local owner: { [Enum.KeyCode]: string } = {}
+			-- Cruise takes Space only while it is running and binds above the ordinary handbrake action, so this one
+			-- contextual overlap is intentional. Every other shared key is still a failure.
+			local contextualShare = {
+				[Enum.KeyCode.Space] = { handbrake = true, cruiseClimb = true },
+			}
 			for action, keys in Controls.keyboard :: { [string]: { Enum.KeyCode } } do
 				t.expect(#keys > 0).toBe(true)
 				for _, key in keys do
-					t.expect(owner[key]).toBe(nil)
+					local previous = owner[key]
+					local allowed = contextualShare[key]
+					t.expect(previous == nil or (allowed ~= nil and allowed[previous] and allowed[action])).toBe(true)
 					owner[key] = action
 				end
 			end

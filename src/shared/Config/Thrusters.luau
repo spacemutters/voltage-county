@@ -1,5 +1,5 @@
 --!strict
--- How the Arc's thrusters feel (PLAN.md Phase 10; docs/phase-10-contracts.md "Abilities, client"). Read by
+-- How vehicle thrusters feel (PLAN.md Phase 10; docs/phase-10-contracts.md "Abilities, client"). Read by
 -- Vehicle/Thrusters (the forces), Controllers/AbilityController (when they run, the plumes and the hiss) and
 -- tests/Thrusters.spec.
 --
@@ -27,7 +27,7 @@ local Thrusters = {
 	landedWheels = 3,
 	-- How far straight down the height ray reaches from the chassis centre, in studs. Past this the car counts
 	-- as having no ground under it.
-	rayLength = 120,
+	rayLength = 220,
 	-- The server clearing a car's Ability attribute this close to AbilityEndsAt (seconds) counts as the window
 	-- ending, so a flight still lands; any earlier it was cancelled (a reset) and the thrusters stop at once.
 	cancelGraceSeconds = 0.25,
@@ -77,16 +77,39 @@ local Thrusters = {
 		autoLevelRate = 1.5, -- rad/s at most: with no input on an axis, the car drifts back level on it
 	},
 
+	cruise = {
+		takeoffHeight = Abilities.cruise.takeoffHeight,
+		maxSpeed = Abilities.cruise.maxSpeed,
+		climbRate = Abilities.cruise.climbRate,
+		maxHeight = Abilities.cruise.maxHeight,
+		yawRate = Abilities.cruise.yawRate,
+		bankDegrees = Abilities.cruise.bankDegrees,
+		pitchDegrees = Abilities.cruise.pitchDegrees,
+		-- Take-off uses the same critically damped hover spring shape as flight, tuned to reach 18 studs in about 1 s.
+		hoverFrequency = 0.75,
+		hoverDamping = 1,
+		maxHeightError = 24,
+		verticalResponse = 7, -- 1/s: commanded climb and descent speed response
+		ceilingBand = 18, -- studs below maxHeight where upward input is progressively turned into a push down
+		forwardAccel = 55, -- studs/s² at full throttle
+		brakeResponse = 2.8, -- 1/s: brake settles speed across the ground toward a hover
+		overspeedResponse = 4, -- 1/s above maxSpeed
+		spinResponse = 8, -- 1/s: how quickly yaw, bank and pitch follow the input
+		levelRate = 4.5, -- rad/s at most toward the safe bank and pitch attitude
+		inputDeadzone = 0.08,
+	},
+
 	-- The controlled landing after flight. The client keeps it going after AbilityEndsAt until landedWheels touch
 	-- or timeoutSeconds pass (no longer than Config/Abilities flight.landingSeconds). From the hover height it
 	-- takes about 2 s.
 	landing = {
 		descentRate = Abilities.flight.landingDescentRate, -- studs/s
+		cruiseDescentRate = Abilities.cruise.landingDescentRate, -- studs/s
 		flareHeight = 6, -- studs above rest: below this the descent slows in proportion...
 		touchdownSpeed = 5, -- ...down to this, studs/s
 		verticalResponse = 10, -- 1/s: how quickly the descent follows that speed
 		levelRate = 4, -- rad/s at most
-		timeoutSeconds = 5,
+		timeoutSeconds = Abilities.cruise.landingSeconds,
 	},
 
 	-- Cold-gas plumes: ParticleEmitters at the Thruster_L, Thruster_R (rear, pointing back) and Thruster_Down
@@ -113,7 +136,9 @@ local Thrusters = {
 		rates = {
 			boostHop = { rear = 90, down = 60 },
 			flight = { rear = 25, down = 110 },
+			cruise = { rear = 70, down = 95 },
 		} :: { [string]: AbilityRates },
+		cruiseClimbMultiplier = 1.6, -- the downward plume strengthens at full climb input
 	},
 
 	-- The short hiss when an ability starts: a Config/Audio sfx id (asset 0 plays nothing).

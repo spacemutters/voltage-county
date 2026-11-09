@@ -45,13 +45,13 @@ export type Body = {
 	restHeight: number, -- groundDistance when the car stands on its wheels
 }
 
--- Flight input: steer -1..1 (right rolls right), throttle and brake 0..1 (throttle pitches the nose down).
-export type Input = { steer: number, throttle: number, brake: number }
+-- Thruster input: driving axes plus cruise lift (-1 descend .. 1 climb). Flight ignores lift.
+export type Input = { steer: number, throttle: number, brake: number, lift: number }
 
 -- What to add to the car's velocities this step.
 export type Change = { linear: Vector3, angular: Vector3 }
 
-export type Ability = "boostHop" | "flight"
+export type Ability = "boostHop" | "flight" | "cruise"
 
 -- What the thrusters aim for at most (studs/s; hoverHeight in studs): the feel numbers in Config/Thrusters, cut
 -- down to boundsMargin x Config/Abilities.bounds where those are lower.
@@ -62,6 +62,10 @@ export type Limits = {
 	flightDown: number, -- descending, while hovering and landing
 	flightHorizontal: number, -- across the ground: past this the air brake works harder (it never gains)
 	hoverHeight: number, -- above where the car stands on its wheels
+	cruiseUp: number,
+	cruiseDown: number,
+	cruiseHorizontal: number,
+	cruiseHeight: number,
 }
 
 local Thrusters = {}
@@ -88,6 +92,10 @@ function Thrusters.limits(): Limits
 		flightDown = math.min(Config.flight.maxDescent, bound("flight", "maxDownSpeed")),
 		flightHorizontal = bound("flight", "maxHorizontalSpeed"),
 		hoverHeight = math.min(Config.flight.hoverHeight, bound("flight", "maxHeight")),
+		cruiseUp = math.min(Config.cruise.climbRate, bound("cruise", "maxUpSpeed")),
+		cruiseDown = math.min(Config.cruise.climbRate, bound("cruise", "maxDownSpeed")),
+		cruiseHorizontal = math.min(Config.cruise.maxSpeed, bound("cruise", "maxHorizontalSpeed")),
+		cruiseHeight = math.min(Config.cruise.maxHeight, bound("cruise", "maxHeight")),
 	}
 end
 
@@ -95,7 +103,10 @@ local LIMITS = Thrusters.limits()
 
 -- The controlled landing's descent rate after flight, studs/s: Config/Thrusters landing.descentRate, within the
 -- flight descent limit.
-function Thrusters.landingRate(): number
+function Thrusters.landingRate(ability: Ability?): number
+	if ability == "cruise" then
+		return math.min(Config.landing.cruiseDescentRate, LIMITS.cruiseDown)
+	end
 	return math.min(Config.landing.descentRate, LIMITS.flightDown)
 end
 
@@ -260,7 +271,7 @@ function Thrusters.landingStep(rawDt: number, body: Body, ability: Ability?): Ch
 	end
 
 	-- Descend at the landing rate, slowing in proportion over the last flareHeight studs.
-	local rate = Thrusters.landingRate()
+	local rate = Thrusters.landingRate(ability)
 	local height = heightOf(body)
 	if height ~= nil then
 		rate = math.clamp(height * rate / landing.flareHeight, math.min(landing.touchdownSpeed, rate), rate)
@@ -302,6 +313,102 @@ function Thrusters.flightStep(rawDt: number, body: Body, input: Input, landing: 
 	local angular = (flightSpin(body, input) - body.angular) * response(flight.spinResponse, dt)
 
 	return { linear = WORLD_UP * up + airBrake(linear, dt), angular = angular }
+end
+
+-- Cruise -----------------------------------------------------------------------------------------------------
+
+-- The attitude cruise aims for: yaw about world up, with a safe visual bank into the turn and a small pitch in
+-- the direction of lift. The requested attitude is always well inside Config/Abilities.uprightDot.
+local function cruiseSpin(body: Body, input: Input): Vector3
+	local cruise = Config.cruise
+	local steer = math.clamp(input.steer, -1, 1)
+	local lift = math.clamp(input.lift, -1, 1)
+	local flatForward = flatNose(body)
+	local bank = math.rad(cruise.bankDegrees) * steer
+	local pitch = math.rad(cruise.pitchDegrees) * lift
+	local desired = CFrame.lookAt(Vector3.zero, flatForward, WORLD_UP) * CFrame.Angles(pitch, 0, -bank)
+	local desiredUp = desired.UpVector
+	local axis = body.up:Cross(desiredUp)
+	local angle = math.atan2(axis.Magnitude, body.up:Dot(desiredUp))
+	local align = Vector3.zero
+	if angle >= EPSILON then
+		if axis.Magnitude < EPSILON then
+			axis = flatForward
+		end
+		align = axis.Unit * math.min(angle * Config.level.gain, cruise.levelRate)
+	end
+	return align + WORLD_UP * (steer * cruise.yawRate)
+end
+
+-- Throttle adds speed along the flat nose up to maxSpeed; brake settles the whole horizontal velocity toward a
+-- hover. A car that enters cruise too fast is eased back under the cruise limit even with no input.
+local function cruiseHorizontal(body: Body, input: Input, dt: number): Vector3
+	local cruise = Config.cruise
+	local horizontal = Vector3.new(body.linear.X, 0, body.linear.Z)
+	local speed = horizontal.Magnitude
+	local brake = math.clamp(input.brake, 0, 1)
+	local throttle = math.clamp(input.throttle, 0, 1)
+	if brake > cruise.inputDeadzone and speed > EPSILON then
+		local endSpeed = speed * math.exp(-cruise.brakeResponse * brake * dt)
+		return horizontal.Unit * (endSpeed - speed)
+	end
+	if throttle > cruise.inputDeadzone then
+		local target = horizontal + flatNose(body) * (cruise.forwardAccel * throttle * dt)
+		if target.Magnitude > LIMITS.cruiseHorizontal then
+			target = target.Unit * LIMITS.cruiseHorizontal
+		end
+		return target - horizontal
+	end
+	if speed > LIMITS.cruiseHorizontal then
+		local endSpeed = LIMITS.cruiseHorizontal
+			+ (speed - LIMITS.cruiseHorizontal) * math.exp(-cruise.overspeedResponse * dt)
+		return horizontal.Unit * (endSpeed - speed)
+	end
+	return Vector3.zero
+end
+
+-- One step of free flight (or, with `landing`, the existing controlled landing). Neutral lift takes off to the
+-- configured height, then holds the current altitude; lift commands climb or descent. Near the ceiling the
+-- vertical target turns downward, and the end-of-step speed is also cut so it cannot cross maxHeight.
+function Thrusters.cruiseStep(rawDt: number, body: Body, input: Input, landing: boolean?): Change
+	if landing then
+		return Thrusters.landingStep(rawDt, body, "cruise")
+	end
+	local dt = stepDt(rawDt)
+	if dt <= 0 then
+		return NO_CHANGE
+	end
+	local cruise = Config.cruise
+	local linear = body.linear
+	local height = heightOf(body)
+	local groundHeight = body.groundDistance
+	local lift = math.clamp(input.lift, -1, 1)
+	local endVertical: number
+	if height ~= nil and height < cruise.takeoffHeight and math.abs(lift) <= cruise.inputDeadzone then
+		local omega = TWO_PI * cruise.hoverFrequency
+		local error = math.clamp(cruise.takeoffHeight - height, -cruise.maxHeightError, cruise.maxHeightError)
+		local accel = omega * omega * error - 2 * cruise.hoverDamping * omega * linear.Y
+		endVertical = linear.Y + accel * dt
+	else
+		local target = if groundHeight == nil then -LIMITS.cruiseDown else lift * cruise.climbRate
+		if groundHeight ~= nil and groundHeight >= LIMITS.cruiseHeight - cruise.ceilingBand then
+			local ceilingShare =
+				math.clamp((groundHeight - (LIMITS.cruiseHeight - cruise.ceilingBand)) / cruise.ceilingBand, 0, 1)
+			target = math.min(target, -cruise.climbRate * ceilingShare)
+		end
+		endVertical = linear.Y + (target - linear.Y) * response(cruise.verticalResponse, dt)
+	end
+	endVertical = math.clamp(endVertical, -LIMITS.cruiseDown, LIMITS.cruiseUp)
+	if groundHeight ~= nil then
+		endVertical = math.clamp(
+			math.min(endVertical, (LIMITS.cruiseHeight - groundHeight) / dt),
+			-LIMITS.cruiseDown,
+			LIMITS.cruiseUp
+		)
+	end
+	local up = math.max(0, endVertical - linear.Y + body.gravity * dt)
+	local angular = (cruiseSpin(body, input) - body.angular) * response(cruise.spinResponse, dt)
+	return { linear = WORLD_UP * up + cruiseHorizontal(body, input, dt), angular = angular }
 end
 
 return Thrusters

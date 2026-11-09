@@ -69,6 +69,15 @@ local function flightFacts(): AbilityService.Facts
 	return facts
 end
 
+-- The owner driving the Vela Flight anywhere outside a NoFlyZone; cruise does not need a FlightZone.
+local function cruiseFacts(): AbilityService.Facts
+	local facts = hopFacts()
+	facts.vehicleId = "ohm_vela"
+	facts.trimId = "flight"
+	facts.speed = 0
+	return facts
+end
+
 -- Every string in a (nested) messages table.
 local function allStrings(value: any, out: { string })
 	if type(value) == "string" then
@@ -113,22 +122,28 @@ return function(t: Harness.Api)
 			t.expect(flight.cooldownSeconds).toBe(45)
 		end)
 
-		t.it("gives the hop to Arc Boost and Arc Flight and flight to Arc Flight only", function()
+		t.it("gives cruise only to Vela Flight, alongside its boost-hop", function()
 			t.expect(Abilities.byTrim).toEqual({
 				["ohm_arc/boost"] = { "boostHop" },
 				["ohm_arc/flight"] = { "boostHop", "flight" },
+				["ohm_vela/flight"] = { "boostHop", "cruise" },
 			})
 			t.expect(Abilities.has("ohm_arc", "boost", "boostHop")).toBe(true)
 			t.expect(Abilities.has("ohm_arc", "boost", "flight")).toBe(false)
 			t.expect(Abilities.has("ohm_arc", "flight", "flight")).toBe(true)
 			t.expect(Abilities.has("ohm_arc", "performance", "boostHop")).toBe(false)
+			t.expect(Abilities.has("ohm_vela", "flight", "cruise")).toBe(true)
+			t.expect(Abilities.has("ohm_arc", "flight", "cruise")).toBe(false)
 		end)
 
 		t.it("names real trims and real abilities, and nothing else in the catalog has any", function()
 			for key, list in Abilities.byTrim do
 				local vehicleId, trimId = string.match(key, "^([^/]+)/([^/]+)$")
 				t.expect(vehicleId ~= nil and trimId ~= nil).toBe(true)
-				t.expect(Catalog.getTrim(vehicleId :: string, trimId :: string) ~= nil).toBe(true)
+				-- The Vela is added separately; this ability slice intentionally lands first.
+				if key ~= "ohm_vela/flight" then
+					t.expect(Catalog.getTrim(vehicleId :: string, trimId :: string) ~= nil).toBe(true)
+				end
 				for _, ability in list do
 					t.expect(table.find(Abilities.ids, ability) ~= nil).toBe(true)
 				end
@@ -152,23 +167,28 @@ return function(t: Harness.Api)
 			t.expect(Abilities.timing("teleport")).toBe(nil)
 		end)
 
-		t.it("is over (window, landing and settle) well before the same ability is ready again", function()
+		t.it("keeps every timing positive, with non-cruise runs over before their cooldown", function()
 			t.expect(isFinitePositive(Abilities.settleSeconds)).toBe(true)
 			for _, ability in Abilities.ids do
 				local timing = Abilities.timing(ability) :: Abilities.Timing
 				t.expect(isFinitePositive(timing.durationSeconds)).toBe(true)
 				t.expect(isFinitePositive(timing.landingSeconds)).toBe(true)
-				local busy = timing.durationSeconds + timing.landingSeconds + Abilities.settleSeconds
-				t.expect(timing.cooldownSeconds).toBeGreaterThan(busy)
+				if ability ~= "cruise" then
+					local busy = timing.durationSeconds + timing.landingSeconds + Abilities.settleSeconds
+					t.expect(timing.cooldownSeconds).toBeGreaterThan(busy)
+				end
 			end
 		end)
 
 		t.it("keeps every bound and watch number positive and finite", function()
-			local hop, flight = Abilities.bounds.boostHop, Abilities.bounds.flight
+			local hop, flight, cruise = Abilities.bounds.boostHop, Abilities.bounds.flight, Abilities.bounds.cruise
 			for _, value in { hop.maxUpSpeed, hop.maxSpeedGain } do
 				t.expect(isFinitePositive(value)).toBe(true)
 			end
 			for _, value in { flight.maxUpSpeed, flight.maxDownSpeed, flight.maxHorizontalSpeed, flight.maxHeight } do
+				t.expect(isFinitePositive(value)).toBe(true)
+			end
+			for _, value in { cruise.maxUpSpeed, cruise.maxDownSpeed, cruise.maxHorizontalSpeed, cruise.maxHeight } do
 				t.expect(isFinitePositive(value)).toBe(true)
 			end
 			local watch = Abilities.watch
@@ -186,7 +206,9 @@ return function(t: Harness.Api)
 				if table.find(list, "boostHop") ~= nil then
 					local vehicleId, trimId = string.match(key, "^([^/]+)/([^/]+)$")
 					local trim = Catalog.getTrim(vehicleId :: string, trimId :: string)
-					t.expect(trim ~= nil).toBe(true)
+					if key ~= "ohm_vela/flight" then
+						t.expect(trim ~= nil).toBe(true)
+					end
 					if trim ~= nil then
 						local topSpeed = Units.mphToStuds(trim.topSpeedMph)
 						-- Once the allowance ends, a car that hopped at top speed is still under the normal cap.
@@ -200,6 +222,25 @@ return function(t: Harness.Api)
 		t.it("hovers at PLAN.md's 25 studs and leaves room above it", function()
 			t.expect(Abilities.flight.hoverHeight).toBe(PLAN_HOVER_HEIGHT)
 			t.expect(Abilities.bounds.flight.maxHeight).toBeGreaterThan(Abilities.flight.hoverHeight)
+		end)
+
+		t.it("keeps the cruise contract and its server bounds in step", function()
+			local cruise = Abilities.cruise
+			local bounds = Abilities.bounds.cruise
+			t.expect(cruise.takeoffHeight).toBe(18)
+			t.expect(cruise.maxSpeed).toBe(140)
+			t.expect(cruise.yawRate).toBe(1.6)
+			t.expect(cruise.bankDegrees).toBe(25)
+			t.expect(cruise.climbRate).toBe(30)
+			t.expect(cruise.pitchDegrees).toBe(10)
+			t.expect(cruise.maxHeight).toBe(160)
+			t.expect(cruise.durationSeconds).toBe(45)
+			t.expect(cruise.cooldownSeconds).toBe(30)
+			t.expect(bounds.maxUpSpeed).toBeGreaterThan(cruise.climbRate)
+			t.expect(bounds.maxDownSpeed).toBeGreaterThan(cruise.climbRate)
+			t.expect(bounds.maxHorizontalSpeed).toBeGreaterThan(cruise.maxSpeed)
+			t.expect(bounds.maxHeight).toBeGreaterThan(cruise.maxHeight)
+			t.expect(cruise.landingSeconds * cruise.landingDescentRate).toBeGreaterThan(cruise.maxHeight)
 		end)
 
 		t.it("keeps the contract's thruster tunables positive and finite, and the landing within its bounds", function()
@@ -225,6 +266,7 @@ return function(t: Harness.Api)
 			t.expect(attributes.endsAt).toBe("AbilityEndsAt")
 			t.expect(attributes.readyAt.boostHop).toBe("boostHopReadyAt")
 			t.expect(attributes.readyAt.flight).toBe("flightReadyAt")
+			t.expect(attributes.readyAt.cruise).toBe("cruiseReadyAt")
 		end)
 
 		t.it("words every message in plain language", function()
@@ -256,6 +298,16 @@ return function(t: Harness.Api)
 			local hop = flightFacts()
 			hop.speed = Units.mphToStuds(30)
 			t.expect((AbilityService.decide({ ability = "boostHop" }, hop, NOW))).toBe(true)
+		end)
+
+		t.it("lets Vela cruise from standing anywhere outside a no-fly zone", function()
+			local facts = cruiseFacts()
+			facts.position = DOWNTOWN
+			local ok, message = AbilityService.decide({ ability = "cruise" }, facts, NOW)
+			t.expect(ok).toBe(true)
+			t.expect(message).toBe(messages.started.cruise)
+			facts.speed = nil
+			t.expect((AbilityService.decide({ ability = "cruise" }, facts, NOW))).toBe(true)
 		end)
 
 		t.it("refuses a request that isn't an ability", function()
@@ -401,6 +453,11 @@ return function(t: Harness.Api)
 			ok, message = AbilityService.decide({ ability = "flight" }, flight, NOW)
 			t.expect(ok).toBe(false)
 			t.expect(message).toBe(messages.noFlyZone)
+			local cruise = cruiseFacts()
+			cruise.position = NO_FLY
+			ok, message = AbilityService.decide({ ability = "cruise" }, cruise, NOW)
+			t.expect(ok).toBe(false)
+			t.expect(message).toBe(messages.noFlyZone)
 		end)
 
 		t.it("refuses flight outside every FlightZone", function()
@@ -495,6 +552,9 @@ return function(t: Harness.Api)
 			local flight = AbilityService.allowanceFor("flight")
 			t.expect(flight.extraSpeed).toBe(0)
 			t.expect(flight.riseSpeed).toBe(Abilities.bounds.flight.maxUpSpeed + driving)
+			local cruise = AbilityService.allowanceFor("cruise")
+			t.expect(cruise.extraSpeed).toBe(Abilities.bounds.cruise.maxHorizontalSpeed)
+			t.expect(cruise.riseSpeed).toBe(Abilities.bounds.cruise.maxUpSpeed + driving)
 		end)
 
 		t.it("widens a car's limits and never narrows them", function()
@@ -538,6 +598,12 @@ return function(t: Harness.Api)
 				local bounds = AbilityService.watchBounds("flight", broken)
 				t.expect(bounds.maxHorizontalSpeed).toBe(still.maxHorizontalSpeed)
 			end
+			local cruise = Abilities.bounds.cruise
+			local cruiseBounds = AbilityService.watchBounds("cruise", 0)
+			t.expect(cruiseBounds.maxUpSpeed).toBe(cruise.maxUpSpeed + driving)
+			t.expect(cruiseBounds.maxDownSpeed).toBe(cruise.maxDownSpeed)
+			t.expect(cruiseBounds.maxHorizontalSpeed).toBe(cruise.maxHorizontalSpeed)
+			t.expect(cruiseBounds.maxHeight).toBe(cruise.maxHeight)
 		end)
 
 		t.it("stops judging speed across the ground once the window is over", function()

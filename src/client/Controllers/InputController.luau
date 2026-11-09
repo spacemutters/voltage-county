@@ -296,6 +296,12 @@ function InputController.getControls(): Types.Controls
 	return InputController.merge(onOff, analog)
 end
 
+-- Cruise temporarily owns Space as lift. Clear a handbrake press InputController may already have seen before
+-- that contextual binding took over, so releasing Space during cruise cannot leave the handbrake stuck on.
+function InputController.releaseHandbrake()
+	table.clear(heldKeys.handbrake)
+end
+
 -- AutoDriver (Studio only) drives through this; while set it wins over every input. nil hands control back.
 function InputController.setOverride(controls: Types.Controls?)
 	override = if controls then table.clone(controls) else nil

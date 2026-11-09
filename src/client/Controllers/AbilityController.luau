@@ -67,6 +67,7 @@ export type Chip = HudController.AbilityChip
 
 local REMOTE_USE = "UseAbility"
 local ACTION_NAME = "VoltageAbility" -- ContextActionService
+local CRUISE_LIFT_ACTION = "VoltageCruiseLift"
 
 -- Config/Abilities, read loosely: it is the ability-server helper's file and only the contract's names are shared.
 local rules: any = Abilities
@@ -84,7 +85,7 @@ local VEHICLE_ATTRIBUTE = "VehicleId"
 local TRIM_ATTRIBUTE = "Trim"
 local CHASSIS = "Chassis"
 local HUB_ATTACHMENT = "WheelFL" -- its height under the chassis centre gives the car's rest height
-local ABILITY_ORDER: { AbilityId } = { "boostHop", "flight" }
+local ABILITY_ORDER: { AbilityId } = { "boostHop", "flight", "cruise" }
 
 -- The attribute holding the server time `id` is usable again: boostHopReadyAt, flightReadyAt.
 local function readyAttribute(id: AbilityId): string
@@ -142,11 +143,14 @@ local ticker: RBXScriptConnection? = nil
 local session: Session? = nil
 local finishedWindow: string? = nil -- "<ability>@<startsAt>" of the last window that ended here: never reopened
 local plumes: { [Model]: PlumeEntry } = {}
+local cruiseLiftBound = false
+local cruiseLiftKeys: { [Enum.KeyCode]: boolean } = {}
+local cruiseTouchLift = 0
 
 -- Pure helpers ---------------------------------------------------------------------------------------------------
 
 local function isAbility(value: any): boolean
-	return value == "boostHop" or value == "flight"
+	return value == "boostHop" or value == "flight" or value == "cruise"
 end
 
 -- The abilities a trim has (Config/Abilities.byTrim["<vehicleId>/<trimId>"]), boost-hop first; {} for none.
@@ -179,6 +183,9 @@ function AbilityController.pick(
 	now: number
 ): AbilityId?
 	local usable: { AbilityId } = {}
+	if table.find(abilities, "cruise") ~= nil then
+		table.insert(usable, "cruise")
+	end
 	if inFlightZone and table.find(abilities, "flight") ~= nil then
 		table.insert(usable, "flight")
 	end
@@ -214,11 +221,13 @@ end
 function AbilityController.chipFor(shown: AbilityId, facts: ChipFacts): Chip
 	local text = Controls.hud.abilityChip
 	local label = text.labels[shown] or shown
+	local lift = facts.active == "cruise" and not facts.landing
 	if facts.active ~= nil or facts.landing then
 		return {
 			label = label,
 			status = if facts.landing then text.landing else text.activeLabels[shown] or label,
 			state = "active",
+			lift = lift,
 			fill = 1,
 			seconds = nil,
 			busy = facts.busy,
@@ -233,12 +242,21 @@ function AbilityController.chipFor(shown: AbilityId, facts: ChipFacts): Chip
 			label = label,
 			status = text.recharging,
 			state = "recharging",
+			lift = false,
 			fill = math.floor(fill * text.ringSteps) / text.ringSteps,
 			seconds = math.ceil(left),
 			busy = facts.busy,
 		}
 	end
-	return { label = label, status = text.ready, state = "ready", fill = 1, seconds = nil, busy = facts.busy }
+	return {
+		label = label,
+		status = text.ready,
+		state = "ready",
+		lift = false,
+		fill = 1,
+		seconds = nil,
+		busy = facts.busy,
+	}
 end
 
 -- Seconds into the hop's push at server time `now`, timed from this client's first push (`firstPush`, nil
@@ -426,11 +444,111 @@ end
 
 -- Thrusters on the driven car -----------------------------------------------------------------------------------
 
+local function cruiseKeyDirection(key: Enum.KeyCode): number
+	if table.find(Controls.keyboard.cruiseClimb, key) or table.find(Controls.gamepad.cruiseClimb, key) then
+		return 1
+	elseif table.find(Controls.keyboard.cruiseDescend, key) or table.find(Controls.gamepad.cruiseDescend, key) then
+		return -1
+	end
+	return 0
+end
+
+local function cruiseLift(): number
+	local lift = cruiseTouchLift
+	for key, held in cruiseLiftKeys do
+		if held then
+			lift += cruiseKeyDirection(key)
+		end
+	end
+	return math.clamp(lift, -1, 1)
+end
+
+local function onCruiseLiftInput(
+	_name: string,
+	state: Enum.UserInputState,
+	input: InputObject
+): Enum.ContextActionResult
+	if UserInputService:GetFocusedTextBox() ~= nil then
+		return Enum.ContextActionResult.Pass
+	end
+	if state == Enum.UserInputState.Begin or state == Enum.UserInputState.Change then
+		cruiseLiftKeys[input.KeyCode] = true
+	elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+		cruiseLiftKeys[input.KeyCode] = nil
+	end
+	return Enum.ContextActionResult.Sink
+end
+
+local function bindCruiseLift()
+	if cruiseLiftBound then
+		return
+	end
+	local keys: { Enum.KeyCode } = {}
+	for _, group in
+		{
+			Controls.keyboard.cruiseClimb,
+			Controls.keyboard.cruiseDescend,
+			Controls.gamepad.cruiseClimb,
+			Controls.gamepad.cruiseDescend,
+		}
+	do
+		for _, key in group do
+			if table.find(keys, key) == nil then
+				table.insert(keys, key)
+			end
+		end
+	end
+	InputController.releaseHandbrake()
+	ContextActionService:BindActionAtPriority(
+		CRUISE_LIFT_ACTION,
+		onCruiseLiftInput,
+		false,
+		Controls.cruiseActionPriority,
+		table.unpack(keys)
+	)
+	cruiseLiftBound = true
+end
+
+local function unbindCruiseLift()
+	if cruiseLiftBound then
+		ContextActionService:UnbindAction(CRUISE_LIFT_ACTION)
+		cruiseLiftBound = false
+	end
+	table.clear(cruiseLiftKeys)
+	cruiseTouchLift = 0
+	InputController.releaseHandbrake()
+end
+
+local function updateCruisePlume(model: Model, lift: number)
+	local entry = plumes[model]
+	local rates = ThrusterConfig.plume.rates.cruise
+	if entry == nil or rates == nil then
+		return
+	end
+	local climb = math.max(lift, 0)
+	local downRate = rates.down * (1 + (ThrusterConfig.plume.cruiseClimbMultiplier - 1) * climb)
+	for _, emitter in entry.emitters do
+		local attachment = emitter.Parent
+		if
+			attachment ~= nil
+			and attachment:IsA("Attachment")
+			and table.find(ThrusterConfig.plume.downNozzles, attachment.Name) ~= nil
+		then
+			emitter.Rate = downRate
+		end
+	end
+end
+
 local function finishSession()
 	local current = session
 	if current == nil then
+		unbindCruiseLift()
 		return
 	end
+	if current.ability == "cruise" then
+		updateCruisePlume(current.car, 0)
+	end
+	unbindCruiseLift()
 	session = nil
 	finishedWindow = `{current.ability}@{current.startsAt}`
 	local connection = current.connection
@@ -472,7 +590,20 @@ local function flightInput(current: Session): Thrusters.Input
 		steer = if armed.steer then controls.steer else 0,
 		throttle = if armed.pitch then controls.throttle else 0,
 		brake = if armed.pitch then controls.brake else 0,
+		lift = 0,
 	}
+end
+
+local function cruiseInput(current: Session): Thrusters.Input
+	local controls = InputController.getControls()
+	local input: Thrusters.Input = {
+		steer = controls.steer,
+		throttle = controls.throttle,
+		brake = controls.brake,
+		lift = cruiseLift(),
+	}
+	updateCruisePlume(current.car, input.lift)
+	return input
 end
 
 local function stepSession(dt: number)
@@ -509,12 +640,18 @@ local function stepSession(dt: number)
 			local elapsed, firstPush = AbilityController.hopElapsed(current.pushStartedAt, now)
 			current.pushStartedAt = firstPush
 			change = Thrusters.hopStep(dt, body, elapsed, startSpeed)
-		else
+		elseif current.ability == "flight" then
 			change = Thrusters.flightStep(dt, body, flightInput(current), false)
+		else
+			change = Thrusters.cruiseStep(dt, body, cruiseInput(current), false)
 		end
 	else
 		if not current.landing then
 			current.landing = true
+			if current.ability == "cruise" then
+				updateCruisePlume(current.car, 0)
+				unbindCruiseLift()
+			end
 			refresh()
 		end
 		local onWheels = grounded >= ThrusterConfig.landedWheels
@@ -570,6 +707,9 @@ local function beginSession(ability: AbilityId, startsAt: number, endsAt: number
 		connection = nil,
 	}
 	session = opened
+	if ability == "cruise" and now <= endsAt then
+		bindCruiseLift()
+	end
 	opened.connection = RunService.PreSimulation:Connect(stepSession)
 	refresh()
 end
@@ -605,16 +745,18 @@ end
 -- waiting, or a window or landing still running).
 function AbilityController.request(ability: AbilityId?): boolean?
 	local current = car
-	if busy or current == nil or #carAbilities == 0 or session ~= nil then
+	local now = Workspace:GetServerTimeNow()
+	local running = session
+	local stopping = running ~= nil and running.ability == "cruise" and not running.landing and now <= running.endsAt
+	if busy or current == nil or #carAbilities == 0 or (running ~= nil and not stopping) then
 		return nil
 	end
 	updateZone()
-	local now = Workspace:GetServerTimeNow()
 	local readyAt: { [string]: number? } = {}
 	for _, id in carAbilities do
 		readyAt[id] = readyAtOf(current, id :: AbilityId)
 	end
-	local chosen = ability or AbilityController.pick(carAbilities, inZone, readyAt, now)
+	local chosen = if stopping then "cruise" else ability or AbilityController.pick(carAbilities, inZone, readyAt, now)
 	if chosen == nil then
 		return nil
 	end
@@ -687,6 +829,7 @@ end
 
 local function stopWatching()
 	finishSession()
+	unbindCruiseLift()
 	for _, connection in carConnections do
 		connection:Disconnect()
 	end
@@ -928,6 +1071,14 @@ function AbilityController:Start()
 
 	HudController.onAbility:Connect(function()
 		task.spawn(AbilityController.request)
+	end)
+	HudController.onCruiseLift:Connect(function(lift: number)
+		local current = session
+		cruiseTouchLift = if current ~= nil
+				and current.ability == "cruise"
+				and not current.landing
+			then math.clamp(lift, -1, 1)
+			else 0
 	end)
 
 	-- The server moved the car (anti-exploit reset or unstuck): no thrust on top of that.

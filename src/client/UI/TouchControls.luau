@@ -237,7 +237,11 @@ local function AbilityButton(props: Placement & { ability: Hud.AbilityChip, onPr
 	})
 end
 
-local function TouchControls(props: { ability: Hud.AbilityChip?, onAbility: (() -> ())? })
+local function TouchControls(props: {
+	ability: Hud.AbilityChip?,
+	onAbility: (() -> ())?,
+	onCruiseLift: ((number) -> ())?,
+})
 	local touch = Controls.touch
 	local margin, gap = touch.margin, touch.gap
 	local labels = touch.labels
@@ -250,6 +254,15 @@ local function TouchControls(props: { ability: Hud.AbilityChip?, onAbility: (() 
 		InputController.setTouchState({
 			steer = (if current.right then 1 else 0) - (if current.left then 1 else 0),
 		})
+	end
+	local liftButtons = React.useRef({ climb = false, descend = false })
+	local function liftHeld(direction: "climb" | "descend", held: boolean)
+		local current = liftButtons.current :: { climb: boolean, descend: boolean }
+		current[direction] = held
+		local onCruiseLift = props.onCruiseLift
+		if onCruiseLift then
+			onCruiseLift((if current.climb then 1 else 0) - (if current.descend then 1 else 0))
+		end
 	end
 
 	-- Leaving the driver seat unmounts the controls: make sure nothing stays pressed.
@@ -280,6 +293,7 @@ local function TouchControls(props: { ability: Hud.AbilityChip?, onAbility: (() 
 	local buttonStep = touch.buttonSize.X + gap
 	-- In a car with a thruster ability the gas pedal shortens and the Boost / Fly button sits above it.
 	local ability = props.ability
+	local cruising = ability ~= nil and ability.lift
 	local gasSize = if ability then touch.abilityGasSize else touch.gasSize
 	local onAbility = props.onAbility
 
@@ -345,25 +359,51 @@ local function TouchControls(props: { ability: Hud.AbilityChip?, onAbility: (() 
 				end,
 			})
 			else nil,
-		Horn = e(HoldButton, {
-			anchor = Vector2.new(1, 1),
-			position = UDim2.new(1, -margin, 1, -signalBottom),
-			size = touch.signalSize,
-			label = labels.horn,
-			onHeldChanged = function(held: boolean)
-				VehicleSoundController.setHorn(held, "touch")
-			end,
-		}),
-		Lights = e(TapButton, {
-			anchor = Vector2.new(1, 1),
-			position = UDim2.new(1, -pedalColumn, 1, -signalBottom),
-			size = touch.signalSize,
-			label = labels.lights,
-			active = lightsOn,
-			onTap = function()
-				VehicleSoundController.signal("headlights")
-			end,
-		}),
+		Climb = if cruising
+			then e(HoldButton, {
+				anchor = Vector2.new(1, 1),
+				position = UDim2.new(1, -margin, 1, -signalBottom),
+				size = touch.cruiseLiftSize,
+				label = labels.climb,
+				onHeldChanged = function(held: boolean)
+					liftHeld("climb", held)
+				end,
+			})
+			else nil,
+		Descend = if cruising
+			then e(HoldButton, {
+				anchor = Vector2.new(1, 1),
+				position = UDim2.new(1, -pedalColumn, 1, -signalBottom),
+				size = touch.cruiseLiftSize,
+				label = labels.descend,
+				onHeldChanged = function(held: boolean)
+					liftHeld("descend", held)
+				end,
+			})
+			else nil,
+		Horn = if not cruising
+			then e(HoldButton, {
+				anchor = Vector2.new(1, 1),
+				position = UDim2.new(1, -margin, 1, -signalBottom),
+				size = touch.signalSize,
+				label = labels.horn,
+				onHeldChanged = function(held: boolean)
+					VehicleSoundController.setHorn(held, "touch")
+				end,
+			})
+			else nil,
+		Lights = if not cruising
+			then e(TapButton, {
+				anchor = Vector2.new(1, 1),
+				position = UDim2.new(1, -pedalColumn, 1, -signalBottom),
+				size = touch.signalSize,
+				label = labels.lights,
+				active = lightsOn,
+				onTap = function()
+					VehicleSoundController.signal("headlights")
+				end,
+			})
+			else nil,
 		Exit = e(TapButton, {
 			anchor = Vector2.new(1, 0),
 			position = UDim2.new(1, -margin, 0, margin),

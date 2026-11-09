@@ -54,6 +54,11 @@ local function writePearls()
 		local from, to = colorsOf(part)
 		if from ~= nil and to ~= nil then
 			part.Color = from:Lerp(to, mix)
+			-- A tinted body shows its paint through its SurfaceAppearance (Dev/ArtPass tinted drafts).
+			local look = part:FindFirstChildOfClass("SurfaceAppearance")
+			if look then
+				look.Color = part.Color
+			end
 			-- Read back: a part stores its color in whole 0..255 steps, and removePearl compares with what is stored.
 			pearl.from, pearl.written = from, part.Color
 		end
@@ -105,6 +110,10 @@ local function removePearl(instance: Instance)
 	pearlCount -= 1
 	if pearl.written ~= nil and instance.Color == pearl.written then
 		instance.Color = pearl.from
+		local look = instance:FindFirstChildOfClass("SurfaceAppearance")
+		if look then
+			look.Color = pearl.from
+		end
 	end
 	updateHeartbeat()
 end

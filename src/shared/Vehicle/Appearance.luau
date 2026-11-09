@@ -495,6 +495,13 @@ local function paintBody(model: Model, r: Resolved)
 			descendant.Color = color
 			descendant.Material = r.finish.material
 			descendant.Reflectance = r.finish.reflectance
+			-- A tinted body (Dev/ArtPass tinted drafts) shows the paint through its SurfaceAppearance's mask; its own
+			-- roughness map gives the gloss.
+			local look = descendant:FindFirstChildOfClass("SurfaceAppearance")
+			if look then
+				look.Color = color
+				descendant.Reflectance = 0
+			end
 			if r.shift ~= nil then
 				setPearl(descendant, color, r.shift)
 			end
