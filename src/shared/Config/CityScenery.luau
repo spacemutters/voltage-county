@@ -611,7 +611,8 @@ local CityScenery = {
 		-- Parts (every one counts in the map's and the phone's budgets): about 390 planned. When it runs out the least
 		-- important pieces drop first: the shrubs, then the bollards, the groves, the paths, the promenade's lamps and
 		-- palms; the plazas and their props come first.
-		budget = 400,
+		-- 2026-11-08: 400 to 560 for six more groves (roast leftover: the lawn read as a bare field).
+		budget = 560,
 		root = "BayfrontPark",
 		lightsRoot = "BayfrontParkLights",
 		tile = 500, -- studs per tile model
@@ -845,6 +846,13 @@ local CityScenery = {
 			-- The two widest bare stretches of lawn (seen from above in Studio, 2026-10-26).
 			{ at = Vector2.new(560, 1080), count = 3, radius = 26, shrubs = 1 },
 			{ at = Vector2.new(-590, 1122), count = 3, radius = 26, shrubs = 1 },
+			-- 2026-11-08: the bare lawn round the fountain and between the plazas (seen from above in Studio).
+			{ at = Vector2.new(180, 1060), count = 4, radius = 26, shrubs = 2 },
+			{ at = Vector2.new(430, 1255), count = 4, radius = 24, shrubs = 2 },
+			{ at = Vector2.new(-110, 1080), count = 3, radius = 22, shrubs = 1 },
+			{ at = Vector2.new(-660, 1262), count = 4, radius = 24, shrubs = 2 },
+			{ at = Vector2.new(-250, 1270), count = 3, radius = 20, shrubs = 1 },
+			{ at = Vector2.new(780, 1262), count = 4, radius = 24, shrubs = 2 },
 		} :: { ParkGrove },
 		groveSpecies = {
 			{ species = "coconut", weight = 0.5 },
