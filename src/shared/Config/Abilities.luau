@@ -1,5 +1,5 @@
 --!strict
--- Rules for the Arc's thrusters (PLAN.md Phase 10; docs/phase-10-contracts.md "Abilities, server"): which trims
+-- Rules for vehicle thrusters (PLAN.md Phase 10; docs/phase-10-contracts.md "Abilities, server"): which trims
 -- have which ability, the cooldowns, how long each one runs, the hop's minimum speed, the bounds the server holds
 -- a car to while an ability runs and settles, the upright test after it, and what players are told.
 --
@@ -12,7 +12,7 @@
 -- tests/Thrusters.spec checks the feel stays inside `bounds` here, and tests/Ability.spec checks these numbers
 -- fit together and match PLAN.md.
 
-export type AbilityId = "boostHop" | "flight"
+export type AbilityId = "boostHop" | "flight" | "cruise"
 
 -- One ability's timing. Every time is in seconds.
 export type Timing = {
@@ -26,12 +26,13 @@ export type Timing = {
 
 local Abilities = {
 	-- Every ability id, in the order the HUD lists them.
-	ids = { "boostHop", "flight" } :: { AbilityId },
+	ids = { "boostHop", "flight", "cruise" } :: { AbilityId },
 
 	-- Which trims have which abilities, keyed "vehicleId/trimId". Nothing else has any.
 	byTrim = {
 		["ohm_arc/boost"] = { "boostHop" },
 		["ohm_arc/flight"] = { "boostHop", "flight" },
+		["ohm_vela/flight"] = { "boostHop", "cruise" },
 	} :: { [string]: { AbilityId } },
 
 	-- Boost-hop: a forward and upward push for about 2 s, only once the car is moving.
@@ -62,6 +63,23 @@ local Abilities = {
 		landingDescentRate = 15, -- the controlled landing's descent, studs/s (it slows over the last few studs)
 	},
 
+	-- Cruise: free flight for the Vela. It rises to its take-off height, then throttle, steer and lift fly it
+	-- anywhere outside NoFlyZones. The same controlled landing used by flight brings it back down.
+	cruise = {
+		cooldownSeconds = 30,
+		durationSeconds = 45,
+		-- From the ceiling at landingDescentRate takes under 11 s before the flare; this leaves room for the flare.
+		landingSeconds = 14,
+		takeoffHeight = 18, -- studs above where the car stands on its wheels
+		maxSpeed = 140, -- studs/s across the ground
+		yawRate = 1.6, -- rad/s at full steer
+		bankDegrees = 25,
+		climbRate = 30, -- studs/s up or down at full lift input
+		pitchDegrees = 10,
+		maxHeight = 160, -- studs over the ground directly beneath the chassis
+		landingDescentRate = 15, -- studs/s before the flare
+	},
+
 	-- What the server allows while an ability runs and through its landing and settle, in studs/s (maxHeight in
 	-- studs). The owner's client pushes the car (Vehicle/Thrusters); its pushes must keep the car inside these.
 	bounds = {
@@ -86,6 +104,12 @@ local Abilities = {
 			-- Highest the chassis may be above the ground under it while flying and landing (studs): the 25-stud
 			-- flight.hoverHeight above with room for the spring's overshoot.
 			maxHeight = 50,
+		},
+		cruise = {
+			maxUpSpeed = 36, -- above cruise.climbRate, with room for the take-off spring
+			maxDownSpeed = 40, -- above commanded descent and the controlled landing
+			maxHorizontalSpeed = 160, -- above cruise.maxSpeed, with room for feel margin and sampling jitter
+			maxHeight = 180, -- above cruise.maxHeight, which pushes down before this watch limit
 		},
 	},
 
@@ -127,6 +151,7 @@ local Abilities = {
 		readyAt = {
 			boostHop = "boostHopReadyAt",
 			flight = "flightReadyAt",
+			cruise = "cruiseReadyAt",
 		} :: { [string]: string },
 	},
 
@@ -140,6 +165,7 @@ local Abilities = {
 		noAbility = {
 			boostHop = "This car has no boost.",
 			flight = "This car can't fly.",
+			cruise = "This car can't fly.",
 		} :: { [string]: string },
 		busy = "Wait for the landing first.",
 		recharging = "Recharging: %d s", -- whole seconds left
@@ -149,7 +175,9 @@ local Abilities = {
 		started = {
 			boostHop = "Boost!",
 			flight = "Flying!",
+			cruise = "Flying!",
 		} :: { [string]: string },
+		landing = "Landing.",
 		unstuck = "Your car got stuck, so it was moved to the nearest road.",
 		devOnly = "That only works in Studio.",
 		cooldownsReset = "Thruster cooldowns cleared.",
@@ -172,6 +200,8 @@ function Abilities.timing(ability: string): Timing?
 		return Abilities.boostHop
 	elseif ability == "flight" then
 		return Abilities.flight
+	elseif ability == "cruise" then
+		return Abilities.cruise
 	end
 	return nil
 end

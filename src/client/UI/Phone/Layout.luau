@@ -111,7 +111,7 @@ function Layout.touchZones(screen: Vector2): TouchZones
 	-- of the pedals keeps clear of that row too.
 	local pedalHeight = math.max(touch.gasSize.Y, touch.brakeSize.Y + gap + touch.handbrakeSize.Y)
 		+ gap
-		+ touch.signalSize.Y
+		+ math.max(touch.signalSize.Y, touch.cruiseLiftSize.Y)
 	local pedalWidth = touch.gasSize.X + gap + math.max(touch.brakeSize.X, touch.handbrakeSize.X)
 	local buttonsWidth = 3 * touch.buttonSize.X + 2 * gap
 	return {

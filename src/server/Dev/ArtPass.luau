@@ -85,7 +85,16 @@ local KINGPIN_CLEARANCE = "KingpinClearance"
 
 -- The art itself (colors, studs and shares, like the greybox shapes' numbers), not gameplay tunables.
 local ART = {
-	glass = { color = Color3.fromRGB(30, 38, 48), material = Enum.Material.Glass, transparency = 0.3 },
+	-- Tinted glass that mirrors the sky and shows the cabin through it (2026-11-08 car roast point 3: the old flat navy
+	-- read as painted slabs).
+	glass = {
+		color = Color3.fromRGB(16, 20, 24),
+		material = Enum.Material.Glass,
+		transparency = 0.25,
+		reflectance = 0.3,
+	},
+	-- A light mesh keeps its texture under a lens that catches the sky (car roast point 2).
+	lens = { material = Enum.Material.SmoothPlastic, reflectance = 0.28 },
 	-- Glow copies of a light mesh are this much larger than it, so they cover it when lit (the brake over the tail).
 	grow = { head = 1.03, tail = 1.03, brake = 1.05 },
 	lampProud = 0.02, -- a box lamp stands this far off the surface it moves onto
@@ -719,7 +728,15 @@ local function fitBody(ctx: Ctx)
 			glass.Color = ART.glass.color
 			glass.Material = ART.glass.material
 			glass.Transparency = ART.glass.transparency
+			glass.Reflectance = ART.glass.reflectance
 			CollectionService:AddTag(glass, "Glass")
+		end
+		for _, role in { "head", "tail" } do
+			local lens = ctx.meshes[role]
+			if lens then
+				lens.Material = ART.lens.material
+				lens.Reflectance = ART.lens.reflectance
+			end
 		end
 	end
 end

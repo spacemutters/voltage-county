@@ -354,7 +354,7 @@ local REMOTES: { [string]: Spec } = {
 	UseAbility = {
 		kind = "function",
 		direction = "toServer",
-		validate = Check.shape({ ability = Check.oneOf({ "boostHop", "flight" }) }),
+		validate = Check.shape({ ability = Check.oneOf({ "boostHop", "flight", "cruise" }) }),
 		burst = 3,
 		perSecond = 1,
 	},

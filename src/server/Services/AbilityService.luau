@@ -243,6 +243,9 @@ function AbilityService.allowanceFor(ability: string): AntiExploitService.Allowa
 	local driving = AntiExploit.verticalSpeedAllowance
 	if ability == "flight" then
 		return { extraSpeed = 0, riseSpeed = Abilities.bounds.flight.maxUpSpeed + driving }
+	elseif ability == "cruise" then
+		local cruise = Abilities.bounds.cruise
+		return { extraSpeed = cruise.maxHorizontalSpeed, riseSpeed = cruise.maxUpSpeed + driving }
 	end
 	local hop = Abilities.bounds.boostHop
 	return { extraSpeed = hop.maxSpeedGain, riseSpeed = hop.maxUpSpeed + driving }
@@ -262,6 +265,15 @@ function AbilityService.watchBounds(ability: string, startSpeed: number?): Bound
 			maxDownSpeed = flight.maxDownSpeed,
 			maxHorizontalSpeed = math.max(flight.maxHorizontalSpeed, takeOff + Abilities.watch.startSpeedHeadroom),
 			maxHeight = flight.maxHeight,
+		}
+	elseif ability == "cruise" then
+		local cruise = Abilities.bounds.cruise
+		local takeOff = if startSpeed ~= nil and isFinite(startSpeed) then math.max(startSpeed, 0) else 0
+		return {
+			maxUpSpeed = cruise.maxUpSpeed + driving,
+			maxDownSpeed = cruise.maxDownSpeed,
+			maxHorizontalSpeed = math.max(cruise.maxHorizontalSpeed, takeOff + Abilities.watch.startSpeedHeadroom),
+			maxHeight = cruise.maxHeight,
 		}
 	end
 	return { maxUpSpeed = Abilities.bounds.boostHop.maxUpSpeed + driving }
@@ -628,6 +640,26 @@ local function finish(run: Run)
 	settle(run)
 end
 
+-- Ends a cruise window early but keeps its controlled landing, allowance and watch. AbilityEndsAt moves first,
+-- so the owner's client treats the following Ability clear as the normal start of landing rather than a reset.
+local function beginLanding(run: Run): number
+	if not run.windowOpen then
+		local endsAt = run.model:GetAttribute(attributes.endsAt)
+		return if type(endsAt) == "number" then endsAt else serverNow()
+	end
+	run.windowOpen = false
+	cancelTimer(run.endTimer)
+	run.endTimer = nil
+	local endsAt = serverNow()
+	run.model:SetAttribute(attributes.endsAt, endsAt)
+	run.model:SetAttribute(attributes.ability, nil)
+	local timing = Abilities.timing(run.ability) :: Abilities.Timing
+	local oldFinish = run.finishTimer
+	run.finishTimer = task.delay(timing.landingSeconds + Abilities.settleSeconds, finish, run)
+	cancelTimer(oldFinish)
+	return endsAt
+end
+
 -- After an offense or a server move nothing more is judged; the settle check comes settleSeconds from now.
 local function settleSoon(run: Run)
 	local timer = run.finishTimer
@@ -644,6 +676,13 @@ local function sample(run: Run, clock: number)
 		return
 	end
 	local position = chassis.Position
+	if run.windowOpen and run.ability == "cruise" then
+		local _, inNoFly = AbilityService.zonesAt(position)
+		if inNoFly then
+			beginLanding(run)
+			notify(run.player, messages.noFlyZone, "warning")
+		end
+	end
 	local bounds = if run.windowOpen then run.bounds else run.landing
 	local height = if bounds.maxHeight ~= nil then position.Y - MapLayout.groundHeight(position.X, position.Z) else nil
 	local verdict, measured = AbilityService.judge(run.watch, position, clock, height, bounds)
@@ -810,8 +849,35 @@ end
 function AbilityService.useAbility(player: Player, payload: any): Reply
 	local facts, model = gatherFacts(player)
 	local now = serverNow()
-	local ok, message = AbilityService.decide(payload, facts, now)
 	local ability = if type(payload) == "table" then payload.ability else nil
+	local run = if model ~= nil then runs[model] else nil
+	-- A second cruise request is a stop intent. The server still proves this is the owner in the Driver seat of
+	-- the same tracked cruise car; the client never supplies an end time or an outcome.
+	if ability == "cruise" and run ~= nil and run.ability == "cruise" and run.windowOpen then
+		if not facts.isOwner then
+			return { ok = false, message = messages.notOwner }
+		elseif not facts.isDriver then
+			return { ok = false, message = messages.notDriver }
+		elseif not facts.tracked then
+			return { ok = false, message = messages.notDriving }
+		elseif
+			facts.vehicleId == nil
+			or facts.trimId == nil
+			or not Abilities.has(facts.vehicleId, facts.trimId, "cruise")
+		then
+			return { ok = false, message = messages.noAbility.cruise }
+		end
+		local startsAt = model:GetAttribute(attributes.startsAt)
+		local endsAt = beginLanding(run)
+		return {
+			ok = true,
+			message = messages.landing,
+			startsAt = if type(startsAt) == "number" then startsAt else nil,
+			endsAt = endsAt,
+			readyAt = facts.readyAt.cruise,
+		}
+	end
+	local ok, message = AbilityService.decide(payload, facts, now)
 	if not ok or model == nil or not isAbility(ability) then
 		local readyAt = if isAbility(ability) then facts.readyAt[ability] else nil
 		return { ok = false, message = message, readyAt = if readyAt ~= nil and readyAt > now then readyAt else nil }

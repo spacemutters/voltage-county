@@ -340,11 +340,13 @@ local Customization = {
 			id = "gloss",
 			displayName = "Gloss",
 			material = Enum.Material.SmoothPlastic,
-			reflectance = 0.08,
+			-- 2026-11-08 (Davis: "as real as real"; car roast point 1): 0.08 read as matte clay; a clear coat catches the
+			-- sky.
+			reflectance = 0.2,
 			price = 1000,
 		},
 		{ id = "matte", displayName = "Matte", material = Enum.Material.Plastic, reflectance = 0, price = 2500 },
-		{ id = "metallic", displayName = "Metallic", material = Enum.Material.Metal, reflectance = 0.25, price = 3500 },
+		{ id = "metallic", displayName = "Metallic", material = Enum.Material.Metal, reflectance = 0.3, price = 3500 },
 	} :: { Finish },
 
 	-- Finishes only exclusive looks wear (exclusiveWraps `finish`). Never sold: they aren't in `finishes`, so check
@@ -370,7 +372,7 @@ local Customization = {
 			id = "pearl_coat",
 			displayName = "Pearl Coat",
 			material = Enum.Material.SmoothPlastic,
-			reflectance = 0.18,
+			reflectance = 0.32, -- 0.18 until gloss went to 0.2 (finishGap)
 			price = 0,
 		},
 	} :: { Finish },

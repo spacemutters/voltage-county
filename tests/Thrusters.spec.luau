@@ -29,7 +29,7 @@ local GRAVITY = 196.2 -- Roblox's default workspace.Gravity
 local REST_HEIGHT = 1.4 -- an Arc's chassis centre over the ground on its wheels
 local TOLERANCE = 1e-3 -- Vector3 is 32-bit
 local FRAME_RATES = { 30, 60, 240 }
-local NEUTRAL: Thrusters.Input = { steer = 0, throttle = 0, brake = 0 }
+local NEUTRAL: Thrusters.Input = { steer = 0, throttle = 0, brake = 0, lift = 0 }
 
 type Sim = {
 	position: Vector3, -- the chassis centre
@@ -142,6 +142,34 @@ local function runFlight(sim: Sim, seconds: number, fps: number, inputAt: ((numb
 	return stats
 end
 
+type CruiseStats = {
+	maxUp: number,
+	maxDown: number,
+	maxHorizontal: number,
+	maxHeight: number,
+	minUpright: number,
+}
+
+local function runCruise(sim: Sim, seconds: number, fps: number, input: Thrusters.Input): CruiseStats
+	local dt = 1 / fps
+	local stats: CruiseStats = {
+		maxUp = -math.huge,
+		maxDown = 0,
+		maxHorizontal = 0,
+		maxHeight = heightOf(sim),
+		minUpright = sim.rotation.UpVector.Y,
+	}
+	for _ = 1, math.round(seconds * fps) do
+		advance(sim, Thrusters.cruiseStep(dt, bodyOf(sim), input, false), dt)
+		stats.maxUp = math.max(stats.maxUp, sim.linear.Y)
+		stats.maxDown = math.max(stats.maxDown, -sim.linear.Y)
+		stats.maxHorizontal = math.max(stats.maxHorizontal, horizontalSpeed(sim.linear))
+		stats.maxHeight = math.max(stats.maxHeight, heightOf(sim))
+		stats.minUpright = math.min(stats.minUpright, sim.rotation.UpVector.Y)
+	end
+	return stats
+end
+
 type LandingStats = { seconds: number, maxDown: number, cruise: number, touchdown: number }
 
 -- Lands `sim` (landingStep for `ability`) at `fps` until it is down or `limit` seconds pass.
@@ -182,14 +210,22 @@ return function(t: Harness.Api)
 			t.expect(limits.flightHorizontal <= rule(t, "bounds", "flight", "maxHorizontalSpeed") * margin + TOLERANCE)
 				.toBe(true)
 			t.expect(limits.hoverHeight <= rule(t, "bounds", "flight", "maxHeight") * margin + TOLERANCE).toBe(true)
+			t.expect(limits.cruiseUp <= rule(t, "bounds", "cruise", "maxUpSpeed") * margin + TOLERANCE).toBe(true)
+			t.expect(limits.cruiseDown <= rule(t, "bounds", "cruise", "maxDownSpeed") * margin + TOLERANCE).toBe(true)
+			t.expect(limits.cruiseHorizontal <= rule(t, "bounds", "cruise", "maxHorizontalSpeed") * margin + TOLERANCE)
+				.toBe(true)
+			t.expect(limits.cruiseHeight <= rule(t, "bounds", "cruise", "maxHeight") * margin + TOLERANCE).toBe(true)
 			t.expect(Thrusters.landingRate() <= limits.flightDown + TOLERANCE).toBe(true)
+			t.expect(Thrusters.landingRate("cruise") <= limits.cruiseDown + TOLERANCE).toBe(true)
 		end)
 
 		t.it("lets go of the landing before the server's landing allowance ends", function()
 			t.expect(Thrusters.landingTimeout("boostHop") <= rule(t, "boostHop", "landingSeconds")).toBe(true)
 			t.expect(Thrusters.landingTimeout("flight") <= rule(t, "flight", "landingSeconds")).toBe(true)
+			t.expect(Thrusters.landingTimeout("cruise") <= rule(t, "cruise", "landingSeconds")).toBe(true)
 			t.expect(Thrusters.landingTimeout("boostHop")).toBeGreaterThan(0)
 			t.expect(Thrusters.landingTimeout("flight")).toBeGreaterThan(0)
+			t.expect(Thrusters.landingTimeout("cruise")).toBeGreaterThan(0)
 		end)
 
 		t.it("moves the car the same at any mass", function()
@@ -287,6 +323,7 @@ return function(t: Harness.Api)
 					steer = if phase == 0 then 1 elseif phase == 2 then -1 else 0,
 					throttle = if phase == 1 then 1 else 0,
 					brake = if phase == 3 then 1 else 0,
+					lift = 0,
 				}
 			end
 			-- Taking off under the limit across the ground, it stays under it.
@@ -313,16 +350,77 @@ return function(t: Harness.Api)
 				end)
 				return sim.rotation
 			end
-			t.expect(after({ steer = 1, throttle = 0, brake = 0 }).RightVector.Y).toBeLessThan(-0.3)
-			t.expect(after({ steer = -1, throttle = 0, brake = 0 }).RightVector.Y).toBeGreaterThan(0.3)
-			t.expect(after({ steer = 0, throttle = 1, brake = 0 }).LookVector.Y).toBeLessThan(-0.3)
-			t.expect(after({ steer = 0, throttle = 0, brake = 1 }).LookVector.Y).toBeGreaterThan(0.3)
+			t.expect(after({ steer = 1, throttle = 0, brake = 0, lift = 0 }).RightVector.Y).toBeLessThan(-0.3)
+			t.expect(after({ steer = -1, throttle = 0, brake = 0, lift = 0 }).RightVector.Y).toBeGreaterThan(0.3)
+			t.expect(after({ steer = 0, throttle = 1, brake = 0, lift = 0 }).LookVector.Y).toBeLessThan(-0.3)
+			t.expect(after({ steer = 0, throttle = 0, brake = 1, lift = 0 }).LookVector.Y).toBeGreaterThan(0.3)
 		end)
 
 		t.it("drifts back level in flight with no input", function()
 			local sim = newSim(ThrusterConfig.flight.hoverHeight, nil, CFrame.Angles(0, 0, math.rad(50)))
 			runFlight(sim, 2, 60)
 			t.expect(sim.rotation.UpVector.Y).toBeGreaterThan(0.98)
+		end)
+
+		t.it("takes off, then holds the cruise altitude with neutral lift", function()
+			for _, fps in FRAME_RATES do
+				local takeoff = newSim(0)
+				runCruise(takeoff, 2, fps, NEUTRAL)
+				t.expect(heightOf(takeoff)).toBeNear(ThrusterConfig.cruise.takeoffHeight, 1)
+				t.expect(math.abs(takeoff.linear.Y)).toBeLessThan(1)
+				local holding = newSim(80)
+				runCruise(holding, 3, fps, NEUTRAL)
+				t.expect(heightOf(holding)).toBeNear(80, 0.5)
+				t.expect(math.abs(holding.linear.Y)).toBeLessThan(0.5)
+			end
+		end)
+
+		t.it("climbs and descends at the configured cruise rate", function()
+			local rate = ThrusterConfig.cruise.climbRate
+			local climb = newSim(60)
+			local climbStats = runCruise(climb, 2, 60, { steer = 0, throttle = 0, brake = 0, lift = 1 })
+			t.expect(climb.linear.Y).toBeNear(rate, 0.5)
+			t.expect(climbStats.maxUp <= limits.cruiseUp + TOLERANCE).toBe(true)
+			local descend = newSim(100)
+			local descendStats = runCruise(descend, 2, 60, { steer = 0, throttle = 0, brake = 0, lift = -1 })
+			t.expect(descend.linear.Y).toBeNear(-rate, 0.5)
+			t.expect(descendStats.maxDown <= limits.cruiseDown + TOLERANCE).toBe(true)
+		end)
+
+		t.it("never exceeds cruise speed or the ceiling", function()
+			local fast = newSim(60)
+			local speed = runCruise(fast, 6, 60, { steer = 0, throttle = 1, brake = 0, lift = 0 })
+			t.expect(speed.maxHorizontal <= ThrusterConfig.cruise.maxSpeed + TOLERANCE).toBe(true)
+			local high = newSim(ThrusterConfig.cruise.maxHeight - 10)
+			local ceiling = runCruise(high, 5, 60, { steer = 0, throttle = 0, brake = 0, lift = 1 })
+			t.expect(ceiling.maxHeight + REST_HEIGHT <= ThrusterConfig.cruise.maxHeight + TOLERANCE).toBe(true)
+			t.expect(ceiling.maxUp <= limits.cruiseUp + TOLERANCE).toBe(true)
+		end)
+
+		t.it("brakes cruise speed back toward a hover", function()
+			local sim = newSim(60, Vector3.new(0, 0, ThrusterConfig.cruise.maxSpeed))
+			runCruise(sim, 2, 60, { steer = 0, throttle = 0, brake = 1, lift = 0 })
+			t.expect(horizontalSpeed(sim.linear)).toBeLessThan(1)
+		end)
+
+		t.it("yaws with steer, banks safely and never flips", function()
+			local right = newSim(60)
+			local rightStats = runCruise(right, 1, 60, { steer = 1, throttle = 0, brake = 0, lift = 1 })
+			local left = newSim(60)
+			local leftStats = runCruise(left, 1, 60, { steer = -1, throttle = 0, brake = 0, lift = -1 })
+			t.expect(math.abs(right.rotation.LookVector.X)).toBeGreaterThan(0.5)
+			t.expect(right.rotation.LookVector.X * left.rotation.LookVector.X).toBeLessThan(0)
+			t.expect(rightStats.minUpright).toBeGreaterThan(rule(t, "uprightDot"))
+			t.expect(leftStats.minUpright).toBeGreaterThan(rule(t, "uprightDot"))
+		end)
+
+		t.it("lands cruise from the ceiling inside its landing window", function()
+			local allowance = rule(t, "cruise", "landingSeconds")
+			local sim = newSim(ThrusterConfig.cruise.maxHeight, nil, CFrame.Angles(0, 0, math.rad(25)))
+			local stats = runLanding(sim, "cruise", 60, allowance)
+			t.expect(heightOf(sim)).toBeNear(0, TOLERANCE)
+			t.expect(stats.seconds).toBeLessThan(allowance)
+			t.expect(sim.rotation.UpVector.Y).toBeGreaterThan(rule(t, "uprightDot"))
 		end)
 
 		t.it("lands at the landing rate, slows for touchdown and ends upright, even from upside down", function()
@@ -404,12 +502,21 @@ return function(t: Harness.Api)
 			t.expect(touch.abilityGasSize.X).toBe(touch.gasSize.X)
 			t.expect(touch.abilitySize.X <= touch.gasSize.X).toBe(true)
 		end)
+
+		t.it("gives cruise contextual lift controls on every input kind", function()
+			t.expect(Controls.keyboard.cruiseClimb).toEqual({ Enum.KeyCode.Space })
+			t.expect(Controls.keyboard.cruiseDescend).toEqual({ Enum.KeyCode.LeftControl, Enum.KeyCode.Q })
+			t.expect(Controls.gamepad.cruiseClimb).toEqual({ Enum.KeyCode.ButtonR1 })
+			t.expect(Controls.gamepad.cruiseDescend).toEqual({ Enum.KeyCode.ButtonL1 })
+			t.expect(math.min(Controls.touch.cruiseLiftSize.X, Controls.touch.cruiseLiftSize.Y) >= 56).toBe(true)
+		end)
 	end)
 
 	t.describe("AbilityController", function()
 		t.it("reads which trims have which ability from Config/Abilities", function()
 			t.expect(AbilityController.abilitiesFor("ohm_arc", "boost")).toEqual({ "boostHop" })
 			t.expect(AbilityController.abilitiesFor("ohm_arc", "flight")).toEqual({ "boostHop", "flight" })
+			t.expect(AbilityController.abilitiesFor("ohm_vela", "flight")).toEqual({ "boostHop", "cruise" })
 			t.expect(AbilityController.abilitiesFor("ohm_arc", "performance")).toEqual({})
 			t.expect(AbilityController.abilitiesFor(nil, nil)).toEqual({})
 		end)
@@ -425,6 +532,7 @@ return function(t: Harness.Api)
 			t.expect(AbilityController.pick({ "boostHop" }, true, {}, 100)).toBe("boostHop")
 			t.expect(AbilityController.pick({ "flight" }, false, {}, 100)).toBe("flight")
 			t.expect(AbilityController.pick({}, true, {}, 100)).toBe(nil)
+			t.expect(AbilityController.pick({ "boostHop", "cruise" }, false, {}, 100)).toBe("cruise")
 		end)
 
 		t.it("finds a point inside a turned zone volume", function()
@@ -463,6 +571,7 @@ return function(t: Harness.Api)
 				label = text.labels.flight,
 				status = text.ready,
 				state = "ready",
+				lift = false,
 				fill = 1,
 				busy = true,
 			})
@@ -484,6 +593,22 @@ return function(t: Harness.Api)
 				busy = false,
 			})
 			t.expect(landing.status).toBe(text.landing)
+			local cruise = AbilityController.chipFor("cruise", {
+				active = "cruise",
+				landing = false,
+				readyAt = 140,
+				now = 100,
+				busy = false,
+			})
+			t.expect(cruise.lift).toBe(true)
+			local cruiseLanding = AbilityController.chipFor("cruise", {
+				active = "cruise",
+				landing = true,
+				readyAt = 140,
+				now = 100,
+				busy = false,
+			})
+			t.expect(cruiseLanding.lift).toBe(false)
 		end)
 
 		t.it("reads UseAbility replies", function()

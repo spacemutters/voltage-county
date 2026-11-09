@@ -104,6 +104,7 @@ export type AbilityChip = {
 	label: string, -- what a press does: "Boost" or "Fly" (the running ability while one runs)
 	status: string, -- "Ready", "Recharging", "Boosting", "Flying" or "Landing"
 	state: "ready" | "active" | "recharging",
+	lift: boolean, -- active cruise: show the contextual touch climb / descend controls
 	fill: number, -- 0..1: how full the ring is (1 = ready)
 	seconds: number?, -- whole seconds until ready, while recharging
 	busy: boolean, -- a request is with the server

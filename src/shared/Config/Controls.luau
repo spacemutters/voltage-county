@@ -25,6 +25,8 @@ export type KeyboardBindings = {
 	regen: { Enum.KeyCode },
 	hitch: { Enum.KeyCode }, -- couple / uncouple a trailer or towed car (Controllers/HitchInputController)
 	ability: { Enum.KeyCode }, -- the Arc's boost-hop or flight (Controllers/AbilityController)
+	cruiseClimb: { Enum.KeyCode }, -- contextual while cruise is active
+	cruiseDescend: { Enum.KeyCode },
 	-- The car's signals (Controllers/VehicleSoundController sends them, Services/CarSignalService decides).
 	horn: { Enum.KeyCode }, -- held
 	headlights: { Enum.KeyCode },
@@ -44,6 +46,8 @@ export type GamepadBindings = {
 	regen: { Enum.KeyCode },
 	hitch: { Enum.KeyCode }, -- couple / uncouple (Controllers/HitchInputController)
 	ability: { Enum.KeyCode }, -- boost-hop or flight (Controllers/AbilityController)
+	cruiseClimb: { Enum.KeyCode }, -- contextual while cruise is active
+	cruiseDescend: { Enum.KeyCode },
 	-- The car's signals, as on the keyboard (Controllers/VehicleSoundController). An empty list: no button.
 	horn: { Enum.KeyCode },
 	headlights: { Enum.KeyCode },
@@ -68,6 +72,7 @@ local Controls = {
 	-- Medium, so High wins: while driving, Space, WASD and the left stick drive the car instead of jumping
 	-- or walking the character.
 	actionPriority = Enum.ContextActionPriority.High.Value,
+	cruiseActionPriority = Enum.ContextActionPriority.High.Value + 1, -- owns shared lift keys only while cruising
 
 	keyboard = {
 		throttle = { Enum.KeyCode.W, Enum.KeyCode.Up },
@@ -85,6 +90,8 @@ local Controls = {
 		-- Phase 10: bound by AbilityController (not InputController) and only while driving a car whose trim has a
 		-- thruster ability (Config/Abilities.byTrim), so Q stays free on foot.
 		ability = { Enum.KeyCode.Q },
+		cruiseClimb = { Enum.KeyCode.Space },
+		cruiseDescend = { Enum.KeyCode.LeftControl, Enum.KeyCode.Q },
 		-- Roast fixes (2026-10-24): bound by VehicleSoundController (not InputController) only while driving. C is
 		-- the camera, so the right indicator is V: Z, X and V read left, hazards, right along the bottom row.
 		horn = { Enum.KeyCode.H },
@@ -110,6 +117,8 @@ local Controls = {
 		-- steers: the triggers, X, Y, B, R3, D-pad up, A and RB drive, LB opens the phone, and A also opens the
 		-- Customize shop in a bay (UI/Customize/Style).
 		ability = { Enum.KeyCode.ButtonL3 },
+		cruiseClimb = { Enum.KeyCode.ButtonR1 },
+		cruiseDescend = { Enum.KeyCode.ButtonL1 },
 		-- Roast fixes, bound like the keyboard's. Only the D-pad's down, left and right were free (up is regen), so
 		-- the horn and the indicators get them; the headlights come on by themselves at night, and hazards stay on
 		-- the keyboard.
@@ -132,6 +141,7 @@ local Controls = {
 		ButtonR3 = "R3",
 		DPadUp = "D-pad up",
 		ButtonR1 = "RB",
+		ButtonL1 = "LB",
 		ButtonL3 = "L3",
 		DPadDown = "D-pad down",
 		DPadLeft = "D-pad left",
@@ -274,10 +284,12 @@ local Controls = {
 			labels = {
 				boostHop = "Boost",
 				flight = "Fly",
+				cruise = "Fly",
 			} :: { [string]: string },
 			activeLabels = {
 				boostHop = "Boosting",
 				flight = "Flying",
+				cruise = "Cruising",
 			} :: { [string]: string },
 			ready = "Ready",
 			recharging = "Recharging",
@@ -302,6 +314,7 @@ local Controls = {
 		abilitySize = Vector2.new(88, 52),
 		abilityGasSize = Vector2.new(88, 108),
 		abilityStatusTextSize = 12, -- "Ready" / "12 s" under the button's label
+		cruiseLiftSize = Vector2.new(56, 56), -- large thumb targets, shown only while cruise is active
 		-- Roast fixes: Horn (hold) and Lights (tap) in one row one gap above the pedal block and exactly as wide as
 		-- it: Horn over the gas pedal, Lights over the brake column. The row stays below the GPS button
 		-- (tests/CarSignal.spec checks it on the reference phone).
@@ -319,6 +332,8 @@ local Controls = {
 			exit = "Exit",
 			horn = "Horn",
 			lights = "Lights",
+			climb = "Up",
+			descend = "Down",
 		},
 	},
 
