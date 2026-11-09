@@ -20,25 +20,31 @@ ROOT = Path(__file__).resolve().parent.parent
 
 STYLE = (
     "Professional automotive studio photograph, three-quarter front view from slightly above, the whole car in frame "
-    "with space around it, photorealistic, real production car proportions and panel gaps, plain glossy white paint, "
-    "dark tinted glass, black tyres, plain light grey seamless studio background, soft even lighting, sharp focus. "
-    "An original design that is not any existing car model. No logos, no badges, no emblems, no text, no number plate."
+    "with space around it, photorealistic, real production car proportions and crisp panel gaps, the whole body in "
+    "flat matte light grey primer with no reflections and no highlights, dark tinted glass, black tyres, plain white "
+    "seamless studio background, flat even shadowless lighting, sharp focus. An original design that is not any "
+    "existing car model. A smooth bonnet and tailgate with no emblem, no logos, no badges, no text, no number plate."
 )
 
 LOOKS = {
     "ohm_vela": "an original two-seat open-top electric sports roadster, low and wide, smooth sculpted body with no rear "
     "wing, one slim straight full-width LED light strip across the nose, raked windscreen, two roll hoops behind the "
     "seats, broad rear haunches, large dark multi-spoke wheels",
-    "kaze_zenji": "an original modern three-door hot hatchback, short boxy hatch body, pumped square wheel arches, a "
-    "roof spoiler over the rear window, honeycomb lower grille, slim headlights, black lower bumper, sporty alloy wheels",
-    "kaze_akeru": "an original modern front-engine two-door sports coupe, long hood, cabin set back, a fastback roof "
-    "flowing into a glass hatch, slim angular LED headlights, a small ducktail, smooth sides with one crisp crease",
-    "kaze_rokku": "an original 1970s two-door rally coupe, boxy square body with a flat roof, four square headlights in "
-    "a black grille, thin chrome bumpers, slotted steel wheels, mud flaps, restored classic",
+    # Redrawn 2026-11-09 (roast: the first read as a familiar small hatch): a wedge-nosed, two-box shape of its own.
+    "kaze_zenji": "an original modern three-door hot hatchback, a short wedge-shaped nose with a single full-width "
+    "light strip, a steeply raked windscreen, a square glasshouse with a black floating roof, pumped boxy wheel arches "
+    "with exposed rivets, a vertical tail with C-shaped lamps, centre twin exhaust",
+    "kaze_akeru": "an original modern front-engine two-door sports coupe, a long hood with a raised centre spine, a "
+    "small cabin set far back with a short upright rear window, stacked vertical twin headlights at each front corner, a "
+    "kamm tail cut off flat with a full-width lamp, deep scalloped sides behind the front wheels",
+    "kaze_rokku": "an original 1970s two-door rally coupe, a low long body with a sloping fastback rear, two large "
+    "rectangular headlights behind clear covers in a slim slatted grille, a rear window louvre, flared riveted wheel "
+    "arches, slotted steel wheels, mud flaps, restored classic",
     "montevale_ostria": "an original modern mid-engine supercar, very low body, a smooth tinted canopy cabin, rounded "
     "front fenders, one thin horizontal light bar in a narrow nose, a louvred rear engine cover, organic curved surfaces",
     "montevale_varzo": "an original endurance-racing style road hypercar, a bubble cockpit, a very long smooth tapering "
-    "tail with a tall stabiliser fin along the spine, covered rear wheels, a long rounded nose, giant rear diffuser",
+    "tail ending in two short twin vertical fins at the rear corners, covered rear wheels, a long rounded nose with "
+    "round lamps under clear covers, giant rear diffuser",
     "brannock_mallet": "an original modern two-door performance coupe, long hood with two sharp raised air vents, a "
     "thin full-width LED light bar across a slim black grille instead of round headlights, angular faceted body panels, "
     "boxed fender flares, a short fastback roof, wide rear haunches, a full-width rear light bar",
