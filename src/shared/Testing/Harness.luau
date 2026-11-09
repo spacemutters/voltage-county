@@ -161,14 +161,20 @@ local function collect(spec: Spec, cases: { Case }): string?
 	return if ok then nil else tostring(err)
 end
 
+-- The last run's failure lines (also printed), for tools that can't read the output window.
+Harness.failures = {} :: { string }
+
 function Harness.run(specs: { Spec }): (number, number)
 	local passed, failed = 0, 0
+	table.clear(Harness.failures)
 	for _, spec in specs do
 		local cases: { Case } = {}
 		local loadError = collect(spec, cases)
 		if loadError then
 			failed += 1
-			print(`FAIL  {spec.name}: spec failed to load: {loadError}`)
+			local line = `FAIL  {spec.name}: spec failed to load: {loadError}`
+			table.insert(Harness.failures, line)
+			print(line)
 		end
 		for _, case in cases do
 			local ok, err = pcall(function()
@@ -181,7 +187,9 @@ function Harness.run(specs: { Spec }): (number, number)
 				passed += 1
 			else
 				failed += 1
-				print(`FAIL  {case.name}: {err}`)
+				local line = `FAIL  {case.name}: {err}`
+				table.insert(Harness.failures, line)
+				print(line)
 			end
 		end
 	end

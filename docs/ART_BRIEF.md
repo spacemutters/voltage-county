@@ -212,6 +212,34 @@ Every name below is original. "Body" is the `bodyStyle` the greybox is built fro
 | `northline_satchel` / `long_range` | Satchel Long Range | van | same as above | 11 | 6 | 1.3 / 0.9 | 0.9 | 3 | 2 | none |
 | `northline_satchel` / `crew` | Satchel Crew | van | same as above | 11 | 6 | 1.3 / 0.9 | 0.9 | 3 | 3 | none |
 
+### 4.2 Catalogue expansion (2026-11-09)
+
+All trims of each vehicle below share its listed geometry. Trim stats, prices and acquisition live in
+`Config/Vehicles.luau`.
+
+| Vehicle | Name in game | Class / body | Body L x W x H | Wheelbase | Track | Wheel radius / width | Ride height | Chassis height | Seats | Features |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `ohm_vela` | Ohm Motors Vela | hypercar / hypercar | 14.2 x 6.6 x 3.6 | 8.7 | 5.6 | 1.25 / 1 | 0.45 | 1.8 | 2 | thrusters |
+| `kaze_zenji` | Kaze Zenji | sedan / hatch | 12 x 5.9 x 4.4 | 7.8 | 5 | 1.1 / 0.85 | 0.6 | 2.2 | 4 | none |
+| `kaze_akeru` | Kaze Akeru | sports / coupe | 14.5 x 6.3 x 4.1 | 9 | 5.3 | 1.2 / 0.95 | 0.5 | 2 | 4 | none |
+| `kaze_rokku` | Kaze Rokku | sports / coupe | 13.5 x 6.1 x 4.2 | 8.4 | 5.1 | 1.15 / 0.9 | 0.65 | 2.1 | 4 | none |
+| `montevale_ostria` | Montevale Ostria | exotic / exotic | 14.6 x 6.8 x 3.7 | 8.9 | 5.8 | 1.25 / 1.05 | 0.45 | 1.8 | 2 | none |
+| `montevale_varzo` | Montevale Varzo | hypercar / hypercar | 15.6 x 7 x 3.5 | 9.5 | 6 | 1.3 / 1.15 | 0.4 | 1.7 | 2 | none |
+| `brannock_mallet` | Brannock Mallet | muscle / muscle | 16 x 6.7 x 4.4 | 10.2 | 5.7 | 1.3 / 1.05 | 0.6 | 2.2 | 4 | none |
+| `brannock_warden` | Brannock Warden | muscle / muscle | 16.6 x 6.7 x 4.7 | 10.7 | 5.7 | 1.3 / 1 | 0.65 | 2.4 | 5 | none |
+| `aldermoor_esterly` | Aldermoor Esterly | luxury / wagon | 16.5 x 6.6 x 4.8 | 10.6 | 5.6 | 1.3 / 0.9 | 0.7 | 2.5 | 5 | none |
+| `aldermoor_ormond` | Aldermoor Ormond | luxury / sedan | 17.5 x 6.8 x 4.8 | 11.2 | 5.8 | 1.35 / 0.95 | 0.7 | 2.5 | 5 | none |
+| `aldermoor_solenne` | Aldermoor Solenne | luxury / coupe | 16.5 x 6.6 x 4.4 | 10.5 | 5.6 | 1.3 / 0.95 | 0.65 | 2.2 | 4 | none |
+| `aldermoor_graystone` | Aldermoor Graystone | luxury / suv | 17 x 7.1 x 6.1 | 10.8 | 6 | 1.5 / 1 | 0.95 | 3 | 7 | none |
+| `ohm_pip` | Ohm Motors Pip | economy / hatch | 10 x 5.4 x 4.2 | 6.4 | 4.5 | 1 / 0.7 | 0.65 | 2.1 | 2 | none |
+| `ohm_lumen` | Ohm Motors Lumen | suv / suv | 16.5 x 6.9 x 5.9 | 10.6 | 5.8 | 1.45 / 0.95 | 0.9 | 3 | 7 | none |
+| `ohm_fieldline` | Ohm Motors Fieldline | pickup / pickup | 18 x 7 x 6.1 | 11.4 | 6 | 1.55 / 1.05 | 1.15 | 3 | 5 | tow hitch |
+| `halden_ambit` | Halden Ambit | suv / suv | 14.5 x 6.4 x 5.3 | 9.2 | 5.4 | 1.3 / 0.9 | 0.85 | 2.7 | 5 | none |
+| `halden_ferro` | Halden Ferro | pickup / pickup | 14 x 6.4 x 5.6 | 8.8 | 5.4 | 1.4 / 1 | 1.1 | 2.8 | 2 | tow hitch |
+| `ironwood_talus` | Ironwood Talus | offroad / offroad | 13.5 x 6.6 x 6 | 8.4 | 5.6 | 1.55 / 1.1 | 1.45 | 2.7 | 2 | tow hitch, adjustable ride height |
+| `ironwood_bulwark` | Ironwood Bulwark | pickup / pickup | 20 x 7.5 x 7 | 13 | 6.4 | 1.75 / 1.25 | 1.5 | 3.3 | 5 | tow hitch |
+| `northline_haulmate` | Northline Haulmate | van / van | 19 x 7.3 x 8.8 | 12.2 | 6.2 | 1.4 / 1 | 1 | 3.2 | 3 | none |
+
 If a dimension has to change for the art, change it in `Config/Vehicles.luau` first (the catalog validator
 and the physics read it), then rebuild the greybox to compare.
 

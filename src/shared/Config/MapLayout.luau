@@ -894,23 +894,23 @@ local function section(brandId: string, count: number, centreX: number, z: numbe
 	return { brandId = brandId, pads = padRow(count, centreX, z, yaw) }
 end
 
--- The mall block's two sections per row: six pads each (a 111-stud row), 20 studs apart, together centred on
--- x = 750. Rows run 60 studs apart, leaving a 32-stud aisle between them.
+-- The mall block's two sections per row: six or seven pads each, together centred on x = 750. Rows run 60 studs
+-- apart, leaving a 32-stud aisle between them. The seven-pad luxury and exotic rows leave a 9-stud centre gap.
 local MALL_WEST, MALL_EAST, MALL_CENTRE = 684.5, 815.5, 750
 local MALL_ROWS = { 652, 712, 772, 832 }
 
 local dealership: DealershipLayout = {
 	padSize = DISPLAY_PAD,
 	sections = {
-		-- Ohm Motors, the hero brand: eight pads behind the showroom (its back wall is at z = 480), facing south.
-		section("ohm", 8, MALL_CENTRE, 530, 180),
+		-- Ohm Motors, the hero brand: twelve pads behind the showroom (its back wall is at z = 480), facing south.
+		section("ohm", 12, MALL_CENTRE, 530, 180),
 		-- Across the street: the everyday and tuner brands nearest the showroom, the work fleet at the back.
 		section("halden", 6, MALL_WEST, MALL_ROWS[1], 0),
 		section("kaze", 6, MALL_EAST, MALL_ROWS[1], 0),
 		section("ironwood", 6, MALL_WEST, MALL_ROWS[2], 0),
-		section("aldermoor", 6, MALL_EAST, MALL_ROWS[2], 0),
+		section("aldermoor", 7, MALL_EAST, MALL_ROWS[2], 0),
 		section("brannock", 6, MALL_WEST, MALL_ROWS[3], 0),
-		section("montevale", 6, MALL_EAST, MALL_ROWS[3], 0),
+		section("montevale", 7, MALL_EAST, MALL_ROWS[3], 0),
 		section("northline", 6, MALL_CENTRE, MALL_ROWS[4], 0),
 	},
 }

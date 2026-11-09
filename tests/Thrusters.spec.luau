@@ -505,7 +505,7 @@ return function(t: Harness.Api)
 
 		t.it("gives cruise contextual lift controls on every input kind", function()
 			t.expect(Controls.keyboard.cruiseClimb).toEqual({ Enum.KeyCode.Space })
-			t.expect(Controls.keyboard.cruiseDescend).toEqual({ Enum.KeyCode.LeftControl, Enum.KeyCode.Q })
+			t.expect(Controls.keyboard.cruiseDescend).toEqual({ Enum.KeyCode.LeftControl })
 			t.expect(Controls.gamepad.cruiseClimb).toEqual({ Enum.KeyCode.ButtonR1 })
 			t.expect(Controls.gamepad.cruiseDescend).toEqual({ Enum.KeyCode.ButtonL1 })
 			t.expect(math.min(Controls.touch.cruiseLiftSize.X, Controls.touch.cruiseLiftSize.Y) >= 56).toBe(true)

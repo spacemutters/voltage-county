@@ -16,9 +16,33 @@ local Units = require(ReplicatedStorage.Shared.Util.Units)
 local UsedLot = require(ReplicatedStorage.Shared.Config.UsedLot)
 
 -- Launch catalog size (PLAN.md §3.3, docs/phase-4-contracts.md "Catalog expansion").
-local MIN_VEHICLES = 30
+local EXPECTED_VEHICLES = 54
 local MIN_PER_BRAND = 3
 local MIN_USED_LOT = 6
+
+-- New cash trims must add new rungs to the ladder instead of sharing a price with any existing offer.
+local EXPANSION_VEHICLES: { [string]: boolean } = {
+	aldermoor_esterly = true,
+	aldermoor_graystone = true,
+	aldermoor_ormond = true,
+	aldermoor_solenne = true,
+	brannock_mallet = true,
+	brannock_warden = true,
+	halden_ambit = true,
+	halden_ferro = true,
+	ironwood_bulwark = true,
+	ironwood_talus = true,
+	kaze_akeru = true,
+	kaze_rokku = true,
+	kaze_zenji = true,
+	montevale_ostria = true,
+	montevale_varzo = true,
+	northline_haulmate = true,
+	ohm_fieldline = true,
+	ohm_lumen = true,
+	ohm_pip = true,
+	ohm_vela = true,
+}
 
 -- The price ladder (docs/roast-2026-10-24.md point 5): classes in tiers from TOP_TIER up (exotic, hypercar) are the
 -- only ones whose band reaches under LADDER_FLOOR_SEC to 60.
@@ -134,8 +158,8 @@ end
 
 return function(t: Harness.Api)
 	t.describe("Catalog at launch size", function()
-		t.it(`has at least {MIN_VEHICLES} vehicles`, function()
-			t.expect(#Catalog.vehicleIds() >= MIN_VEHICLES).toBe(true)
+		t.it(`has exactly {EXPECTED_VEHICLES} vehicles`, function()
+			t.expect(#Catalog.vehicleIds()).toBe(EXPECTED_VEHICLES)
 		end)
 
 		t.it(`gives every brand at least {MIN_PER_BRAND} vehicles`, function()
@@ -239,6 +263,23 @@ return function(t: Harness.Api)
 			end
 			t.expect(duplicates).toEqual({})
 		end)
+
+		t.it("gives every expansion cash trim a unique price rung", function()
+			local seen: { [number]: Offer } = {}
+			local collisions: { string } = {}
+			for _, offer in cashOffers() do
+				local previous = seen[offer.price]
+				if
+					previous ~= nil
+					and (EXPANSION_VEHICLES[offer.vehicle.id] or EXPANSION_VEHICLES[previous.vehicle.id])
+				then
+					table.insert(collisions, `{offer.price}: {previous.name}, {offer.name}`)
+				end
+				seen[offer.price] = offer
+			end
+			table.sort(collisions)
+			t.expect(collisions).toEqual({})
+		end)
 	end)
 
 	t.describe("Catalog", function()
@@ -250,7 +291,7 @@ return function(t: Harness.Api)
 			t.expect(#problems).toBe(0)
 		end)
 
-		t.it("has all eight Ohm vehicles with their trims", function()
+		t.it("has all twelve Ohm vehicles with their trims", function()
 			local expected = {
 				ohm_spark = { "used", "standard", "long_range", "performance" },
 				ohm_current = { "standard", "long_range", "performance", "long_body" },
@@ -260,6 +301,10 @@ return function(t: Harness.Api)
 				ohm_arc = { "performance", "boost", "flight" },
 				ohm_grand = { "standard" },
 				ohm_summit = { "standard" },
+				ohm_vela = { "standard", "flight" },
+				ohm_pip = { "standard", "city" },
+				ohm_lumen = { "standard", "long_range" },
+				ohm_fieldline = { "standard", "long_range" },
 			}
 			for vehicleId, trims in expected do
 				for _, trimId in trims do

@@ -91,7 +91,8 @@ local Controls = {
 		-- thruster ability (Config/Abilities.byTrim), so Q stays free on foot.
 		ability = { Enum.KeyCode.Q },
 		cruiseClimb = { Enum.KeyCode.Space },
-		cruiseDescend = { Enum.KeyCode.LeftControl, Enum.KeyCode.Q },
+		-- Not Q: Q is the Fly key, and a second press lands (Controllers/AbilityController).
+		cruiseDescend = { Enum.KeyCode.LeftControl },
 		-- Roast fixes (2026-10-24): bound by VehicleSoundController (not InputController) only while driving. C is
 		-- the camera, so the right indicator is V: Z, X and V read left, hazards, right along the bottom row.
 		horn = { Enum.KeyCode.H },
