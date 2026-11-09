@@ -84,7 +84,9 @@ local CityLots = {
 	-- Parts per lot (see the header). Downtown 1.5 + 5.5 per 100 studs: about 4 parts on one plot, 6 on two, 8 on three.
 	-- Measured budget, 2026-10-26: the open plots were downtown 299, arts 114, suburbs 40, beach 19, quarry 3.
 	parts = {
-		downtown = { base = 1.5, perHundred = 5.5 },
+		-- 2026-11-08: back up from 1.5 + 5.5 (the phone gate now skips invisible colliders), so a wide court gets its
+		-- hedge and its lights.
+		downtown = { base = 2, perHundred = 7 },
 		beach = { base = 2, perHundred = 7 },
 		suburbs = { base = 2, perHundred = 7.5 },
 		-- Outside the phone gate's worst view, so richer: a mural-and-trucks court on two plots gets its mural.
@@ -97,8 +99,10 @@ local CityLots = {
 	-- top of the buildings' own). About 1,550 parts and 300 night lights expected. Downtown went from 900 to 700 at
 	-- integration (2026-10-26): its lots all stand inside the phone gate's worst view (Environment budget.inViewParts,
 	-- near (-900, 300)), which the street-life round had pushed over; a run past the budget stays an open plaza.
+	-- 2026-11-08: downtown 700 to 1,250 (the 66 plots left open, roast leftover): the phone gate counts drawn parts only
+	-- now (Dev/MapCheck undrawn), which freed about 990 in that view.
 	budget = {
-		parts = { downtown = 700, arts = 520, suburbs = 180, beach = 90, quarry = 24 } :: { [string]: number },
+		parts = { downtown = 1250, arts = 520, suburbs = 180, beach = 90, quarry = 24 } :: { [string]: number },
 		lights = 340,
 	},
 

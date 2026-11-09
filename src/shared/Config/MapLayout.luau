@@ -56,6 +56,8 @@ export type Zone = {
 	groundColor: Color3,
 	groundMaterial: Enum.Material?, -- default Grass
 	groundShades: { GroundShade }?, -- when set, each ground tile takes one of these instead of groundColor
+	-- An overlay tiled over the top of the zone's plain ground (its groundColor ground, not its shades): `u` studs a tile.
+	groundTexture: { image: string, u: number, transparency: number? }?,
 	buildingColors: { Color3 },
 	buildingHeight: { min: number, max: number }, -- studs
 	buildingDensity: number, -- 0..1, how full the city blocks are
@@ -294,6 +296,9 @@ local zones: { [string]: Zone } = {
 		-- and podiums to the kerb; the dark ground read as parking between the towers). Town Square keeps its grass.
 		groundColor = Color3.fromRGB(206, 202, 194),
 		groundMaterial = Enum.Material.Concrete,
+		-- Poured slabs with saw-cut joints, stains, hairline cracks and patches (tools/ground_textures.py, 2026-11-08,
+		-- Davis: "real detail like textures"): 4 x 4 slabs of 12 studs a tile.
+		groundTexture = { image = "rbxassetid://123579932620177", u = 48 },
 		buildingColors = {
 			Color3.fromRGB(152, 108, 88),
 			Color3.fromRGB(176, 160, 136),

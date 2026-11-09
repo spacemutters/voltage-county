@@ -1,0 +1,10 @@
+{
+	"name": "VCSync",
+	"tree": {
+		"$className": "Folder",
+		"Shared": { "$path": "../src/shared" },
+		"Server": { "$path": "../src/server" },
+		"Client": { "$path": "../src/client" },
+		"Tests": { "$path": "../tests" }
+	}
+}

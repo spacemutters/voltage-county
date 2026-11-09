@@ -54,8 +54,10 @@ local Water = {
 	-- is greener (a real bay's green-turquoise), less of the pale sky is mirrored, and the waves are twice as big. Seen in
 	-- Studio the same day from the beach and from the air (a teal-blue bay, not a pool).
 	look = {
-		color = rgb(12, 120, 128), -- Terrain.WaterColor
-		transparency = 0.68, -- Terrain.WaterTransparency: 0 opaque .. 1 clear
+		-- 2026-11-08 roast point 3: at 0.68 the seabed's pale shelf showed through as a stripe across the bay and the
+		-- water read as a plastic sheet; deeper and less clear, it reads as water with depth.
+		color = rgb(10, 98, 112), -- Terrain.WaterColor
+		transparency = 0.42, -- Terrain.WaterTransparency: 0 opaque .. 1 clear
 		reflectance = 0.42, -- Terrain.WaterReflectance: 0 none .. 1 full
 		waveSize = 0.3, -- Terrain.WaterWaveSize: studs, 0..1
 		waveSpeed = 12, -- Terrain.WaterWaveSpeed: cycles a minute, 0..100

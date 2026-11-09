@@ -74,11 +74,13 @@ local SHAPE = {
 	gableDeep = 14, -- ...and its depth (at most the slab's less 4)
 }
 
--- Glass, the proud supergrid, the court's yellow, the red of the stair and the roof gable.
+-- Glass, the proud supergrid, the court's yellow, the red of the stair and the roof gable. 2026-11-08 roast point 2:
+-- the pure toy primaries read as Lego, so the yellow is a warm ochre and the red a painted brick red, as weathered
+-- paint on the real building reads in the sun.
 local PALETTES = {
-	{ glass = rgb(47, 111, 179), grid = P.frame.white, court = rgb(255, 214, 72), red = rgb(211, 48, 43) },
-	{ glass = rgb(46, 111, 142), grid = P.deco.lemon, court = rgb(255, 214, 72), red = rgb(211, 48, 43) },
-	{ glass = rgb(70, 112, 150), grid = P.frame.white, court = rgb(255, 200, 80), red = rgb(222, 70, 56) },
+	{ glass = rgb(47, 111, 179), grid = P.frame.white, court = rgb(226, 182, 74), red = rgb(176, 58, 48) },
+	{ glass = rgb(46, 111, 142), grid = P.deco.lemon, court = rgb(226, 182, 74), red = rgb(176, 58, 48) },
+	{ glass = rgb(70, 112, 150), grid = P.frame.white, court = rgb(222, 174, 82), red = rgb(184, 72, 58) },
 }
 
 local function build(m: Types.Model)

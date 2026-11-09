@@ -740,7 +740,19 @@ local function checkStreaming(generated: Instance, report: Report)
 	end
 end
 
--- The phone gate (Config/Environment budget.inViewParts; docs/city/CITY_PLAN.md §9), pure: the most parts a player
+-- Whether a planned part is never drawn: fully invisible and carrying nothing that draws (no template mesh, texture,
+-- label, light or ad unit). Palm trunk colliders, parked cars' bump boxes and the like: they cost a phone no draw call,
+-- so the phone gate skips them (2026-11-08). Config/Environment budget.mapParts still counts every part.
+local function undrawn(spec: MapBuilder.PartSpec): boolean
+	return spec.transparency >= 1
+		and spec.template == nil
+		and (spec.textures == nil or #spec.textures == 0)
+		and (spec.labels == nil or #spec.labels == 0)
+		and spec.light == nil
+		and spec.adUnit == nil
+end
+
+-- The phone gate (Config/Environment budget.inViewParts; docs/city/CITY_PLAN.md §9), pure: the most drawn parts a player
 -- could have streamed in at once. Every part in a Persistent model counts everywhere; every other part counts when its
 -- centre lies within `radius` (Perf.streaming.targetRadius) of the player, taken at each of `points` (the road nodes).
 -- Parts are binned in cells of SETTINGS.inViewCell studs and a cell counts when its centre is in range. Returns the
@@ -780,6 +792,9 @@ local function inViewParts(
 	local bins: { [number]: { x: number, z: number, n: number } } = {}
 	local list: { { x: number, z: number, n: number } } = {}
 	for _, spec in specs do
+		if undrawn(spec) then
+			continue
+		end
 		if always(spec.folder) then
 			fixed += 1
 			continue
@@ -1075,6 +1090,7 @@ local MapCheck = {}
 MapCheck.Geometry = Geometry
 MapCheck.SETTINGS = SETTINGS
 MapCheck.inView = inViewParts
+MapCheck.undrawn = undrawn
 
 local running = false
 

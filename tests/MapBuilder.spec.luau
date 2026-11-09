@@ -996,6 +996,45 @@ return function(t: Harness.Api)
 			t.expect(parts <= BUDGET.inViewParts).toBe(true)
 		end)
 
+		-- The gate skips only parts that never draw (2026-11-08): a bare invisible collider. A texture, label, light,
+		-- ad unit or template mesh on an invisible part draws, so it counts.
+		t.it("counts every drawn part in the phone gate and skips only bare invisible colliders", function()
+			local base = {
+				folder = "Test",
+				name = "Probe",
+				class = "Part",
+				shape = "block",
+				role = "scenery",
+				size = Vector3.one,
+				cframe = CFrame.new(),
+				color = Color3.new(1, 1, 1),
+				material = Enum.Material.SmoothPlastic,
+				collide = true,
+				query = true,
+				touch = false,
+				shadow = false,
+				transparency = 1,
+			} :: any
+			local function with(field: string, value: any): any
+				local copy = table.clone(base)
+				copy[field] = value
+				return copy
+			end
+			t.expect(MapCheck.undrawn(base)).toBe(true)
+			t.expect(MapCheck.undrawn(with("transparency", 0.5))).toBe(false)
+			t.expect(MapCheck.undrawn(with("textures", { {} }))).toBe(false)
+			t.expect(MapCheck.undrawn(with("labels", { {} }))).toBe(false)
+			t.expect(MapCheck.undrawn(with("light", {}))).toBe(false)
+			t.expect(MapCheck.undrawn(with("adUnit", {}))).toBe(false)
+			t.expect(MapCheck.undrawn(with("template", {}))).toBe(false)
+			-- And a bare collider doesn't move the count.
+			local drawn = with("transparency", 0)
+			local points = { Vector3.zero }
+			local one = MapCheck.inView({ drawn }, {}, points, 100)
+			local two = MapCheck.inView({ drawn, base }, {}, points, 100)
+			t.expect(two).toBe(one)
+		end)
+
 		t.it("lays the open land and the green zones in a patchwork of grass shades", function()
 			local looks: { [string]: boolean } = {}
 			local shades = 0

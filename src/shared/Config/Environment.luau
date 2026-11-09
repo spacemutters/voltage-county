@@ -126,8 +126,10 @@ local DAY: Keyframe = {
 	bloomIntensity = 0.6,
 	bloomThreshold = 2.2,
 	tint = rgb(255, 246, 232),
-	density = 0.26,
-	haze = 0.8,
+	-- 2026-11-08 roast points 1 and 10: 0.26 / 0.8 left the map's edge and the flat fields sharp to the horizon and the
+	-- skyline without depth; a thicker, hazier day fades the far county into the sky like Miami's humid air.
+	density = 0.33,
+	haze = 1.5,
 	glare = 0.25,
 }
 
@@ -494,7 +496,9 @@ local Environment = {
 		-- after the downtown step decides whether it holds. 2026-10-26, street life (cafés, shops, parked cars, the lots,
 		-- the bayfront park): 20,758 near (-900, 300), so not raised (the desktop perf drive ran at 53 fps, under its 60);
 		-- the lane paint left the Persistent Roads model to stream like decor (-600) and the downtown lots' budget went
-		-- from 900 to 700 (Config/CityLots): about 19,960.
+		-- from 900 to 700 (Config/CityLots): about 19,960. 2026-11-08: the gate counts drawn parts only (Dev/MapCheck
+		-- undrawn: no fully invisible collider without a mesh, texture, label, light or ad), 18,971 there; the room went
+		-- to the downtown lots and the bayfront park's groves.
 		inViewParts = 20000,
 		-- Trunks and leaves: about 1,400 trees at 2 or 3 parts each (a palm is 2: its trunk and its crown, whose mesh the
 		-- build clones; Dev/City/Scenery Palms). The street and beach palms are scenery (Config/CityScenery budget).
