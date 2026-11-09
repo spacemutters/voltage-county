@@ -2,6 +2,38 @@
 
 Newest first. Each entry: what shipped, how to try it in Studio, open issues.
 
+## 2026-11-08 — Launch polish: the open lots, the park lawn, real glass and ground detail, roast fixes
+
+Davis, 2026-11-08: "finish up the development" for the soft launch, then "we want real detail like textures i like the
+building ideas" and "if you can add shadows, do whatever you can". Branch `launch-polish`.
+
+**What changed**
+- The phone gate (Dev/MapCheck `undrawn`) counts drawn parts only: a fully invisible part with no mesh, texture, label,
+  light or ad unit (palm trunk colliders, parked cars' bump boxes) costs a phone no draw call. That freed about 990
+  parts in the worst view; `budget.mapParts` still counts every part. Spec in tests/MapBuilder.spec.
+- Downtown lots 700 to 1,250 parts at 2 + 7 per 100 studs (Config/CityLots): open downtown plots 66 to 4. The arts
+  district now leaves 21 open (was 11): the placement draw shifts, no cap holds them (lifting every cap changed nothing).
+- The bayfront park: six more palm groves on the bare lawn (budget 400 to 560; 430 used).
+- Glass: a pane-variety texture over every curtain wall (tools/facade_textures.py, Kit.glass, `textures.paneVariety`,
+  `kit.paneSpan`): one tile is 4 bays by 4 floors, each pane its own (clear, a sky reflection, blinds, curtains, a dark
+  room; homes with a spandrel band). Textures cost no parts.
+- Downtown's ground: poured concrete slabs with saw-cut joints, stains, hairline cracks and patches
+  (tools/ground_textures.py; MapLayout zone `groundTexture`, MapBuilder ground).
+- Roast (docs/roast-2026-11-08.md) fixes: blinds greyer and on about one pane in eight, no lit rooms by day (point 5);
+  a hazier day, density 0.33 and haze 1.5 (points 1 and 10); deeper, less clear water, 0.42 (point 3); the sky-court
+  tower's toy yellow and red now ochre and brick red (point 2); concrete detail on the open ground (point 4).
+- Shadows: trim from 0.6 studs thick casts a shadow (was 1), so slim bands, fins and balcony edges draw shadow lines.
+- Tooling: tools/StudioSyncLocal.luau and tools/sync.project.json sync code into Studio with no Rojo plugin and no HTTP
+  (Studio's connector may not reach localhost); the place file can be fetched with the Open Cloud key.
+
+**Checked in Studio** (the published place, Team Create): full `MapBuilder.build()` then `WaterBuilder.build()`. MapCheck
+ok, nothing missing; in view at once 19,362 drawn parts of 20,000 near (-900, 300). Harness on fresh copies:
+TESTS: passed=2745 failed=0. Gate CHECK PASSED. Shots in `docs/images/launch-polish/`.
+
+**Not done from the roast:** the map's edge and the country's cube trees (haze only), the empty beach, ground floors
+(shops and lobbies) at the towers' feet, roofs seen from above, a mullion colour per tower, the triple tower's rounded
+ends; the fin and tiered towers were judged from test-area shots and already have the blades and curve it asks for.
+
 ## 2026-10-26 — Street life and real water: cafés, shop fronts, parked cars, lots, the bayfront park, terrain bay
 
 Davis, 2026-10-26: "Yes, fill the streets: cafés, parked cars, shop fronts, the empty lawn and the empty downtown lots"

@@ -46,9 +46,9 @@ def reflection(layer: Image.Image, box, rng: random.Random):
 
 def blinds(draw: ImageDraw.ImageDraw, box, rng: random.Random):
     x0, y0, x1, y1 = box
-    drop = y0 + (y1 - y0) * rng.uniform(0.25, 0.95)
-    shade = rng.choice([(236, 232, 222), (214, 214, 210), (196, 190, 178)])
-    draw.rectangle((x0, y0, x1, drop), fill=shade + (215,))
+    drop = y0 + (y1 - y0) * rng.uniform(0.2, 0.6)
+    shade = rng.choice([(168, 164, 156), (150, 150, 148), (176, 170, 158)])
+    draw.rectangle((x0, y0, x1, drop), fill=shade + (150,))
     slat = max(3.0, (y1 - y0) / 34)
     y = y0 + slat
     while y < drop - 1:
@@ -64,7 +64,7 @@ def curtains(draw: ImageDraw.ImageDraw, box, rng: random.Random):
     for side in (0, 1):
         reach = w * rng.uniform(0.18, 0.46)
         a, b = (x0, x0 + reach) if side == 0 else (x1 - reach, x1)
-        draw.rectangle((a, y0, b, y1), fill=tint + (195,))
+        draw.rectangle((a, y0, b, y1), fill=tint + (120,))
         folds = max(3, int(reach / 9))
         for k in range(1, folds):
             fx = a + (b - a) * k / folds
@@ -126,5 +126,7 @@ def make(name: str, seed: int, weights):
 
 if __name__ == "__main__":
     # a: offices and condos (more reflection and blinds); b: residential (curtains, lit rooms, a spandrel band).
-    print(make("a", 7, [("clear", 30), ("reflection", 26), ("blinds", 22), ("dark", 16), ("warm", 6)]))
-    print(make("b", 11, [("clear", 22), ("reflection", 18), ("blinds", 18), ("curtains", 20), ("dark", 12), ("warm", 10)]))
+    # 2026-11-08 roast point 5: blinds read as missing textures when bright and common, so they are greyer, shorter and
+    # on about one pane in eight; no lamp-lit rooms by day (the night windows are their own lit layer).
+    print(make("a", 7, [("clear", 40), ("reflection", 32), ("blinds", 12), ("dark", 16)]))
+    print(make("b", 11, [("clear", 34), ("reflection", 26), ("blinds", 12), ("curtains", 12), ("dark", 16)]))

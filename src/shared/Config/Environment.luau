@@ -126,8 +126,10 @@ local DAY: Keyframe = {
 	bloomIntensity = 0.6,
 	bloomThreshold = 2.2,
 	tint = rgb(255, 246, 232),
-	density = 0.26,
-	haze = 0.8,
+	-- 2026-11-08 roast points 1 and 10: 0.26 / 0.8 left the map's edge and the flat fields sharp to the horizon and the
+	-- skyline without depth; a thicker, hazier day fades the far county into the sky like Miami's humid air.
+	density = 0.33,
+	haze = 1.5,
 	glare = 0.25,
 }
 

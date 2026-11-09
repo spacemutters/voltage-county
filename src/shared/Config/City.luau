@@ -480,7 +480,9 @@ local City = {
 		stuccoBright = 0.75,
 		railTransparency = 0.55, -- balcony glass rails, the only see-through glass
 		railHeight = 3.2,
-		trimShadowMin = 1, -- trim thinner than this in both directions casts no shadow
+		-- trim thinner than this in both directions casts no shadow (2026-11-08: 1 to 0.6, Davis: "if you can add shadows"; slim
+		-- bands, fins and balcony edges now draw their own small shadow lines)
+		trimShadowMin = 0.6,
 		neonDiameter = 0.6, -- a neon tube reads at night from this thick (a 0.3 strip barely does)
 		washBrightness = 3, -- a facade wash's SurfaceLight (one per hero facade, lit at night only)
 		washRange = 32,
@@ -499,7 +501,7 @@ local City = {
 		-- Pane variety over the curtain-wall glass (Dev/City/Kit glass; drawn by tools/facade_textures.py, 2026-11-08):
 		-- one tile is kit.paneSpan bays by kit.paneSpan floors, every pane its own (clear, sky, blinds, curtains, a dark
 		-- or a lit room). a: offices and condos; b: homes, with a spandrel band at each pane's foot.
-		paneVariety = { "rbxassetid://94446400373836", "rbxassetid://93229225156562" } :: { string },
+		paneVariety = { "rbxassetid://107872589717708", "rbxassetid://91846339624354" } :: { string },
 	},
 
 	palettes = {

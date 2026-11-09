@@ -130,6 +130,7 @@ export type ZoneData = {
 	groundColor: Color3,
 	groundMaterial: Enum.Material?,
 	groundShades: { GroundShade }?,
+	groundTexture: { image: string, u: number, transparency: number? }?,
 	buildingColors: { Color3 },
 	buildingHeight: { min: number, max: number },
 	buildingDensity: number,
@@ -2316,21 +2317,23 @@ local function addSlab(
 	thickness: number,
 	color: Color3,
 	material: Enum.Material
-)
+): { PartSpec }
 	local limit = TUNING.maxPartSize
 	local nx, nz = math.ceil((x1 - x0) / limit), math.ceil((z1 - z0) / limit)
+	local made: { PartSpec } = {}
 	for i = 0, nx - 1 do
 		for j = 0, nz - 1 do
 			local ax, bx = x0 + (x1 - x0) * i / nx, x0 + (x1 - x0) * (i + 1) / nx
 			local az, bz = z0 + (z1 - z0) * j / nz, z0 + (z1 - z0) * (j + 1) / nz
 			local pieceName = if nx * nz > 1 then `{name}_{i + 1}_{j + 1}` else name
 			local frame = CFrame.new((ax + bx) / 2, top - thickness / 2, (az + bz) / 2)
-			add(
-				ctx,
+			local spec =
 				block(folder, pieceName, "ground", frame, Vector3.new(bx - ax, thickness, bz - az), color, material)
-			)
+			add(ctx, spec)
+			table.insert(made, spec)
 		end
 	end
+	return made
 end
 
 local function insideLake(lakes: { LakeData }, x: number, z: number): boolean
@@ -2486,9 +2489,50 @@ local function addGround(ctx: Ctx, zones: { ZoneData })
 	for _, prior in open do
 		table.insert(done, prior)
 	end
+	-- A zone's plain ground may wear an overlay on its top (MapLayout groundTexture: downtown's concrete slabs).
+	local textured: { ZoneData } = {}
+	for _, zone in zones do
+		if zone.groundTexture then
+			table.insert(textured, zone)
+		end
+	end
 	for i, run in done do
 		local name = `Ground{i}`
-		addSlab(ctx, "Ground", name, run.x0, run.x1, run.z0, run.z1, 0, TUNING.groundThickness, run.color, run.material)
+		local specs = addSlab(
+			ctx,
+			"Ground",
+			name,
+			run.x0,
+			run.x1,
+			run.z0,
+			run.z1,
+			0,
+			TUNING.groundThickness,
+			run.color,
+			run.material
+		)
+		for _, zone in textured do
+			local overlay = zone.groundTexture
+			if
+				overlay
+				and run.color == zone.groundColor
+				and run.material == (zone.groundMaterial or TUNING.groundMaterial)
+			then
+				for _, spec in specs do
+					spec.textures = {
+						{
+							face = Enum.NormalId.Top,
+							image = overlay.image,
+							u = overlay.u,
+							v = overlay.u,
+							color = Color3.new(1, 1, 1),
+							transparency = overlay.transparency,
+						},
+					}
+				end
+				break
+			end
+		end
 	end
 end
 
