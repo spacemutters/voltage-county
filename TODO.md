@@ -32,5 +32,14 @@ for an OK; stop only for things that are his.
 - Light-show music and the thruster hiss are silent until sounds are uploaded.
 - The shared Supabase project (vantage-terminal) has security warnings from its other apps, not the designer's.
 
+## Cars (2026-11-09)
+- Realistic bodies for the 19 new cars through the free pipeline (tools/make_cars.py; runbook in docs/PROGRESS.md
+  2026-11-09). Each reference photo is held for an eye check (build/cars/<id>/HOLD) before it becomes 3D. Then the
+  34 older cars the same way. Limited by Hugging Face's free GPU allowance: about one car a day without an account.
+- Davis decides: a free Hugging Face account (more allowance), or its Pro plan ($9/month, about 25 cars a day), saved
+  as a token the same way as the other keys.
+- Roast leftovers (docs/roast-cars-2026-11-09.md): a Blender cleanup and hole-fill gate, scripted wheel kits, a simple
+  cabin behind see-through glass, contact shadows.
+
 ## Later (Claude)
 - `meshes.rejectUncounted` back on once a real-backend playtest shows no "takes its generated look uncounted" line.
